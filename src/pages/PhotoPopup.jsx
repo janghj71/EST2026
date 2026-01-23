@@ -1,0 +1,358 @@
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  RotateCw,
+  RefreshCw,
+  Download,
+  X,
+  Trash2,
+  Save,
+} from "lucide-react";
+import { useUrlContextSnapshot } from "../hooks/useUrlContextSnapshot";
+import IconBtn from "../components/IconBtn";
+import { useAlert } from "../alerts";
+
+
+const CATS = [
+  { key: "before", label: "수리전" },
+  { key: "sheet", label: "판금" },
+  { key: "paint", label: "도장" },
+  { key: "diag", label: "진단" },
+  { key: "func", label: "기능" },
+  { key: "doc", label: "문서" },
+  { key: "etc", label: "기타" },
+];
+
+
+function clamp(n, min, max) {
+  return Math.max(min, Math.min(max, n));
+}
+
+export default function PhotoPopup() {
+  const { confirm, warning, error, info } = useAlert();
+
+  const ctx = useUrlContextSnapshot({
+    storageKey: "photoPopupCtx",
+    keys: ["estId", "carNo", "file", "imgUrl", "cat", "memo"],
+    cleanPath: "/photo-popup",
+  });
+
+  const readSaved = () => {
+    try {
+      const raw = sessionStorage.getItem("photoPopupCtx");
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const saved = readSaved();
+
+  const [carNo, setCarNo] = useState(ctx.carNo || saved?.carNo || "");
+  const [fileName, setFileName] = useState(ctx.file || saved?.file || "");
+  const [imgUrl, setImgUrl] = useState(ctx.imgUrl || saved?.imgUrl || "");
+  const [cat, setCat] = useState(ctx.cat || saved?.cat || "etc");
+  const [memo, setMemo] = useState(ctx.memo || saved?.memo || "");
+
+  // 사진 뷰 상태(줌/회전)
+  const [scale, setScale] = useState(1);
+  const [rotate, setRotate] = useState(0);
+
+  // 드래그(팬) 상태
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  
+  const [isPanning, setIsPanning] = useState(false);
+  const panStartRef = React.useRef(null); // { x, y, mx, my }
+  const imgWrapRef = React.useRef(null);
+
+
+  const title = useMemo(() => {
+    return carNo?.trim() ? carNo.trim() : "차량번호";
+    // const left = carNo?.trim() ? carNo.trim() : "차량번호";
+    // const right = fileName?.trim() ? fileName.trim() : "파일명";
+    // return `${left} - ${right}`;
+  }, [carNo]);
+
+  // 부모창에서 postMessage로도 갱신 가능하게(그리드 클릭 시 재사용)
+  useEffect(() => {
+    const handler = (ev) => {
+      if (ev.origin !== window.location.origin) return;
+      const msg = ev.data;
+      if (!msg || msg.type !== "PHOTO_POPUP_SET_CTX") return;
+
+      const p = msg.payload || {};
+      if (typeof p.carNo === "string") setCarNo(p.carNo);
+      if (typeof p.file === "string") setFileName(p.file);
+      if (typeof p.imgUrl === "string") setImgUrl(p.imgUrl);
+      if (typeof p.cat === "string") setCat(p.cat);
+      if (typeof p.memo === "string") setMemo(p.memo);
+
+      try {
+        sessionStorage.setItem(
+          "photoPopupCtx",
+          JSON.stringify({
+            estId: p.estId ?? "",
+            carNo: typeof p.carNo === "string" ? p.carNo : carNo,
+            file: typeof p.file === "string" ? p.file : fileName,
+            imgUrl: typeof p.imgUrl === "string" ? p.imgUrl : imgUrl,
+            cat: typeof p.cat === "string" ? p.cat : cat,
+            memo: typeof p.memo === "string" ? p.memo : memo,
+          })
+        );
+      } catch {}
+
+      setScale(1);
+      setRotate(0);
+      setPan({ x: 0, y: 0 });
+      setIsPanning(false);
+      panStartRef.current = null;
+    };
+
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, []);
+
+  const onZoomIn = () => setScale((s) => clamp(Number((s + 0.1).toFixed(2)), 0.3, 3));
+  const onZoomOut = () => 
+    setScale((s) => {
+      const ns = clamp(Number((s - 0.1).toFixed(2)), 0.3, 3);
+      if (ns <= 1) setPan({ x: 0, y: 0 });
+      return ns;
+    });
+  const onRotateL = () => setRotate((r) => (r - 90) % 360);
+  const onRotateR = () => setRotate((r) => (r + 90) % 360);
+  const onResetView = () => {
+    setScale(1);
+    setRotate(0);
+    setPan({ x: 0, y: 0 });
+    setIsPanning(false);
+    panStartRef.current = null;
+  };
+
+  const onDownload = () => {
+    // 실제는 API 다운로드로 연결
+    if (!imgUrl) return;
+    const a = document.createElement("a");
+    a.href = imgUrl;
+    a.download = fileName || "photo.jpg";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
+  const onSave = async () => {
+    // 실제는 API 저장으로 연결 (분류/메모)
+    await info(`저장(예시)\n- 분류: ${cat}\n- 메모: ${memo}`);
+  };
+
+  const canPan = scale > 1.001; // 확대된 경우에만 팬 허용
+
+  const onPanMouseDown = (e) => {
+    if (!canPan) return;
+    e.preventDefault();
+
+    setIsPanning(true);
+    panStartRef.current = {
+      x: pan.x,
+      y: pan.y,
+      mx: e.clientX,
+      my: e.clientY,
+    };
+  };
+
+  const onPanMouseMove = (e) => {
+    if (!isPanning || !panStartRef.current) return;
+
+    const dx = e.clientX - panStartRef.current.mx;
+    const dy = e.clientY - panStartRef.current.my;
+
+    setPan({
+      x: panStartRef.current.x + dx,
+      y: panStartRef.current.y + dy,
+    });
+  };
+
+  const onPanMouseUp = () => {
+    setIsPanning(false);
+    panStartRef.current = null;
+  };
+
+  const onWheelZoom = (e) => {
+    // 스크롤 막고(페이지 스크롤 방지)
+    e.preventDefault();
+    e.stopPropagation();
+
+    const wrap = imgWrapRef.current;
+    if (!wrap) return;
+
+    // 휠 방향: 위(확대) / 아래(축소)
+    const dir = e.deltaY < 0 ? 1 : -1;
+
+    // 줌 스텝 (ctrl+휠이면 트랙패드 확대처럼 느리게 들어오는 경우가 있어서 조금 줄임)
+    const step = e.ctrlKey ? 0.05 : 0.1;
+
+    const nextScale = clamp(Number((scale + dir * step).toFixed(2)), 0.3, 3);
+    if (nextScale === scale) return;
+
+    // 마우스가 이미지 영역에서 가리키는 위치(컨테이너 기준 좌표)
+    const rect = wrap.getBoundingClientRect();
+    const mx = e.clientX - rect.left; // 0 ~ rect.width
+    const my = e.clientY - rect.top;  // 0 ~ rect.height
+    const cx = rect.width / 2;
+    const cy = rect.height / 2;
+
+    // "현재 pan이 적용된 상태에서" 포인터가 가리키는 월드좌표를 유지하도록 pan 보정
+    // (rotate는 고려하지 않고, 현재 요구사항 수준에서는 충분히 자연스럽게 동작)
+    const k = nextScale / scale;
+
+    const newPanX = (pan.x - (mx - cx)) * k + (mx - cx);
+    const newPanY = (pan.y - (my - cy)) * k + (my - cy);
+
+    setScale(nextScale);
+
+    // 축소해서 100% 이하로 내려가면 pan 초기화(원하면 유지해도 됨)
+    if (nextScale <= 1.001) {
+      setPan({ x: 0, y: 0 });
+    } else {
+      setPan({ x: newPanX, y: newPanY });
+    }
+  };
+
+
+
+  return (
+    <div className="h-screen bg-white overflow-hidden flex flex-col">
+      {/* Header */}
+      <div className="border-b border-zinc-200">
+        <div className="px-6 py-4 flex items-start gap-4">
+          <div className="min-w-0">
+            <div className="text-lg font-semibold text-zinc-900 truncate" title={title}>
+              {title}
+            </div>
+            <div className="text-sm text-zinc-500">선택한 사진 정보</div>
+          </div>
+
+          <div className="ml-auto flex items-center gap-2">
+            <IconBtn icon={Save} label="저장" onClick={onSave} />
+            <IconBtn icon={X} label="닫기" variant="primary" onClick={() => window.close()} />
+
+          </div>
+        </div>
+      </div>
+
+      {/* Toolbar */}
+      <div className="px-6 py-3 border-b border-zinc-200 bg-zinc-50">
+        <div className="flex flex-wrap items-center gap-2">
+          <IconBtn icon={ZoomIn} label="확대" onClick={onZoomIn} />
+          <IconBtn icon={ZoomOut} label="축소" onClick={onZoomOut} />
+          <IconBtn icon={RotateCcw} label="좌회전" onClick={onRotateL} />
+          <IconBtn icon={RotateCw} label="우회전" onClick={onRotateR} />
+          <IconBtn icon={RefreshCw} label="초기화" onClick={onResetView} />
+          <IconBtn icon={Download} label="다운로드" onClick={onDownload} />
+
+          <div className="ml-auto text-sm text-zinc-500">
+            확대: <span className="font-semibold text-zinc-800">{Math.round(scale * 100)}%</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Body */}
+      <div className="min-h-0 flex-1 overflow-hidden px-6 py-5">
+        {/* Image */}
+        <div className="rounded-md border border-zinc-200 bg-white overflow-hidden">
+          <div className="bg-zinc-50 border-b border-zinc-200 px-4 py-2 flex items-center gap-2">
+            <span className="text-sm font-semibold text-zinc-800">선택한 사진</span>
+
+            {fileName && (
+              <span
+                className="text-xs text-zinc-500 truncate"
+                title={fileName}
+              >
+                ({fileName})
+              </span>
+            )}
+          </div>
+
+          {/* <div className="p-0"> ////rounded-md border border-zinc-200 bg-zinc-50 */} 
+            <div className="p-4 overflow-hidden">  
+              {/* 고정 높이(영역) 안에서 이미지 fit */}
+              <div
+                ref={imgWrapRef} 
+                className={[
+                  "relative w-full max-h-[420px] h-[40vh] overflow-hidden",
+                  canPan ? "cursor-grab" : "cursor-default",
+                  isPanning ? "cursor-grabbing" : "",
+                ].join(" ")}
+                onWheel={onWheelZoom}
+                onMouseDown={onPanMouseDown}
+                onMouseMove={onPanMouseMove}
+                onMouseUp={onPanMouseUp}
+                onMouseLeave={onPanMouseUp}
+              >
+                {imgUrl ? (
+                  <img
+                    src={imgUrl}
+                    alt={fileName || "photo"}
+                    draggable={false}
+                    className="absolute inset-0 w-full h-full object-contain select-none"
+                    style={{
+                      transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale}) rotate(${rotate}deg)`,
+                      transformOrigin: "center center",
+                    }}
+                  />
+                ) : (
+                  <div className="h-full flex items-center justify-center text-sm text-zinc-500">
+                    이미지가 없습니다.
+                  </div>
+                )}
+              </div>
+            {/* </div> */}
+
+          </div>
+        </div>
+
+        {/* Inputs */}
+        <div className="mt-4 rounded-md border border-zinc-200 bg-white overflow-hidden">
+          <div className="bg-zinc-50 border-b border-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-800">
+            사진 정보
+          </div>
+
+          <div className="p-4 grid grid-cols-1 gap-4">
+            <div>
+              <div className="mb-1 text-sm font-semibold text-zinc-700">사진 분류</div>
+              <select
+                value={cat}
+                onChange={(e) => setCat(e.target.value)}
+                // className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-800 outline-none hover:bg-zinc-50 focus:border-zinc-400"
+                className="w-full select-base" 
+              >
+                {CATS.map((c) => (
+                  <option key={c.key} value={c.key}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <div className="mb-1 text-sm font-semibold text-zinc-700">메모</div>
+              <textarea
+                value={memo}
+                onChange={(e) => setMemo(e.target.value)}
+                placeholder="메모를 입력하세요"
+                className="w-full min-h-[72px] rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-800 outline-none hover:bg-zinc-50 focus:border-zinc-400"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Bottom helper */}
+      <div className="border-t border-zinc-200 bg-white px-6 py-3 text-xs text-zinc-500">
+        팁: 마우스 휠로 이미지 확대/축소 됩니다.
+      </div>
+    </div>
+  );
+}
