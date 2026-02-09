@@ -2,43 +2,91 @@
  * Enter / Shift+Enter 키로 포커스 이동
  * - Enter        : 다음 필드
  * - Shift+Enter  : 이전 필드
+ *
+ * @param {KeyboardEvent} e
+ * @param {HTMLElement} scopeEl  // 선택: 특정 컨테이너 내부로 제한(모달용)
+ * @returns {boolean}  // true: 포커스 이동 성공, false: 이동 없음
  */
-export function moveFocusOnEnter(e) {
-  if (e.key !== "Enter") return;
+export function moveFocusOnEnter(e, scopeEl) {
+  if (e.key !== "Enter") return false;
 
   // textarea는 줄바꿈 유지하고 싶으면 제외
-  if (e.target.tagName === "TEXTAREA") return;
+  if (e.target.tagName === "TEXTAREA") return false;
 
   e.preventDefault();
 
+  const root = scopeEl || document;
+
   const focusable = Array.from(
-    document.querySelectorAll(
+    root.querySelectorAll(
       'input, select, textarea, button, [tabindex]:not([tabindex="-1"])'
     )
-  ).filter(
-    (el) =>
-      !el.disabled &&
-      !el.readOnly &&
-      el.offsetParent !== null
-  );
+  ).filter((el) => !el.disabled && !el.readOnly && el.offsetParent !== null);
 
   const idx = focusable.indexOf(e.target);
-
-  if (idx === -1) return;
+  if (idx === -1) return false;
 
   // Shift + Enter → 이전
   if (e.shiftKey) {
     if (idx - 1 >= 0) {
       focusable[idx - 1].focus();
+      return true;
     }
-    return;
+    return false;
   }
 
   // Enter → 다음
   if (idx + 1 < focusable.length) {
     focusable[idx + 1].focus();
+    return true;
   }
+
+  // 마지막이면 이동 없음
+  return false;
 }
+
+
+/**
+ * Enter / Shift+Enter 키로 포커스 이동
+ * - Enter        : 다음 필드
+ * - Shift+Enter  : 이전 필드
+ */
+// export function moveFocusOnEnter(e) {
+//   if (e.key !== "Enter") return;
+
+//   // textarea는 줄바꿈 유지하고 싶으면 제외
+//   if (e.target.tagName === "TEXTAREA") return;
+
+//   e.preventDefault();
+
+//   const focusable = Array.from(
+//     document.querySelectorAll(
+//       'input, select, textarea, button, [tabindex]:not([tabindex="-1"])'
+//     )
+//   ).filter(
+//     (el) =>
+//       !el.disabled &&
+//       !el.readOnly &&
+//       el.offsetParent !== null
+//   );
+
+//   const idx = focusable.indexOf(e.target);
+
+//   if (idx === -1) return;
+
+//   // Shift + Enter → 이전
+//   if (e.shiftKey) {
+//     if (idx - 1 >= 0) {
+//       focusable[idx - 1].focus();
+//     }
+//     return;
+//   }
+
+//   // Enter → 다음
+//   if (idx + 1 < focusable.length) {
+//     focusable[idx + 1].focus();
+//   }
+// }
 
 
 /**

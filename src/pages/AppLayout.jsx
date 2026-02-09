@@ -36,16 +36,14 @@ export default function AppLayout() {
           { label: "문자 발송 내역", path: "/send/history" },
           { label: "견적서 문자 발송", path: "/send/estimate" },
           { label: "명세서 문자 발송", path: "/send/statement" },
-          { label: "국토부 정비이력 전송", path: "/send/mol" },
-          { label: "타견적 국토부 이력 전송", path: "/send/mol-other" },
+          { label: "국토부 정비이력 전송", path: "/send/repair" },
         ],
       },
       {
         key: "data",
         label: "데이터 관리",
         items: [
-          { label: "공임 데이터 조회", path: "/data/labor" },
-          { label: "케미칼 항목 설정", path: "/data/chemical" },
+          { label: "케미칼 항목 설정", path: "/chemical" },
         ],
       },
       {
@@ -53,7 +51,6 @@ export default function AppLayout() {
         label: "설정",
         items: [
           { label: "기초 설정", path: "/settings/basic" },
-          { label: "발신번호 등록", path: "/settings/caller" },
         ],
       },
     ],
@@ -85,13 +82,6 @@ export default function AppLayout() {
                 draggable={false}
               />
               <AppHeader compact />
-
-              {/* <div className="leading-tight">
-                <div className="text-xl font-bold tracking-tight text-gray-900">
-                  자동차 정비 견적관리
-                  <span className="ml-1 text-green-700">EST2026</span>
-                </div>
-              </div> */}
 
             </button>
 
@@ -201,40 +191,3 @@ function Dropdown({ label, open, onToggle, items, onPick }) {
   );
 }
 
-
-// function Dropdown({ label, open, onToggle, items, onPick }) {
-//   return (
-//     <div className="relative">
-//       <button
-//         onClick={onToggle}
-//         className={[
-//           "h-9 px-3 rounded-md text-sm font-medium transition flex items-center gap-1",
-//           open ? "bg-gray-900 text-white" : "text-gray-700 hover:bg-gray-100",
-//         ].join(" ")}
-//       >
-//         {label}
-//         <span className={open ? "text-white/80" : "text-gray-400"}>▾</span>
-//       </button>
-
-//       {open && (
-//         // <div className="absolute left-1/2 top-10 -translate-x-1/2 min-w-[180px] max-w-[240px] bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
-//         <div className="absolute left-1/2 top-10 -translate-x-1/2 min-w-[180px] w-max max-w-[calc(100vw-24px)] z-50 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
-
-//           <div className="py-1">
-//             {items.map((it, idx) => (
-//               <button
-//                 key={idx}
-//                 type="button"
-//                 onClick={() => onPick(it.path)}
-//                 className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                
-//               >
-//                 {it.label}
-//               </button>
-//             ))}
-//           </div>
-//         </div>
-//       )}
-//     </div>
-//   );
-// }

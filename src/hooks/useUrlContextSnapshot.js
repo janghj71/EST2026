@@ -11,7 +11,7 @@ import { useEffect, useState } from "react";
 export function setUrlContextSnapshot(storageKey, nextCtx) {
   try {
     sessionStorage.setItem(storageKey, JSON.stringify(nextCtx ?? {}));
-  } catch {}
+  } catch { /* empty */ }
 }
 
 export function useUrlContextSnapshot({
@@ -44,7 +44,7 @@ export function useUrlContextSnapshot({
 
     try {
       sessionStorage.setItem(storageKey, JSON.stringify(mapped));
-    } catch {}
+    } catch { /* empty */ }
 
     setCtx(mapped);
 

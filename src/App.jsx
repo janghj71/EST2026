@@ -19,7 +19,15 @@ import InsurersPage from "./pages/InsurersPage";
 import InsurerContactsPage from "./pages/InsurerContactsPage";
 import UserSettingsPage from "./pages/UserSettingsPage";
 import SmsSenderPage from "./pages/SmsSenderPage";
+import SmsHistoryPage from "./pages/SmsHistoryPage";
+import ChemicalItemsPage from "./pages/ChemicalItemsPage";
+import RepairHistorySend from "./pages/RepairHistorySend";
+
 import EstimateEditPage from "./pages/estimate/EstimateEditPage";
+import LaborItemsPopup from "./pages/estimate/LaborItemsPopup";
+import PaintItemsPopup from "./pages/estimate/PaintItemsPopup";
+import ChemicalItemsPopup from "./pages/estimate/ChemicalItemsPopup";
+import PartLookupPopup from "./pages/estimate/PartLookupPopup";
 
 export default function App() {
   return (
@@ -32,6 +40,10 @@ export default function App() {
         <Route path="/estsmsend" element={<SmsSend />} />
         <Route path="/estimate-memo" element={<EstimateMemo />} />
         <Route path="/estimate-deposit" element={<DepositPopup />} />
+        <Route path="/labor-items" element={<LaborItemsPopup />} />
+        <Route path="paint-items" element={<PaintItemsPopup />} />
+        <Route path="chemical-items" element={<ChemicalItemsPopup />} />
+        <Route path="part-lookup" element={<PartLookupPopup />} />
 
 
         {/* 상단 고정 레이아웃 */}
@@ -41,6 +53,9 @@ export default function App() {
           <Route path="/estimate-edit/:est_serial" element={<EstimateEditPage />} />
           
           {/* 나중에 여기로 페이지들 계속 추가 */}
+          <Route path="/send/repair" element={<RepairHistorySend />} />
+          <Route path="/send/history" element={<SmsHistoryPage />} />
+          <Route path="chemical" element={<ChemicalItemsPage />} />
           <Route path="/estimate/normal" element={<div className="p-6">일반 견적</div>} />
 
           <Route path="settings">

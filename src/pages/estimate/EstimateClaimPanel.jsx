@@ -4,7 +4,8 @@ import Field from "../../components/Field";
 import FormRow from "../../components/FormRow";
 import MoneyInput from "../../components/MoneyInput";
 import IconBtn from "../../components/IconBtn";
-import { Plus, X } from "lucide-react";
+import { Plus, X,Trash2 } from "lucide-react";
+import ComboInput from "../../components/ComboInput";
 
 /**
  * 청구처 (화면만 코딩)
@@ -82,7 +83,7 @@ export default function EstimateClaimPanel({ master, setMaster, inputCls, select
     []
   );
   const misrateOptions = useMemo(
-    () => Array.from({ length: 21 }).map((_, i) => String(i * 5)),
+    () => Array.from({ length: 21 }).map((_, i) => String(100 - i * 5)),
     []
   );
 
@@ -96,7 +97,7 @@ return (
   <div className="flex flex-col gap-2">
     <div className="flex items-center gap-2">
       <IconBtn icon={Plus} label="보험사 추가" onClick={addClaim} disabled={claims.length >= 2} />
-      <IconBtn icon={X} label="보험사 삭제" onClick={removeClaim} disabled={safeSelectedIdx < 0} />
+      <IconBtn icon={Trash2} label="보험사 삭제" onClick={removeClaim} disabled={safeSelectedIdx < 0} />
       {/* <div className="ml-auto text-xs text-zinc-500">청구 보험사 최대 2개</div> */}
     </div>
 
@@ -176,7 +177,7 @@ return (
               />
             </FormRow>
 
-            <FormRow label="과실율">
+            {/* <FormRow label="과실율">
               <select
                 className={selectCls}
                 value={String(current?.misrate ?? "")}
@@ -188,16 +189,37 @@ return (
                   </option>
                 ))}
               </select>
-            </FormRow>
+            </FormRow> */}
 
-            <FormRow label="담보">
-              <input
-                className={inputCls}
-                value={current?.dambo ?? ""}
-                onChange={(e) => setClaim(safeSelectedIdx, "dambo", e.target.value)}
-                placeholder="담보"
+            <FormRow label="과실율">
+              <ComboInput
+                value={String(current?.misrate ?? "")}
+                onChange={(v) => {
+                  let n = Number(String(v ?? "").replace(/[^\d]/g, ""));
+                  if (!Number.isFinite(n)) n = 0;
+                  if (n > 100) n = 100;
+                  setClaim(safeSelectedIdx, "misrate", String(n));
+                }}
+                options={misrateOptions}      
+                placeholder="0~100"
+                inputClassName={inputCls}     
+                maxHeightClassName="max-h-64"
+                showAllWhenNoMatch
               />
             </FormRow>
+            
+            <FormRow label="담보">
+              <select
+                className={selectCls}
+                value={current?.dambo ?? ""}
+                onChange={(e) => setClaim(safeSelectedIdx, "dambo", e.target.value)}
+              >
+                <option value="">선택</option>
+                <option value="자차">자차</option>
+                <option value="대물">대물</option>
+              </select>
+            </FormRow>
+
 
             <FormRow label="사고일자">
               <input

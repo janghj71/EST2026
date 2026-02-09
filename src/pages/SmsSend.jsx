@@ -70,7 +70,7 @@ export default function SmsSend() {
   }, [snap?.est_serial, snap?.carno, snap?.hp, snap?.isset, snap?.inday]);
 
   /**
-   * ✅ 부모(InsuranceEstimate)에서 선택 변경 시 ctx 갱신 메시지 받기
+   * 부모(InsuranceEstimate)에서 선택 변경 시 ctx 갱신 메시지 받기
    * - 받은 값도 sessionStorage에 저장해서 F5에도 유지
    * PhotoViewer와 동일한 메시지 수신 패턴 
    */
@@ -182,13 +182,13 @@ ${dateText} 에 상담받으신 점검정비견적서입니다.
           </div>
 
           <div className="ml-auto flex items-center gap-2">
-            <button
+            {/* <button
               type="button"
               onClick={onSearchHistory}
               className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-50"
             >
               문자발송 조회
-            </button>
+            </button> */}
 
             <IconBtn
               icon={X}
@@ -226,7 +226,7 @@ ${dateText} 에 상담받으신 점검정비견적서입니다.
           </Row>
 
           <Row label="발신번호">
-            {/* ✅ 콤보박스는 부모창 스타일(select-base)로 */}
+            {/* 콤보박스는 부모창 스타일(select-base)로 */}
             <select
               value={sendNo}
               onChange={(e) => setSendNo(e.target.value)}

@@ -18,6 +18,43 @@ import { Plus, X } from "lucide-react";
  * req  : reqtotal
  */
 
+
+function SettleRow({ label, children }) {
+  return (
+    <div className="grid grid-cols-[92px_minmax(0,1fr)] items-center gap-2">
+      <div className="text-sm text-gray-600 whitespace-nowrap">{label}</div>
+      <div className="min-w-0 w-full">{children}</div>
+    </div>
+  );
+}
+
+function SettleStat({ label, valueText, emphasize = false, red = false, labelRed = false }) {
+  return (
+    <div className="grid grid-cols-[92px_minmax(0,1fr)] items-center gap-2">
+      <div 
+        // className="text-sm text-gray-600 whitespace-nowrap"
+        className={[
+          "text-sm whitespace-nowrap",
+          labelRed ? "font-semibold text-red-600" : "text-gray-600",
+        ].join(" ")} 
+      >
+        {label}
+
+      </div>
+      <div
+        className={[
+          "h-9 flex items-center justify-end rounded-md border border-zinc-200 bg-zinc-50 px-2 text-sm",
+          emphasize ? "font-semibold text-zinc-900" : "text-zinc-700",
+          red ? "text-red-600" : "",
+        ].join(" ")}
+      >
+        {valueText}
+      </div>
+    </div>
+  );
+}
+
+
 export default function EstimateSettlePanel({ master, setMaster, inputCls, selectCls }) {
   const claims = Array.isArray(master?.claims) ? master.claims : [];
   const [selectedIdx, setSelectedIdx] = useState(() => (claims.length ? 0 : -1));
@@ -50,60 +87,6 @@ export default function EstimateSettlePanel({ master, setMaster, inputCls, selec
     return Number.isFinite(x) ? x : 0;
   };
 
-  // 부가세율(기본 10)
-  const vatRate = useMemo(() => n(current?.vatRate ?? 10), [current]);
-
-  // 화면 계산(원 단위 반올림)
-  const endpaysum = useMemo(() => {
-    if (!current) return 0;
-    return n(current.rxao) + n(current.bs) + n(current.tg) + n(current.p2) + n(current.p4);
-  }, [current]);
-
-  const endpartsum = useMemo(() => {
-    if (!current) return 0;
-    return n(current.newpart) + n(current.oldpart) + n(current.p1);
-  }, [current]);
-
-  const dcsum = useMemo(() => {
-    if (!current) return 0;
-    return n(current.depreci_amt) + n(current.rem_amt);
-  }, [current]);
-
-  // 도장정산(pendpay)도 화면에서 계산 값으로 보여주되, 입력 가능하게 유지(델파이처럼 별도 박스)
-  const pendpayCalc = useMemo(() => {
-    if (!current) return 0;
-    // 도장정산 = 도장공임(p2) + 도장재료대(p1) + 가열건조비(p4) ? (이미지상 도장정산은 별도)
-    // 여기선 화면용으로 p2 + p1 + p4 로 잡음 (원하면 규칙 바꿔줌)
-    return n(current.p2) + n(current.p1) + n(current.p4);
-  }, [current]);
-
-  const endtotal = useMemo(() => {
-    if (!current) return 0;
-    return endpaysum + endpartsum - dcsum;
-  }, [current, endpaysum, endpartsum, dcsum]);
-
-  const endvat = useMemo(() => {
-    if (!current) return 0;
-    return Math.round((endtotal * vatRate) / 100);
-  }, [current, endtotal, vatRate]);
-
-  const totalvat = useMemo(() => {
-    if (!current) return 0;
-    return endtotal + endvat;
-  }, [current, endtotal, endvat]);
-
-  const misrate = useMemo(() => n(current?.misrate ?? 0), [current]);
-  const mis = useMemo(() => {
-    if (!current) return 0;
-    return Math.round((totalvat * misrate) / 100);
-  }, [current, totalvat, misrate]);
-
-  const exemp = useMemo(() => n(current?.insura_exemp ?? 0), [current]);
-
-  const reqtotal = useMemo(() => {
-    if (!current) return 0;
-    return totalvat - mis - exemp;
-  }, [current, totalvat, mis, exemp]);
 
   const fmt = (v) => (Number.isFinite(v) ? v.toLocaleString() : "0");
 
@@ -113,43 +96,11 @@ export default function EstimateSettlePanel({ master, setMaster, inputCls, selec
       isSel ? "border-zinc-400 bg-zinc-100" : "border-zinc-200 bg-white hover:bg-zinc-50"
     }`;
 
-  // “화면만”이므로 추가/삭제는 claims를 그대로 사용(청구처에서 추가/삭제하는 게 정상)
-  const addHint = () => alert("청구처에서 보험사 추가 후 정산에서 선택하세요.");
-  const delHint = () => alert("청구처에서 보험사 삭제 후 정산이 따라갑니다.");
-
-  // Row 레이아웃(라벨/인풋 간격을 좁게)
-  const Row = ({ label, children, right }) => (
-    <div className={`grid grid-cols-[92px_minmax(0,1fr)] items-center gap-2 ${right ? "justify-items-end" : ""}`}>
-      <div className="text-sm text-gray-600 whitespace-nowrap">{label}</div>
-      <div className="min-w-0 w-full">{children}</div>
-    </div>
-  );
-
-  const Stat = ({ label, value, emphasize, red }) => (
-    <div className="grid grid-cols-[92px_minmax(0,1fr)] items-center gap-2">
-      <div className="text-sm text-gray-600 whitespace-nowrap">{label}</div>
-      <div
-        className={[
-          "h-9 flex items-center justify-end rounded-md border border-zinc-200 bg-zinc-50 px-2 text-sm",
-          emphasize ? "font-semibold text-zinc-900" : "text-zinc-700",
-          red ? "text-red-600" : "",
-        ].join(" ")}
-      >
-        {fmt(value)}
-      </div>
-    </div>
-  );
 
   const boxCls = "rounded-md border border-zinc-200 bg-white p-3 shadow-xs";
 
   return (
     <div className="flex flex-col gap-3">
-      {/* 상단 버튼/안내 */}
-      {/* <div className="flex items-center gap-2">
-        <IconBtn icon={Plus} label="보험사 추가" onClick={addHint} />
-        <IconBtn icon={X} label="보험사 삭제" onClick={delHint} />
-        <div className="ml-auto text-xs text-zinc-500">보험사 선택 시 정산 금액이 바뀜</div>
-      </div> */}
 
       {/* 상단: 보험사 목록 */}
       <div className="rounded-md border border-zinc-200 bg-white overflow-hidden">
@@ -184,130 +135,109 @@ export default function EstimateSettlePanel({ master, setMaster, inputCls, selec
         </div>
       ) : (
         <div className="flex flex-col gap-2">
-          {/* 좌측(공임/부품/차감) + 우측(합계/과실/면책/청구) 를 “상하로” 2박스 구성 */}
           <div className={boxCls}>
-            <div className="text-sm font-semibold text-zinc-800 mb-2">정산 항목</div>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+              <div className="text-sm font-semibold text-zinc-800">공임</div>
+              <div className="text-sm font-semibold text-zinc-800">부품</div>
 
-            {/* 공임/부품/차감: 2열(520px에서도 안정) */}
-            <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-              <div className="flex flex-col gap-2">
-                <div className="text-xs font-semibold text-zinc-500">공임</div>
-                <Row label="탈착교환">
-                  <MoneyInput value={current.rxao ?? ""} onChange={(v) => setClaim(safeSelectedIdx, "rxao", v)} />
-                </Row>
-                <Row label="판금교정">
-                  <MoneyInput value={current.bs ?? ""} onChange={(v) => setClaim(safeSelectedIdx, "bs", v)} />
-                </Row>
-                <Row label="견인,기타">
-                  <MoneyInput value={current.tg ?? ""} onChange={(v) => setClaim(safeSelectedIdx, "tg", v)} />
-                </Row>
-                <Row label="도장공임">
-                  <MoneyInput value={current.p2 ?? ""} onChange={(v) => setClaim(safeSelectedIdx, "p2", v)} />
-                </Row>
-                <Row label="가열건조비">
-                  <MoneyInput value={current.p4 ?? ""} onChange={(v) => setClaim(safeSelectedIdx, "p4", v)} />
-                </Row>
+              <SettleStat label="탈착교환" value={n(current.rxao)} />
+              <SettleStat label="순정부품" value={n(current.newpart)} />
+
+              <SettleStat label="판금교정" value={n(current.bs)} />
+              <SettleStat label="중고부품" value={n(current.oldpart)} />
+
+              <SettleStat label="견인,기타" value={n(current.tg)} />
+              <SettleStat label="도장재료대" value={n(current.p1)} />
+
+              <SettleStat label="도장공임" value={n(current.p2)} />
+
+              <div className="grid grid-cols-[92px_minmax(0,1fr)] items-center gap-2">
+                <div className="text-sm font-semibold text-zinc-800 whitespace-nowrap">차감</div>
+                <div className="h-9" />
               </div>
 
-              <div className="flex flex-col gap-2">
-                <div className="text-xs font-semibold text-zinc-500">부품</div>
-                <Row label="순정부품">
-                  <MoneyInput value={current.newpart ?? ""} onChange={(v) => setClaim(safeSelectedIdx, "newpart", v)} />
-                </Row>
-                <Row label="중고부품">
-                  <MoneyInput value={current.oldpart ?? ""} onChange={(v) => setClaim(safeSelectedIdx, "oldpart", v)} />
-                </Row>
-                <Row label="도장재료대">
-                  <MoneyInput value={current.p1 ?? ""} onChange={(v) => setClaim(safeSelectedIdx, "p1", v)} />
-                </Row>
+              <SettleStat label="가열건조비" value={n(current.p4)} />
+              <SettleRow label="감가상각">
+                <MoneyInput
+                  value={current.depreci_amt ?? ""}
+                  onChange={(v) => setClaim(safeSelectedIdx, "depreci_amt", v)}
+                />
+              </SettleRow>
 
-                <div className="mt-2 text-xs font-semibold text-zinc-500">차감</div>
-                <Row label="감가상각">
-                  <MoneyInput
-                    value={current.depreci_amt ?? ""}
-                    onChange={(v) => setClaim(safeSelectedIdx, "depreci_amt", v)}
-                  />
-                </Row>
-                <Row label="잔존물">
-                  <MoneyInput value={current.rem_amt ?? ""} onChange={(v) => setClaim(safeSelectedIdx, "rem_amt", v)} />
-                </Row>
-              </div>
+              <SettleStat label="도장정산" value={n(current.pendpay)} emphasize />
+              <SettleRow label="잔존물">
+                <MoneyInput
+                  value={current.rem_amt ?? ""}
+                  onChange={(v) => setClaim(safeSelectedIdx, "rem_amt", v)}
+                />
+              </SettleRow>
             </div>
+
           </div>
 
           <div className={boxCls}>
             <div className="text-sm font-semibold text-zinc-800 mb-2">합계</div>
 
-            <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-              {/* 좌: 소계류 */}
-              <div className="flex flex-col gap-2">
-                <Stat label="도장정산" value={n(current.pendpay ?? pendpayCalc)} emphasize />
-                <Stat label="공임소계" value={n(current.endpaysum ?? endpaysum)} emphasize />
-                <Stat label="부품소계" value={n(current.endpartsum ?? endpartsum)} emphasize />
-                <Stat label="차감소계" value={n(current.dcsum ?? dcsum)} emphasize />
+            
+            <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+              <SettleStat label="공임소계" value={n(current.endpaysum)} emphasize />
+              <SettleStat label="부품소계" value={n(current.endpartsum)} emphasize />
+
+              <SettleStat label="차감소계" value={n(current.dcsum)} emphasize />
+              <SettleStat label="소계" value={n(current.endtotal)} emphasize />
+
+              <div className="col-span-2">
+                <div className="grid grid-cols-[92px_123px_minmax(0,1fr)] items-center gap-2">
+                  <div className="text-sm text-gray-600 whitespace-nowrap">부가세</div>
+
+                  <select
+                    className={selectCls}
+                    value={String(current.vatRate ?? 10)}
+                    onChange={(e) => setClaim(safeSelectedIdx, "vatRate", e.target.value)}
+                  >
+                    <option value="0">0</option>
+                    <option value="10">10</option>
+                    <option value="9.5">9.5</option>
+                    <option value="9">9</option>
+                    <option value="8">8</option>
+                  </select>
+
+                  <div className="h-9 w-full min-w-0 flex items-center justify-end rounded-md border border-zinc-200 bg-zinc-50 px-2 text-sm text-zinc-700">
+                    {fmt(n(current.endvat))}
+                  </div>
+                </div>
               </div>
 
-              {/* 우: 소계/부가세/합계 */}
-              <div className="flex flex-col gap-2">
-                <Stat label="소계" value={n(current.endtotal ?? endtotal)} emphasize />
-
-                <Row label="부가세">
-                  <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-2 items-center">
-                    <select
-                      className={selectCls}
-                      value={String(current.vatRate ?? 10)}
-                      onChange={(e) => setClaim(safeSelectedIdx, "vatRate", e.target.value)}
-                    >
-                      <option value="0">0</option>
-                      <option value="10">10</option>
-                    </select>
-                    <div className="h-9 flex items-center justify-end rounded-md border border-zinc-200 bg-zinc-50 px-2 text-sm text-zinc-700">
-                      {fmt(n(current.endvat ?? endvat))}
-                    </div>
+              <div className="col-span-2">
+                <div className="grid grid-cols-[92px_minmax(0,1fr)] items-center gap-2">
+                  <div className="text-sm text-gray-600 whitespace-nowrap">합계</div>
+                  <div className="h-9 flex items-center justify-end rounded-md border border-zinc-200 bg-zinc-50 px-2 text-sm font-semibold text-zinc-900">
+                    {fmt(n(current.totalvat))}
                   </div>
-                </Row>
-
-                <Stat label="합계" value={n(current.totalvat ?? totalvat)} emphasize />
+                </div>
               </div>
             </div>
 
-            <div className="mt-3 border-t border-zinc-200 pt-3 grid grid-cols-2 gap-x-6 gap-y-3">
-              {/* 과실/면책/청구 */}
-              <div className="flex flex-col gap-2">
-                <Row label="과실상계">
-                  <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-2 items-center">
-                    <select
-                      className={selectCls}
-                      value={String(current.misrate ?? 0)}
-                      onChange={(e) => setClaim(safeSelectedIdx, "misrate", e.target.value)}
-                    >
-                      {Array.from({ length: 21 }).map((_, i) => {
-                        const v = i * 5;
-                        return (
-                          <option key={v} value={v}>
-                            {v}
-                          </option>
-                        );
-                      })}
-                    </select>
-                    <div className="h-9 flex items-center justify-end rounded-md border border-zinc-200 bg-zinc-50 px-2 text-sm text-zinc-700">
-                      {fmt(n(current.mis ?? mis))}
-                    </div>
-                  </div>
-                </Row>
 
-                <Row label="면책금">
+            <div className="mt-2 border-t border-zinc-200 pt-2 flex flex-col gap-2">
+              <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+                <SettleStat label="과실상계율" valueText={`${fmt(n(current.misrate))} %`} />
+                <SettleStat label="과실상계금액" valueText={fmt(n(current.mis))} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+                <SettleRow label="면책금">
                   <MoneyInput
                     value={current.insura_exemp ?? ""}
                     onChange={(v) => setClaim(safeSelectedIdx, "insura_exemp", v)}
                   />
-                </Row>
-              </div>
+                </SettleRow>
 
-              <div className="flex flex-col gap-2">
-                <Stat label="청구액" value={n(current.reqtotal ?? reqtotal)} emphasize red />
+                <SettleStat label="청구금액" value={n(current.reqtotal)} emphasize red labelRed />
               </div>
             </div>
+
+
           </div>
         </div>
       )}

@@ -4,7 +4,7 @@ import IconBtn from "../../components/IconBtn";
 import {
   User,
   Wrench,
-  Paintbrush,
+  Paintbrush, FlaskConical,
   Search,
   CheckCircle,
   Image as ImageIcon,
@@ -13,13 +13,20 @@ import {
   Save,
 } from "lucide-react";
 
-export default function EstimateHeaderBar({ onSaveAndList }) {
+export default function EstimateHeaderBar({ 
+  onSaveAndList,
+  onOpenLaborItems,
+  onOpenPaintItems,
+  onOpenChemicalItems,
+  onOpenPartLookup, 
+}) {
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <IconBtn icon={User} label="청구처/정산" onClick={() => alert("TODO")} />
-      <IconBtn icon={Wrench} label="공임항목" onClick={() => alert("TODO")} />
-      <IconBtn icon={Paintbrush} label="도장항목" onClick={() => alert("TODO")} />
-      <IconBtn icon={Search} label="부품조회" onClick={() => alert("TODO")} />
+      <IconBtn icon={Wrench} label="공임항목" onClick={onOpenLaborItems} />
+      <IconBtn icon={Paintbrush} label="도장항목" onClick={onOpenPaintItems} />
+      <IconBtn icon={FlaskConical} label="케미칼항목" onClick={onOpenChemicalItems} />
+      <IconBtn icon={Search} label="부품조회" onClick={onOpenPartLookup} />
+      
       <IconBtn icon={CheckCircle} label="중복/견적점검" onClick={() => alert("TODO")} />
 
       <div className="ml-auto flex items-center gap-2">

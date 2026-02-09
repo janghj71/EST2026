@@ -1,14 +1,13 @@
 // EST2026/src/pages/estimate/EstimateSidePanel.jsx
 import React, { useMemo, useState } from "react";
-import Field from "../../components/Field";
+import { Info } from "lucide-react";
+
 import FormRow from "../../components/FormRow";
 import CheckBox from "../../components/CheckBox";
 import MoneyInput from "../../components/MoneyInput";
 import IconBtn from "../../components/IconBtn";
-import { Info } from "lucide-react";
 import { moveFocusOnEnter } from "../../utils/focusUtils";
 import ComboInput from "../../components/ComboInput";
-
 import EstimateClaimPanel from "./EstimateClaimPanel";
 import EstimateSettlePanel from "./EstimateSettlePanel";
 
@@ -159,6 +158,13 @@ function LaborPanel({
   colorOptions,
   ReadonlyBox,
 }) {
+
+  const normalizePaintColor = (v) =>
+    (v ?? "")
+      .toString()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, ""); // ★ 대문자 영숫자만 허용
+
   return (
     <div className="flex flex-col gap-2 p-1 ms-2 me-2">
       <FormRow label="대체차종">
@@ -252,8 +258,8 @@ function LaborPanel({
       <FormRow label="도장코트">
         <select
           className={selectCls}
-          value={master?.coat ?? "2"}
-          onChange={(e) => set("coat")(e.target.value)}
+          value={master?.pntcot_code ?? "2"}
+          onChange={(e) => set("pntcot_code")(e.target.value)}
         >
           <option value="1">1 코트</option>
           <option value="2">2 코트</option>
@@ -265,8 +271,8 @@ function LaborPanel({
       <FormRow label="도장도료">
         <select
           className={selectCls}
-          value={master?.paintMat ?? "2"}
-          onChange={(e) => set("paintMat")(e.target.value)}
+          value={master?.pnt_m ?? "2"}
+          onChange={(e) => set("pnt_m")(e.target.value)}
         >
           <option value="1">1 유용성</option>
           <option value="2">2 수용성</option>
@@ -276,10 +282,13 @@ function LaborPanel({
       <FormRow label="도장칼라">
         <ComboInput
           value={master?.paintColor ?? ""}
-          onChange={set("paintColor")}
+          // onChange={set("paintColor")}
+          onChange={(v) => set("paintColor")(v)} 
+          normalize={normalizePaintColor}
           options={colorOptions}
           placeholder="예: 1W / AH3"
           inputClassName={inputCls}
+          showAllWhenNoMatch
         />
       </FormRow>
 

@@ -1,5 +1,5 @@
 // src/pages/estimate/EstimateEditPage.jsx
-import React, { useMemo, useState, useCallback } from "react";
+import React, { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import EstimateHeaderBar from "./EstimateHeaderBar";
@@ -8,6 +8,7 @@ import EstimateSidePanel from "./EstimateSidePanel";
 import EstimateItemsTable from "./EstimateItemsTable";
 
 import AlertModal from "../../components/AlertModal";
+import { openCenteredWindow } from "../../utils/popup";
 import { formatNumber } from "../../utils/numberFormat";
 
 // 화면만 코딩: 더미 데이터
@@ -43,8 +44,9 @@ const seedMaster = {
   mhB: 40000,
   mhP: 40000,
   bakeAmt: 15869,
-  coat: "2코트",
-  paintMat: "2 수용성",
+  pntcot_name: "2코트",
+  pntcot_code: "2",
+  pnt_m: "2",
   detachWork: "3 연합회",
   paintWork: "3 연합회",
   manager: "책임자",
@@ -68,62 +70,294 @@ export default function EstimateEditPage() {
   const [master, setMaster] = useState(seedMaster);
   const [rows, setRows] = useState(seedRows());
 
-  const [sortMode, setSortMode] = useState("block"); // "block" | "free"
+  const [sortMode, setSortMode] = useState("block"); 
+  const [laborOpen, setLaborOpen] = useState(false);
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [selectedOrgSeq, setSelectedOrgSeq] = useState(null);
+
+  const laborWinRef = useRef(null);
+  const paintWinRef = useRef(null);
+  const chemicalWinRef = useRef(null);
+  const partLookupWinRef = useRef(null);
+
+  const childWinsRef = useRef(new Set());
+  
+  
+  const registerChildWin = (w) => {
+    if (!w) return;
+    childWinsRef.current.add(w);
+    try { if (w.closed) childWinsRef.current.delete(w); } catch {}
+  };
+  
+  const closeAllChildWins = () => {
+    childWinsRef.current.forEach((w) => {
+      try { if (w && !w.closed) w.close(); } catch {}
+    });
+    childWinsRef.current.clear();
+  };
+  
+  const openLaborItemsPopup = () => {
+    const estSerial = est_serial || "";
+    const carno = master?.carNo || "";
+    const codecar = master?.codecar || "";
+    const est_codecar = master?.est_codecar || "";
+    const carname = master?.carName || "";
+  
+    const url =
+      `/labor-items?est_serial=${encodeURIComponent(estSerial)}` +
+      `&carno=${encodeURIComponent(carno)}`+
+      `&codecar=${encodeURIComponent(codecar)}`+
+      `&est_codecar=${encodeURIComponent(est_codecar)}`+
+      `&carname=${encodeURIComponent(carname)}`;
+
+  
+    const payload = { est_serial: estSerial, carno, codecar, est_codecar, carname };
+
+    // 이미 열려 있으면 재사용 + ctx만 갱신
+    if (laborWinRef.current && !laborWinRef.current.closed) {
+      try {
+        laborWinRef.current.focus();
+        laborWinRef.current.postMessage({ type: "LABOR_ITEMS_SET_CTX", payload }, window.location.origin);
+        registerChildWin(laborWinRef.current);
+        return;
+      } catch {
+        laborWinRef.current = null;
+      }
+    }
+  
+    const win = openCenteredWindow(url, "laborItems", 1000, 1300, {
+      scrollbars: "yes",
+      resizable: "yes",
+    });
+  
+    laborWinRef.current = win;
+    registerChildWin(win);
+  
+    setTimeout(() => {
+      try {
+        if (win && !win.closed) {
+          win.postMessage({ type: "LABOR_ITEMS_SET_CTX", payload }, window.location.origin);
+        }
+      } catch { /* empty */ }
+    }, 200);
+  
+    setTimeout(() => {
+      try {
+        if (win && !win.closed) {
+          win.postMessage({ type: "LABOR_ITEMS_SET_CTX", payload }, window.location.origin);
+        }
+      } catch { /* empty */ }
+    }, 700);
+  };
+  
+  const openPaintItemsPopup = () => {
+    const estSerial = est_serial || "";
+    const carno = master?.carNo || "";
+    const pntcot_code = master?.pntcot_code || "";
+    const pnt_m = master?.pnt_m || "";
+
+    const safePntM = pnt_m === 1 || pnt_m === 2 ? pnt_m : 2;
+
+    const url =
+      `/paint-items?est_serial=${encodeURIComponent(estSerial)}` +
+      `&carno=${encodeURIComponent(carno)}` +
+      `&pntcot_code=${encodeURIComponent(pntcot_code)}`+
+      `&pnt_m=${encodeURIComponent(safePntM)}`;
+
+    const payload = {
+      est_serial: estSerial,
+      carno,
+      pntcot_code,
+      pnt_m: safePntM,
+    };
+
+    // 이미 열려 있으면 재사용 + ctx만 갱신
+    if (paintWinRef.current && !paintWinRef.current.closed) {
+      try {
+        paintWinRef.current.focus();
+        paintWinRef.current.postMessage({ type: "PAINT_ITEMS_SET_CTX", payload }, window.location.origin);
+        registerChildWin(paintWinRef.current);
+        return;
+      } catch {
+        paintWinRef.current = null;
+      }
+    }
+
+    const win = openCenteredWindow(url, "paintItems", 1100, 900, {
+      scrollbars: "yes",
+      resizable: "yes",
+    });
+
+    paintWinRef.current = win;
+    registerChildWin(win);
+
+    // 2회 전송(팝업 초기 렌더 타이밍 대비)
+    setTimeout(() => {
+      try {
+        if (win && !win.closed) {
+          win.postMessage({ type: "PAINT_ITEMS_SET_CTX", payload }, window.location.origin);
+        }
+      } catch { /* empty */ }
+    }, 200);
+
+    setTimeout(() => {
+      try {
+        if (win && !win.closed) {
+          win.postMessage({ type: "PAINT_ITEMS_SET_CTX", payload }, window.location.origin);
+        }
+      } catch { /* empty */ }
+    }, 700);
+  };
+
+  const openChemicalItemsPopup = () => {
+    const estSerial = est_serial || "";
+    const carno = master?.carNo || "";
+
+    // ChemicalItemsPage(기존)를 팝업 라우트로 분리했다는 전제
+    const url =
+      `/chemical-items?est_serial=${encodeURIComponent(estSerial)}` +
+      `&carno=${encodeURIComponent(carno)}`;
+
+    const payload = { est_serial: estSerial, carno };
+
+    // 이미 열려 있으면 재사용 + ctx만 갱신
+    if (chemicalWinRef.current && !chemicalWinRef.current.closed) {
+      try {
+        chemicalWinRef.current.focus();
+        chemicalWinRef.current.postMessage(
+          { type: "CHEM_ITEMS_SET_CTX", payload },
+          window.location.origin
+        );
+        registerChildWin(chemicalWinRef.current);
+        return;
+      } catch {
+        chemicalWinRef.current = null;
+      }
+    }
+
+    const win = openCenteredWindow(url, "chemicalItems", 1060, 900, {
+      scrollbars: "yes",
+      resizable: "yes",
+    });
+
+    chemicalWinRef.current = win;
+    registerChildWin(win);
+
+    // 2회 전송(팝업 초기 렌더 타이밍 대비)
+    setTimeout(() => {
+      try {
+        if (win && !win.closed) {
+          win.postMessage({ type: "CHEM_ITEMS_SET_CTX", payload }, window.location.origin);
+        }
+      } catch {
+        /* empty */
+      }
+    }, 200);
+
+    setTimeout(() => {
+      try {
+        if (win && !win.closed) {
+          win.postMessage({ type: "CHEM_ITEMS_SET_CTX", payload }, window.location.origin);
+        }
+      } catch {
+        /* empty */
+      }
+    }, 700);
+  };
+
+  const openPartLookupPopup = () => {
+    const estSerial = est_serial || "";
+    const carno = master?.carNo || "";
+  
+    const url =
+      `/part-lookup?est_serial=${encodeURIComponent(estSerial)}` +
+      `&carno=${encodeURIComponent(carno)}`;
+  
+    const payload = { est_serial: estSerial, carno };
+  
+    // 이미 열려 있으면 재사용 + ctx만 갱신
+    if (partLookupWinRef.current && !partLookupWinRef.current.closed) {
+      try {
+        partLookupWinRef.current.focus();
+        partLookupWinRef.current.postMessage(
+          { type: "PART_LOOKUP_SET_CTX", payload },
+          window.location.origin
+        );
+        registerChildWin(partLookupWinRef.current);
+        return;
+      } catch {
+        partLookupWinRef.current = null;
+      }
+    }
+  
+    const win = openCenteredWindow(url, "partLookup", 700, 900, {
+      scrollbars: "yes",
+      resizable: "yes",
+    });
+  
+    partLookupWinRef.current = win;
+    registerChildWin(win);
+  
+    // 2회 전송(팝업 초기 렌더 타이밍 대비)
+    setTimeout(() => {
+      try {
+        if (win && !win.closed) {
+          win.postMessage({ type: "PART_LOOKUP_SET_CTX", payload }, window.location.origin);
+        }
+      } catch { /* empty */}
+    }, 200);
+  
+    setTimeout(() => {
+      try {
+        if (win && !win.closed) {
+          win.postMessage({ type: "PART_LOOKUP_SET_CTX", payload }, window.location.origin);
+        }
+      } catch { /* empty */ }
+    }, 700);
+  };
+  
+
+  useEffect(() => {
+    const onMsg = (e) => {
+      if (e.origin !== window.location.origin) return;
+      const { type, payload } = e.data || {};
+      if (
+        type !== "LABOR_ITEMS_PICK" && 
+        type !== "PAINT_ITEMS_PICK" && 
+        type !== "CHEM_ITEMS_PICK" &&
+        type !== "PART_LOOKUP_PICK" 
+
+      ) return;
+  
+      // TODO: 여기서 payload를 rows에 반영(나중 단계)
+      console.log(`[${type}]`, payload);
+    };
+  
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, []);
+  
+  useEffect(() => {
+    const onBeforeUnload = () => closeAllChildWins();
+    const onUnload = () => closeAllChildWins();
+  
+    window.addEventListener("beforeunload", onBeforeUnload);
+    window.addEventListener("unload", onUnload);
+  
+    return () => {
+      closeAllChildWins();
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      window.removeEventListener("unload", onUnload);
+    };
+  }, []);
+  
 
   const selectedRow = useMemo(
     () => rows.find((r) => r.estb_orgseqno === selectedOrgSeq) ?? null,
     [rows, selectedOrgSeq]
   );
 
-  const totals = useMemo(() => {
-    const labor = rows.reduce((s, r) => s + (Number(r.paysum) || 0), 0);
-    const part = rows.reduce((s, r) => s + (Number(r.partsum) || 0), 0);
-    const supply = labor + part;
-    const vat = Math.floor(supply * 0.1);
-    const total = supply + vat;
-    return { labor, part, supply, vat, total };
-  }, [rows]);
-
-  // 즉시 행 추가(선택 라인 밑으로)
-  // const addRowBelow = useCallback(
-  //   (paykindToAdd) => {
-  //     if (!selectedRow) return;
-
-  //     const payno = selectedRow.payno;
-
-  //     // 같은 payno 블록 마지막 아래로 붙이기
-  //     let lastIdx = -1;
-  //     rows.forEach((r, i) => {
-  //       if (r.payno === payno) lastIdx = i;
-  //     });
-
-  //     const newOrg = Date.now(); // 화면만 코딩
-  //     const newRow = {
-  //       estb_orgseqno: newOrg,
-  //       estb_seqno: 0,
-  //       payno,
-  //       paykind: String(paykindToAdd), // '4' or '5'
-  //       workcode: "",
-  //       payname: "",
-  //       work: "",
-  //       qty: 0,
-  //       paysum: 0,
-  //       partsum: 0,
-  //       partCode: "",
-  //       molit: "",
-  //       state: "",
-  //     };
-
-  //     const next = [...rows];
-  //     next.splice(lastIdx + 1, 0, newRow);
-  //     setRows(next.map((r, i) => ({ ...r, estb_seqno: i + 1 })));
-  //     setSelectedOrgSeq(newOrg);
-  //   },
-  //   [rows, selectedRow]
-  // );
 
   const removeSelected = useCallback(() => {
     if (!selectedRow) return;
@@ -169,7 +403,13 @@ export default function EstimateEditPage() {
           </div>
 
           <div className="mt-2">
-            <EstimateHeaderBar onSaveAndList={handleSaveAndList} />
+            <EstimateHeaderBar 
+              onSaveAndList={handleSaveAndList} 
+              onOpenLaborItems={openLaborItemsPopup}
+              onOpenPaintItems={openPaintItemsPopup}
+              onOpenChemicalItems={openChemicalItemsPopup}
+              onOpenPartLookup={openPartLookupPopup} 
+            />
           </div>
         </div>
       </div>
@@ -217,6 +457,7 @@ export default function EstimateEditPage() {
           removeSelected();
         }}
       />
+
     </div>
   );
 }

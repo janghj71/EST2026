@@ -621,8 +621,8 @@ export default function InsuranceEstimate() {
 
   
   return (
-    // <div className="min-h-screen bg-zinc-50">
-    <div className="h-screen bg-zinc-50 flex flex-col overflow-hidden">
+    // <div className="h-screen bg-zinc-50 flex flex-col overflow-hidden">
+    <div className="bg-zinc-50 flex flex-col min-h-0 h-full overflow-hidden">
 
       {/* 1) 타이틀 */}
       <div className="sticky top-0 z-20 border-b bg-white/90 backdrop-blur">
@@ -645,8 +645,7 @@ export default function InsuranceEstimate() {
         </div>
       </div>
 
-      {/* <div className="mx-auto max-w-[1400px] px-4 py-4 pb-28"> */}
-      <div className="mx-auto max-w-[1400px] w-full px-4 py-4 flex-1 overflow-hidden flex flex-col">
+      <div className="mx-auto max-w-[1400px] w-full px-4 py-4 flex-1 min-h-0 overflow-hidden flex flex-col">
         {/* 2) Global Action (신규견적, 엑셀만 상단 고정) */}
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -667,7 +666,7 @@ export default function InsuranceEstimate() {
         </div>
 
         {/* 3) 조회/검색 */}
-        <div className="mb-4 rounded-md border border-zinc-200 bg-white p-3 shadow-sm">
+        <div className="mb-3 rounded-md border border-zinc-200 bg-white p-3 shadow-sm">
           <div className="flex flex-col gap-3">
             <div className="flex flex-wrap items-center gap-2">
               <div className="text-sm font-semibold text-zinc-800">입고일자</div>

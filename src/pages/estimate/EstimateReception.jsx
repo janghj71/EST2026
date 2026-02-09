@@ -1,9 +1,10 @@
 // EST2026/src/pages/estimate/EstimateReception.jsx
-import React from "react";
+import React, { useState } from "react";
 import Field from "../../components/Field";
 import { Info } from "lucide-react";
 import IconBtn from "../../components/IconBtn"; 
 import { moveFocusOnEnter } from "../../utils/focusUtils";
+import CarNameHelpModal from "./CarNameHelpModal";
 
 /**
  * 접수 요약 (첨부2/3 입력 순서 기준)
@@ -11,20 +12,29 @@ import { moveFocusOnEnter } from "../../utils/focusUtils";
  *   실제 input/select는 children으로 넣어야 함.
  */
 export default function EstimateReception({ master, setMaster }) {
+  const [carHelpOpen, setCarHelpOpen] = useState(false);
+
+  const applyCarHelpSelection = (sel) => {
+    // sel: { maker, car, model, carkind, cargrades }
+    set("carCode")(sel?.car?.codecar ?? "");
+    set("carName")(sel?.car?.carname ?? "");
+
+    set("modelCode")(sel?.model?.modelcode ?? "");
+    set("modelName")(sel?.model?.modelname ?? "");
+  };
+
   const set = (k) => (v) => setMaster((m) => ({ ...m, [k]: v }));
 
   // 공통 인풋/셀렉트 스타일 (프로젝트 톤에 맞춘 기본값)
   const inputCls =
     "w-full h-9 rounded-md border border-zinc-200 bg-white px-2 text-sm text-zinc-900 " +
     "placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-200";
-  const selectCls =
-    "w-full h-9 rounded-md border border-zinc-200 bg-white px-2 text-sm text-zinc-900 " +
-    "focus:outline-none focus:ring-2 focus:ring-zinc-200";
   const codeInputCls  =
     "h-9 rounded-md border border-zinc-200 bg-white px-2 text-sm text-zinc-900 " +
     "placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-200";
 
   return (
+    
     <div 
       className="rounded-md border border-zinc-200 bg-white shadow-xs"
       onKeyDown={(e) => {
@@ -60,7 +70,7 @@ export default function EstimateReception({ master, setMaster }) {
                     size="sm"          
                     // variant="ghost"    
                     className="h-9 rounded-md border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 ms-2"
-                    onClick={() => alert("차량코드 선택(TODO)")}
+                    onClick={() => setCarHelpOpen(true)}
                   />
                 </div>
 
@@ -143,7 +153,6 @@ export default function EstimateReception({ master, setMaster }) {
             <Field label="상태">
               <select
                 className={'select-base w-full h-9 focus:ring-2 focus:ring-zinc-200'}
-                // className={selectCls}
                 value={master?.status ?? ""}
                 onChange={(e) => set("status")(e.target.value)}
               >
@@ -221,6 +230,13 @@ export default function EstimateReception({ master, setMaster }) {
           </div>
         </div>
       </div>
+    
+      <CarNameHelpModal
+        open={carHelpOpen}
+        onClose={() => setCarHelpOpen(false)}
+        onSelect={applyCarHelpSelection}
+      />    
+
     </div>
   );
 }

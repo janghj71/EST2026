@@ -62,6 +62,7 @@ export default function FixedHeadTable({
   const tdBase =
     rowSize === "sm"
       ? "px-3 py-0 h-8 leading-8 align-middle"
+      // ? "px-3 py-1 align-middle"
       : "px-3 py-2 align-middle";
 
   const thBase =
@@ -336,10 +337,17 @@ export default function FixedHeadTable({
                   ...rowProps,
                   ref: rowRef,
                   onClick: () => onRowClick?.(row, idx),
-                  onDoubleClick: () => onRowDoubleClick?.(row, idx),
+                  onDoubleClick: (e) => {
+                    // 더블클릭 시 브라우저 기본 동작(텍스트 블록 선택) 방지
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onRowDoubleClick?.(row, idx);
+                  },
+                  // onDoubleClick: () => onRowDoubleClick?.(row, idx),
                   onMouseEnter: () => setHoverKey(key),
                   onMouseLeave: () => setHoverKey(null),
                   className: [
+                    "select-none",
                     "border-b border-zinc-100",
                     isSel ? rowSelectedClass : rowHoverClass,
                     customClass,

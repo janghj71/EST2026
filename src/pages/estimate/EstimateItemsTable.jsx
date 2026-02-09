@@ -99,14 +99,16 @@ function canEditPayName(row) {
   return k === "4" || k === "5";
 }
 
-function getPaynoBlockRange(rows, payno) {
-  let start = -1, end = -1;
-  rows.forEach((r, i) => {
-    if (r.payno === payno) {
-      if (start === -1) start = i;
-      end = i;
-    }
-  });
+
+function getSubjectBlockRange(rows, subjectIndex) {
+  if (subjectIndex < 0 || subjectIndex >= rows.length) return { start: -1, end: -1 };
+  // subjectIndex는 paykind===1인 행이어야 함
+  let start = subjectIndex;
+  let end = subjectIndex;
+  for (let i = subjectIndex + 1; i < rows.length; i++) {
+    if (String(rows[i].paykind) === "1") break; // 다음 주체면 블록 종료
+    end = i;
+  }
   return { start, end };
 }
 
@@ -172,7 +174,8 @@ export default function EstimateItemsTable({
 
     // 블록 모드: 주체는 payno 블록 통째 이동
     if (sortMode === "block" && String(activeRow.paykind) === "1") {
-      const { start, end } = getPaynoBlockRange(rows, activeRow.payno);
+      // const { start, end } = getPaynoBlockRange(rows, activeRow.payno);
+      const { start, end } = getSubjectBlockRange(rows, fromIndex);
       if (start < 0 || end < start) return;
 
       const block = rows.slice(start, end + 1);
