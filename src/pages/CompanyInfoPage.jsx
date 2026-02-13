@@ -4,36 +4,19 @@ import IconBtn from "../components/IconBtn";
 import { moveFocusOnEnter } from "../utils/focusUtils";
 import SealUploader from "../components/SealUploader";
 import { useAlert } from "../alerts";
+import { useCompanyInfo } from "../hooks/useCompanyInfo";
 
 // 화면 전용(더미) 페이지: API/훅 없음
 export default function CompanyInfoPage() {
   const { confirm, info } = useAlert();
-  const [form, setForm] = useState({
-    bizNo: "215-81-90952",
-    shopName: "인트라밴공업사",
-    ceoName: "대표임",
-    bizType: "서비스",
-    bizItem: "자동차종합수리",
-    scope: "1",
-    tel1: "02",
-    tel2: "424",
-    tel3: "1901",
-    fax1: "031",
-    fax2: "8018",
-    fax3: "4765",
-    zip: "05548",
-    addr1: "경기 하남시 미사대로 520",
-    addr2: "713호",
-    emailId: "format200",
-    emailDomain: "hanmail.net",
-  });
+  const { form, setForm, loading, error, refetch } = useCompanyInfo();
 
-  const email = useMemo(() => {
-    const id = (form.emailId || "").trim();
-    const dom = (form.emailDomain || "").trim();
-    if (!id && !dom) return "";
-    return `${id}@${dom}`;
-  }, [form.emailId, form.emailDomain]);
+  // const email = useMemo(() => {
+  //   const id = (form.emailId || "").trim();
+  //   const dom = (form.emailDomain || "").trim();
+  //   if (!id && !dom) return "";
+  //   return `${id}@${dom}`;
+  // }, [form.emailId, form.emailDomain]);
 
   const onChange = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
 
@@ -42,6 +25,9 @@ export default function CompanyInfoPage() {
     await info("저장 완료");
 
   };
+
+  if (loading) return <div className="p-10 text-center text-gray-500">로딩중...</div>;
+  if (!form)   return <div className="p-10 text-center text-gray-400">데이터 없음</div>;
 
   return (
     <div 
@@ -77,22 +63,22 @@ export default function CompanyInfoPage() {
           <div className="text-base font-semibold text-gray-900">업체 기본정보</div>
           <div className="mt-4 space-y-3">
             <Field label="사업자 번호">
-              <input className={input} value={form.bizNo} onChange={onChange("bizNo")} />
+              <input className={input} value={form.idNo} onChange={onChange("idNo")} />
             </Field>
             <Field label="상호">
-              <input className={input} value={form.shopName} onChange={onChange("shopName")} />
+              <input className={input} value={form.comName} onChange={onChange("comName")} />
             </Field>
             <Field label="대표자">
-              <input className={input} value={form.ceoName} onChange={onChange("ceoName")} />
+              <input className={input} value={form.boss} onChange={onChange("boss")} />
             </Field>
             <Field label="업태">
-              <input className={input} value={form.bizType} onChange={onChange("bizType")} />
+              <input className={input} value={form.upTae} onChange={onChange("upTae")} />
             </Field>
             <Field label="업종">
-              <input className={input} value={form.bizItem} onChange={onChange("bizItem")} />
+              <input className={input} value={form.upJong} onChange={onChange("upJong")} />
             </Field>
             <Field label="정비범위">
-              <select className="w-full select-base" value={form.scope} onChange={onChange("scope")}>
+              <select className="w-full select-base" value={form.shopKind} onChange={onChange("shopKind")}>
                 <option value="1">1종합</option>
                 <option value="2">2종</option>
                 <option value="3">3급</option>
@@ -107,23 +93,23 @@ export default function CompanyInfoPage() {
           <div className="mt-4 space-y-3">
             <Field label="전화번호">
               <div className="flex gap-2">
-                <input className={`${input} w-20`} value={form.tel1} onChange={onChange("tel1")} />
+                <input className={`${input} w-20`} value={form.tel0} onChange={onChange("tel0")} />
+                <input className={`${input} w-24`} value={form.tel1} onChange={onChange("tel1")} />
                 <input className={`${input} w-24`} value={form.tel2} onChange={onChange("tel2")} />
-                <input className={`${input} w-24`} value={form.tel3} onChange={onChange("tel3")} />
               </div>
             </Field>
 
             <Field label="팩스번호">
               <div className="flex gap-2">
-                <input className={`${input} w-20`} value={form.fax1} onChange={onChange("fax1")} />
+                <input className={`${input} w-20`} value={form.fax0} onChange={onChange("fax0")} />
+                <input className={`${input} w-24`} value={form.fax1} onChange={onChange("fax1")} />
                 <input className={`${input} w-24`} value={form.fax2} onChange={onChange("fax2")} />
-                <input className={`${input} w-24`} value={form.fax3} onChange={onChange("fax3")} />
               </div>
             </Field>
 
             <Field label="우편번호">
               <div className="flex gap-2">
-                <input className={`${input} w-28`} value={form.zip} onChange={onChange("zip")} />
+                <input className={`${input} w-28`} value={form.zipCode} onChange={onChange("zipCode")} />
                 {/* <button type="button" className={btnGhost}>
                   검색
                 </button> */}
@@ -144,7 +130,16 @@ export default function CompanyInfoPage() {
               </div>
             </Field>
 
-            <Field label="이메일 주소">
+            <Field label="이메일">
+              <input
+                className={input}
+                value={form.email}
+                onChange={onChange("email")}
+                placeholder="example@domain.com"
+              />
+            </Field>
+
+            {/* <Field label="이메일 주소">
               <div className="flex flex-wrap items-center gap-2">
                 <input
                   className={`${input} w-48`}
@@ -180,7 +175,7 @@ export default function CompanyInfoPage() {
                   미리보기: <span className="font-medium text-gray-700">{email}</span>
                 </div>
               </div>
-            </Field>
+            </Field> */}
           </div>
         </section>
       </div>

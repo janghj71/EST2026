@@ -9,6 +9,7 @@ export const inputCls =
 // ✅ Small Action Buttons (공통 버튼 폭/높이는 여기서 통일)
 export const btnBase =
   "h-10 w-28 rounded-md text-white " +
+  "inline-flex items-center justify-center gap-2 " +
   "transition focus:outline-none focus-visible:ring-2";
 
 // ✅ Primary (확인/저장 등)
@@ -17,7 +18,9 @@ export const btnConfirm =
 
 // ✅ Secondary (닫기/취소 등)
 export const btnClose =
-  btnBase + " bg-gray-500 hover:bg-gray-600 active:bg-gray-700 focus-visible:ring-gray-300";
+  btnBase + "border-zinc-800 bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-700 focus-visible:ring-zinc-300";
+  // " bg-gray-500 hover:bg-gray-600 active:bg-gray-700 focus-visible:ring-gray-300";
+              
 
 // (선택) 인증번호 받기 같은 “라인 버튼”도 공용으로 쓰고 싶으면
 export const btnOutlineSky =

@@ -34,7 +34,7 @@ export default function IconBtn({
       onClick={onClick}
       disabled={disabled}
       className={[
-        "inline-flex items-center gap-2",
+        "inline-flex items-center justify-center gap-2",
         sizeCls,
         "rounded-md border",
         variantCls,

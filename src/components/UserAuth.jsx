@@ -1,51 +1,119 @@
-import { useState } from "react";
+import { useMemo, useState, useRef } from "react";
 import { inputCls, btnConfirm, btnClose, btnOutlineSky } from "../styles/uiClasses";
+import { useEstStep1 } from "../hooks/useEstStep1";
+import { useEstStep2 } from "../hooks/useEstStep2";
+import { moveFocusOnEnter } from "../utils/focusUtils"; 
+import {X, CheckCircle,} from "lucide-react";
+import { createMobileno, setComcode, setUserid, setMobileno } from "../api/config"; 
 
-export default function UserAuth({ onClose }) {
+export default function UserAuth({ onClose, onSuccess }) {
   const [form, setForm] = useState({
-    bizNo: "",
-    hpId: "",
+    idno: "",
+    hp: "",
     smsCode: "",
     newPassword: "",
     companyName: "",
-    ceoName: "",
+    boss: "",
+    comcode: "",
   });
+  
+  const [installable, setInstallable] = useState(0);
+  const scopeRef = useRef(null);
 
   const onChange = (e) =>
     setForm((p) => ({ ...p, [e.target.name]: e.target.value }));
 
-  const onSendCode = () => {
-    // TODO: useUserAuthSendCode 훅 연결
-    console.log("send auth code:", { bizNo: form.bizNo, hpId: form.hpId });
+  const canSend = useMemo(() => {
+    return form.idno.trim().length > 0 && form.hp.trim().length > 0;
+  }, [form.idno, form.hp]);
+  
+  //인증번호 API 
+  const step1 = useEstStep1();
+  //인증확인 API 
+  const step2 = useEstStep2(); 
+
+  const onSendCode = async () => {
+    if (!canSend || step1.loading) return;
+
+    const res = await step1.sendAuthNo(form.idno, form.hp);
+
+    // 성공 시 매핑된 결과는 step1.data에도 들어오지만,
+    // refetch 직후 즉시 반영을 위해 res.dataset 기준으로 form을 업데이트
+    if (res?.result && String(res.result).toUpperCase() === "OK") {
+      const row = Array.isArray(res?.dataset) ? res.dataset[0] : null;
+
+      const luseno = row?.luseno ?? "";
+      const comname = row?.comname ?? "";
+      const boss = row?.boss ?? "";
+      const comcode = row?.comcode ?? ""; 
+
+      const userMax = Number(row?.user_max ?? 0);
+      const userUse = Number(row?.user_use ?? 0);
+      const inst = Math.max(0, userMax - userUse);
+
+      setForm((p) => ({
+        ...p,
+        smsCode: luseno || p.smsCode, // 인증번호 자동 채움(원치 않으면 이 줄만 제거)
+        companyName: comname,
+        boss,
+        comcode,
+      }));
+      setInstallable(inst);
+    }
   };
 
-  const onConfirm = () => {
-    // TODO: useUserAuthConfirm 훅 연결
-    console.log("confirm auth:", form);
+  const canConfirm = useMemo(() => {
+    return (
+      form.comcode.trim().length > 0 &&
+      form.hp.trim().length > 0 &&
+      form.newPassword.trim().length > 0 &&
+      form.smsCode.trim().length > 0
+    );
+  }, [form.comcode, form.hp, form.newPassword, form.smsCode]);
+
+  const onConfirm = async () => {
+    if (!canConfirm || step2.loading) return;
+
+    const mobileno = createMobileno();
+
+    const res = await step2.confirmAuth({
+      comcode: form.comcode,
+      userid: form.hp,
+      passwd: form.newPassword,
+      luseno: form.smsCode,
+      mobileno,
+    });
+
+    // res.result === "OK" 기준으로 분기하면 됨
+    // console.log("est_step2 result:", res);
+    if (res.result === 'OK' ) {
+      setComcode(form.comcode);
+      setUserid(form.hp);
+      setMobileno(res.mobileno);
+
+      onSuccess?.({ comcode: form.comcode, hp: form.hp });
+      onClose?.(); 
+    }
+
+
   };
 
-  // const inputCls =
-  // "w-full h-11 rounded-md border border-gray-300 px-3 " +
-  // "text-gray-800 placeholder:text-gray-500 " +
-  // "outline-none focus:ring-2 focus:ring-gray-300";
+  const onKeyDownMove = (e) => {
+    moveFocusOnEnter(e, scopeRef.current);
+  };
 
-  // const confirmBtn =
-  //   "w-28 h-10 rounded-md bg-sky-500 text-white " +
-  //   "hover:bg-sky-600 active:bg-sky-700 transition " +
-  //   "focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300";
-
-  // const closeBtn =
-  //   "w-28 h-10 rounded-md bg-gray-500 text-white " +
-  //   "hover:bg-gray-600 active:bg-gray-700 transition " +
-  //   "focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300";
 
   return (
     <ModalShell title="사용자 인증" onClose={onClose}>
-      <div className="grid grid-cols-[120px_1fr] gap-x-4 gap-y-3 items-center">
+      <div 
+        ref={scopeRef}
+        onKeyDownCapture={onKeyDownMove}
+        className="grid grid-cols-[120px_1fr] gap-x-4 gap-y-3 items-center"
+      >
         <Label>사업자번호</Label>
         <input
-          name="bizNo"
-          value={form.bizNo}
+          name="idno"
+          value={form.idno}
           onChange={onChange}
           className={inputCls}
           placeholder="- 없이 입력"
@@ -53,8 +121,8 @@ export default function UserAuth({ onClose }) {
 
         <Label>핸드폰번호(ID)</Label>
         <input
-          name="hpId"
-          value={form.hpId}
+          name="hp"
+          value={form.hp}
           onChange={onChange}
           className={inputCls}
           placeholder="- 없이 입력"
@@ -65,9 +133,17 @@ export default function UserAuth({ onClose }) {
           type="button"
           onClick={onSendCode}
           className={btnOutlineSky}
+          disabled={!canSend || step1.loading}
         >
-          인증번호 받기
+          {step1.loading ? "요청중..." : "인증번호 받기"}
         </button>
+
+        {/* 에러 메시지 */}
+        {step1.error ? (
+          <div className="col-span-2 text-sm text-red-600">
+            {step1.error?.message || "요청 실패"}
+          </div>
+        ) : null}
 
         <Label>핸드폰인증번호</Label>
         <input
@@ -100,14 +176,14 @@ export default function UserAuth({ onClose }) {
 
         <Label>대표자</Label>
         <input
-          name="ceoName"
-          value={form.ceoName}
+          name="boss"
+          value={form.boss}
           onChange={onChange}
           className={inputCls}
         />
 
         <Label>설치 가능 수</Label>
-        <div className="text-sm text-slate-700">0</div>
+        <div className="text-sm text-slate-700">{installable}</div>
       </div>
 
       <div className="mt-6 pt-4 flex justify-end gap-2 border-t border-gray-300 -mx-6 px-6">
@@ -115,17 +191,27 @@ export default function UserAuth({ onClose }) {
           type="button"
           onClick={onConfirm}
           className={btnConfirm}
+          disabled={!canConfirm || step2.loading}
         >
-          인증확인
+          <CheckCircle className="w-4 h-4" />
+          {step2.loading ? "확인중..." : "인증확인"}
         </button>
         <button
           type="button"
           onClick={onClose}
           className={btnClose}
         >
+          <X className="w-4 h-4" />
           닫기
         </button>
       </div>
+
+      {step2.error ? (
+        <div className="px-6 pb-5 text-sm text-red-600">
+          {step2.error?.message || "인증확인 실패"}
+        </div>
+      ) : null}
+      
     </ModalShell>
   );
 }

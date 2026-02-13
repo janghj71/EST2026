@@ -4,23 +4,64 @@ import { useNavigate } from "react-router-dom";
 import AppHeader from "../components/AppHeader";
 import UserAuth from "../components/UserAuth";
 import FindPassword from "../components/FindPassword";
-// import { useAlert } from "../alerts";
+import { useEstLogin } from "../hooks/useEstLogin";
+import { getComcode, getUserid } from "../api/config";
+import { useAlert } from "../alerts";
 
 const adUrl = "http://estservice.goldauto.co.kr/images/adv/banner_login.gif";
 
 export default function Login() {
   const navigate = useNavigate();
+  const estLogin = useEstLogin();
 
   const [openAuth, setOpenAuth] = useState(false);
   const [openPw, setOpenPw] = useState(false);
+  const alert = useAlert();
 
-  const [form, setForm] = useState({ comcode: "", userid: "", password: "" });
+
+  const [form, setForm] = useState(() => {
+    const savedComcode = getComcode() ;
+    const savedUserid = getUserid();
+    return { comcode: savedComcode, userid: savedUserid, password: "" };
+  });
+  
   const onChange = (e) =>
     setForm((p) => ({ ...p, [e.target.name]: e.target.value }));
 
-  const onSubmit = (e) => {
+  const onSubmit = async (e) => {
     e.preventDefault();
-    navigate("/dashboard");
+
+    if (!form.comcode.trim()) {
+      await alert.warning("업체코드를 입력하세요.");
+      return;
+    }
+  
+    if (!form.userid.trim()) {
+      await alert.warning("아이디를 입력하세요.");
+      return;
+    }
+  
+    if (!form.password.trim()) {
+      await alert.warning("비밀번호를 입력하세요.");
+      return;
+    }
+
+    const res = await estLogin.login({
+      comcode: form.comcode,
+      userid: form.userid,
+      passwd: form.password,
+    });
+
+    console.log("res", res);
+    if (String(res?.result).toUpperCase() === "OK") {
+      // 필요하면 usertype 저장 (권한 분기 등에 사용)
+      localStorage.setItem("usertype", res?.usertype ?? "");
+
+      navigate("/dashboard");
+      return;
+    }
+    
+    await alert.error(res?.msg || estLogin.error?.message || "로그인 실패");
   };
   
 
@@ -31,8 +72,7 @@ export default function Login() {
   "transition-all duration-150 " +
   "hover:bg-gray-500 hover:text-white hover:border-gray-500 " +
   "active:bg-gray-600 " ;
-
-
+  
   return (
     // <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
     <div className="min-h-screen bg-slate-50">
@@ -105,6 +145,7 @@ export default function Login() {
                   >
                     로그인
                   </button>
+                  
                 </form>
 
                 <div className="mt-4 flex gap-3 justify-center">
@@ -136,7 +177,15 @@ export default function Login() {
         
 
         {/* Modals (파일은 분리) */}
-        {openAuth && <UserAuth onClose={() => setOpenAuth(false)} />}
+        {openAuth && 
+          <UserAuth 
+            onClose={() => setOpenAuth(false)} 
+            onSuccess={(data) => {
+              // console.log("UserAuth success:", data);
+              setForm((p) => ({ ...p, comcode: data.comcode, userid: data.hp }));
+              setOpenAuth(false);
+            }}
+          />}
         {openPw && <FindPassword onClose={() => setOpenPw(false)} />}
       </div>
     </div>
