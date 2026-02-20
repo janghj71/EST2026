@@ -47,17 +47,26 @@ export default function SealUploader({
           <label className="inline-flex">
             <input
               type="file"
-              accept="image/*"
+              accept="image/jpeg"
               className="hidden"
-              onChange={(e) => onUpload?.(e.target.files?.[0])}
+              onChange={(e) => {
+                onUpload?.(e.target.files?.[0]);
+                e.target.value = "";
+              }}
             />
-            <span>
-              <IconBtn
-                icon={Upload}
-                label="등록"
-                variant="primary"
-                className="h-10 w-28 justify-center whitespace-nowrap"
-              />
+            <span
+              className={[
+                "inline-flex items-center justify-center gap-2",
+                "h-9 px-3 text-sm",
+                "rounded-md border",
+                "border-zinc-800 bg-zinc-800 text-white hover:bg-zinc-700",
+                "font-semibold",
+                "active:scale-[0.98]",
+                "h-10 w-28 justify-center whitespace-nowrap",
+              ].join(" ")}
+            >
+              <Upload size={18} strokeWidth={2} />
+              <span>등록</span>
             </span>
           </label>
 

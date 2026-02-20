@@ -4,42 +4,38 @@ import IconBtn from "../components/IconBtn";
 import FixedHeadTable from "../components/FixedHeadTable"; 
 import { moveFocusOnEnter } from "../utils/focusUtils";
 import { useAlert } from "../alerts";
-
-// 화면 전용(더미) 데이터
-const seed = [
-  { code: "01", name: "작업준비중", status: "사용" },
-  { code: "02", name: "도장대기", status: "사용" },
-  { code: "03", name: "판금부", status: "사용" },
-  { code: "04", name: "11111", status: "사용" },
-  { code: "05", name: "선견적", status: "사용" },
-  { code: "06", name: "선견적2", status: "중지" },
-  { code: "99", name: "삭제예시", status: "삭제" },
-];
+import { useTbCode } from "../hooks/useTbCode";
+import { useWorkStatus } from "../hooks/useWorkStatus";
 
 export default function WorkStatusPage() {
-  const { confirm, warning, remove, info } = useAlert();
-  const [rows, setRows] = useState(seed);
+  const { warning, remove: removeAlert, info } = useAlert();
+  const { codes, loading, reload } = useTbCode("UKND02");
+  const { create, creating, remove, deleting } = useWorkStatus(reload);
 
+  const rows = useMemo(
+    () => codes.map((c) => ({
+      subcode:  c.value,
+      codename: c.label,
+      state_nm: c.state_nm ?? "사용",
+    })),
+    [codes]
+  );
   // 필터
   const [includeDeleted, setIncludeDeleted] = useState(false);
-
-  // 선택
-  const [selectedCode, setSelectedCode] = useState("01");
+  const [selectedCode, setSelectedCode] = useState("");
 
   // 입력(작업상태명만)
   const [name, setName] = useState("");
 
-  const selectedRow = useMemo(
-    () => rows.find((r) => r.code === selectedCode) || null,
-    [rows, selectedCode]
-  );
-
   // 목록 필터(삭제 포함 여부)
   const viewRows = useMemo(() => {
     return rows
-      .filter((r) => (includeDeleted ? true : r.status !== "삭제"))
-      .sort((a, b) => a.code.localeCompare(b.code));
+      .filter((r) => (includeDeleted ? true : r.state_nm !== "삭제"))
+      .sort((a, b) => a.subcode.localeCompare(b.subcode));
   }, [rows, includeDeleted]);
+
+  // selectedCode가 비어있으면 첫 번째 행을 기본값으로 사용
+  const effectiveCode = selectedCode || viewRows[0]?.subcode || "";
 
   const onCreate =  async () => {
     const v = name.trim();
@@ -48,66 +44,59 @@ export default function WorkStatusPage() {
       return;
     }
 
-    // 실제론 서버가 code를 자동 부여
-    // 화면만: 임시 code 부여
-    const tempCode = makeTempCode(rows);
-
-    setRows((prev) => [...prev, { code: tempCode, name: v, status: "사용", _temp: true }]);
-    setSelectedCode(tempCode);
-    setName("");
-    await info("등록 완료");
+    try {
+      await create(v);
+      setName("");
+      await info("등록 완료");
+    } catch (err) {
+      await warning(err?.message || "등록에 실패했습니다.");
+    }
 
   };
 
   const onSoftDeleteRow = useCallback(async (row) => {
     if (!row) return;
 
-    if (row.status === "삭제") {
+    if (row.state_nm === "삭제") {
       await info("이미 삭제 상태입니다.");
       return;
     }
 
-    // const ok = confirm(`[${row.code}] ${row.name} 을(를) 삭제 상태로 변경할까요?`);
-    const ok = await remove(
-            `[${row.code}] ${row.name} 을(를) 삭제 상태로 변경할까요?`,
-            "삭제 확인",
-            { confirmText: "삭제", cancelText: "취소" }
+    const ok = await removeAlert(
+      `[${row.subcode}] ${row.codename} 을(를) 삭제할까요?`,
+      "삭제 확인",
+      { confirmText: "삭제", cancelText: "취소" }
     );
     if (!ok) return;
 
-    // 소프트 삭제: 상태만 '삭제'로 변경
-    setRows((prev) =>
-      prev.map((r) => (r.code === row.code ? { ...r, status: "삭제" } : r))
-    );
-
-    // 삭제 포함이 꺼져 있으면 화면에서 사라지므로 다음 선택
-    if (!includeDeleted) {
-      const nextList = viewRows.filter((r) => r.code !== row.code);
-      setSelectedCode(nextList[0]?.code || "");
+    try {
+      await remove(row.subcode);
+      await info("삭제 완료");
+    } catch (err) {
+      await warning(err?.message || "삭제에 실패했습니다.");
     }
-  }, [remove, info, includeDeleted, viewRows]);
+  }, [removeAlert, info, warning, remove]);
 
   // FixedHeadTable 컬럼 정의
   const columns = useMemo(
     () => [
       {
-        key: "code",
+        key: "subcode",
         title: "코드",
         width: "20%",
         align: "center",
         className: "font-mono",
-        render: (val, row) =>
-          row._temp ? <span className="text-gray-400">(자동)</span> : val,
+        // render: (val, row) => row._temp ? <span className="text-gray-400">(자동)</span> : val,
       },
       {
-        key: "name",
+        key: "codename",
         title: "작업상태명",
         width: "60%",
         align: "left",
         render: (val) => <span className="font-medium text-gray-900">{val}</span>,
       },
       {
-        key: "status",
+        key: "state_nm",
         title: "상태",
         width: "20%",
         align: "center",
@@ -166,27 +155,16 @@ export default function WorkStatusPage() {
 
               <div className="text-xs text-gray-500">{viewRows.length}건</div>
 
-              {/* <div className="ml-auto">
-                <IconBtn
-                  icon={Trash2}
-                  label="삭제"
-                  variant="danger"
-                  className="h-10 w-28 justify-center whitespace-nowrap"
-                  onClick={onSoftDelete}
-                  disabled={!selectedRow}
-                />
-              </div> */}
             </div>
           </div>
 
-          {/* ✅ 목록: FixedHeadTable */}
           <div className="p-0 min-h-0">
             <FixedHeadTable
               columns={columns}
               rows={viewRows}
-              rowKey={(r) => r.code}
-              selectedKey={selectedCode}
-              onRowClick={(row) => setSelectedCode(row.code)}
+              rowKey={(r) => r.subcode}
+              selectedKey={effectiveCode}
+              onRowClick={(row) => setSelectedCode(row.subcode)}
               height={520} // 필요 시 조절
               className="min-h-0"
               emptyText="조회 결과가 없습니다."
@@ -241,16 +219,6 @@ function Field({ label, children }) {
     </div>
   );
 }
-
-function makeTempCode(rows) {
-  const used = new Set(rows.map((r) => r.code));
-  for (let i = 1; i <= 99; i++) {
-    const c = `T${String(i).padStart(2, "0")}`;
-    if (!used.has(c)) return c;
-  }
-  return `T${Date.now()}`;
-}
-
 const inputBase =
   "h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900/10";
 

@@ -35,6 +35,7 @@ export default function MoneyInput({
         className={inputClass + " " + className}
         value={display}
         inputMode="numeric"
+        onFocus={(e) => e.target.select()}
         // onKeyDown={moveFocusOnEnter}
         onChange={(e) => {
           const raw = unformatNumber(e.target.value);

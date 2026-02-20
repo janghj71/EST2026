@@ -79,6 +79,8 @@ export function useApi({
       const effectiveBodyType = override.bodyType ?? bodyType;
       const mergedBody = mergeBodyWithComcode(body, override.body, effectiveBodyType);
 
+      const { body: _ignored, bodyType: _ignoredBt, ...restOverride } = override;
+
       const res = await request(path, {
         method,
         // body,
@@ -86,7 +88,8 @@ export function useApi({
         body: mergedBody,
         bodyType: effectiveBodyType,
         signal: ctrl.signal,
-        ...override,
+        // ...override,
+        ...restOverride,
       })
 
       setData(mapRef.current ? mapRef.current(res) : res)

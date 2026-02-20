@@ -5,25 +5,26 @@ import { moveFocusOnEnter } from "../utils/focusUtils";
 import SealUploader from "../components/SealUploader";
 import { useAlert } from "../alerts";
 import { useCompanyInfo } from "../hooks/useCompanyInfo";
+import { useTbCode } from "../hooks/useTbCode";
+import { useSealImage } from "../hooks/useSealImage";
+
 
 // 화면 전용(더미) 페이지: API/훅 없음
 export default function CompanyInfoPage() {
   const { confirm, info } = useAlert();
-  const { form, setForm, loading, error, refetch } = useCompanyInfo();
-
-  // const email = useMemo(() => {
-  //   const id = (form.emailId || "").trim();
-  //   const dom = (form.emailDomain || "").trim();
-  //   if (!id && !dom) return "";
-  //   return `${id}@${dom}`;
-  // }, [form.emailId, form.emailDomain]);
+  const { form, setForm, loading,  saving, error, refetch, save  } = useCompanyInfo();
+  const { companySeal, managerSeal, saving: sealSaving, saveSeal, deleteSeal } = useSealImage();
+  const { codes: shopKindList } = useTbCode("SKD01");
 
   const onChange = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
 
   const onSave = async () => {
-    // 화면만: 저장 로그
-    await info("저장 완료");
-
+    try {
+      await save(form);
+      await info("저장 완료");
+    } catch (err) {
+      await info(err.message || "저장 실패");
+    }
   };
 
   if (loading) return <div className="p-10 text-center text-gray-500">로딩중...</div>;
@@ -48,10 +49,11 @@ export default function CompanyInfoPage() {
         <div className="ml-auto flex gap-2">
           <IconBtn
             icon={Save}
-            label="저장"
+            label={saving ? "저장중..." : "저장"}
             variant="primary"
             className="h-10 w-25 justify-center"
             onClick={onSave}
+            disabled={saving}
           />
         </div>
       </div>
@@ -79,10 +81,17 @@ export default function CompanyInfoPage() {
             </Field>
             <Field label="정비범위">
               <select className="w-full select-base" value={form.shopKind} onChange={onChange("shopKind")}>
-                <option value="1">1종합</option>
-                <option value="2">2종</option>
-                <option value="3">3급</option>
+                {shopKindList.map((o) => (
+                  <option key={o.value} value={o.value}>{o.value} {o.label}</option>
+                ))}
+                
               </select>
+            </Field>
+            <Field label="정비업등록번호">
+              <input className={input} value={form.sanghoid} onChange={onChange("sanghoid")} readOnly />
+            </Field>
+            <Field label="정비책임자">
+              <input className={input} value={form.supman} onChange={onChange("supman")} />
             </Field>
           </div>
         </section>
@@ -138,72 +147,59 @@ export default function CompanyInfoPage() {
                 placeholder="example@domain.com"
               />
             </Field>
-
-            {/* <Field label="이메일 주소">
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  className={`${input} w-48`}
-                  value={form.emailId}
-                  onChange={onChange("emailId")}
-                  placeholder="아이디"
-                />
-                <span className="text-gray-400">@</span>
-                <select
-                  // className={`${input} w-48`}
-                  className="${input} w-full select-base" 
-                  value={form.emailDomain}
-                  onChange={onChange("emailDomain")}
-                >
-                  <option value="hanmail.net">hanmail.net</option>
-                  <option value="naver.com">naver.com</option>
-                  <option value="gmail.com">gmail.com</option>
-                  <option value="direct">직접입력</option>
-                </select>
-
-                {form.emailDomain === "direct" ? (
-                  <input
-                    className={`${input} w-56`}
-                    value={form.emailDomainText || ""}
-                    onChange={(e) =>
-                      setForm((p) => ({ ...p, emailDomainText: e.target.value }))
-                    }
-                    placeholder="도메인 직접입력"
-                  />
-                ) : null}
-
-                <div className="ml-auto text-xs text-gray-500">
-                  미리보기: <span className="font-medium text-gray-700">{email}</span>
-                </div>
-              </div>
-            </Field> */}
+            
           </div>
         </section>
       </div>
 
       {/* seals */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        {/* <SealCard title="회사 직인" />
-        <SealCard title="정비책임자 인감" /> */}
         <SealUploader
           title="회사 직인"
-          imageUrl={form.companySealUrl}
-          onUpload={(file) => {
+          imageUrl={companySeal}
+          onUpload={async (file) => {
             if (!file) return;
-            const url = URL.createObjectURL(file);
-            setForm((p) => ({ ...p, companySealUrl: url }));
+            try {
+              await saveSeal(1, file);
+              // await info("회사 직인 저장 완료");
+            } catch (err) {
+              await info(err.message || "회사 직인 저장 실패");
+            }
           }}
-          onDelete={() => setForm((p) => ({ ...p, companySealUrl: "" }))}
+          onDelete={async () => {
+            const ok = await confirm("회사 직인을 삭제하시겠습니까?");
+            if (!ok) return;
+            try {
+              await deleteSeal(1);
+              // await info("회사 직인 삭제 완료");
+            } catch (err) {
+              await info(err.message || "회사 직인 삭제 실패");
+            }
+          }}
         />
 
         <SealUploader
           title="정비책임자 인감"
-          imageUrl={form.managerSealUrl}
-          onUpload={(file) => {
+          imageUrl={managerSeal}
+          onUpload={async (file) => {
             if (!file) return;
-            const url = URL.createObjectURL(file);
-            setForm((p) => ({ ...p, managerSealUrl: url }));
+            try {
+              await saveSeal(2, file);
+              // await info("정비책임자 인감 저장 완료");
+            } catch (err) {
+              await info(err.message || "정비책임자 인감 저장 실패");
+            }
           }}
-          onDelete={() => setForm((p) => ({ ...p, managerSealUrl: "" }))}
+          onDelete={async () => {
+            const ok = await confirm("정비책임자 인감을 삭제하시겠습니까?");
+            if (!ok) return;
+            try {
+              await deleteSeal(2);
+              // await info("정비책임자 인감 삭제 완료");
+            } catch (err) {
+              await info(err.message || "정비책임자 인감 삭제 실패");
+            }
+          }}
         />
       </div>
     </div>

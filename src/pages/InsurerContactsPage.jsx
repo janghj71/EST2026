@@ -1,261 +1,173 @@
-import {  useCallback, useMemo, useState, useRef } from "react";
-import { Plus, Save, RotateCcw, Trash2 } from "lucide-react";
-import FixedHeadTable from "../components/FixedHeadTable"; // 경로 맞게 수정
-import IconBtn from "../components/IconBtn"; // 경로 맞게 수정
-import { moveFocusOnEnter } from "../utils/focusUtils"; // 경로 맞게 수정
+import { useMemo, useState } from "react";
+import { Plus, Save, Trash2 } from "lucide-react";
+import FixedHeadTable from "../components/FixedHeadTable";
+import IconBtn from "../components/IconBtn";
+import { moveFocusOnEnter } from "../utils/focusUtils";
 import { useAlert } from "../alerts";
+import { useInsurers } from "../hooks/useInsurers";
+import { useInsurerContacts } from "../hooks/useInsurerContacts";
 
-// 더미 보험사
-const seedInsurers = [
-  { code: "01", name: "메리츠" },
-  { code: "02", name: "한화" },
-  { code: "03", name: "롯데" },
-  { code: "04", name: "삼성" },
-  { code: "05", name: "현대" },
+const EMAIL_DOMAINS = [
+  "naver.com", "hanmail.net", "daum.net", "kakao.com", "gmail.com",
+  "nate.com", "outlook.com", "hotmail.com", "yahoo.com", "yahoo.co.kr",
+  "korea.com", "chol.com", "dreamwiz.com", "empal.com", "hanafos.com",
+  "직접입력",
 ];
-
-// 더미 담당자(보험사별 여러명)
-const seedAgents = [
-  {
-    id: "A001",
-    insCode: "03",
-    agentName: "담당자2",
-    hp1: "010",
-    hp2: "8618",
-    hp3: "6919",
-    fax1: "",
-    fax2: "",
-    fax3: "",
-    emailId: "",
-    emailDomain: "hanmail.net",
-    tel1: "",
-    tel2: "",
-    tel3: "",
-    memo: "",
-    status: "사용", // 내부용(삭제 처리용)
-  },
-  {
-    id: "A002",
-    insCode: "03",
-    agentName: "김길동",
-    hp1: "010",
-    hp2: "1234",
-    hp3: "5678",
-    fax1: "",
-    fax2: "",
-    fax3: "",
-    emailId: "format2000",
-    emailDomain: "hanmail.net",
-    tel1: "",
-    tel2: "",
-    tel3: "",
-    memo: "",
-    status: "사용",
-  },
-];
-
-const EMAIL_DOMAINS = ["hanmail.net", "naver.com", "gmail.com", "daum.net", "nate.com", "직접입력"];
-const makeId = (seq) => `A${String(seq).padStart(6, "0")}`;
 
 export default function InsurerContactsPage() {
-  const {confirm, info, warning } = useAlert();
-  const [insurers] = useState(seedInsurers);
-  const [agents, setAgents] = useState(seedAgents);
+  const { confirm, info, warning } = useAlert();
+  const { insurers } = useInsurers();
+  const {
+    contacts, loading: contactsLoading, saving, deleting,
+    save, remove, refetch: refetchContacts,
+  } = useInsurerContacts();
 
-  const seqRef = useRef(1);
+  // ── 좌측 보험사 선택 ──
+  const [selectedInsCode, setSelectedInsCode] = useState("");
+  const [insurerQuery, setInsurerQuery] = useState("");
+  const effectiveInsCode = selectedInsCode || insurers[0]?.bocomcode || "";
 
-
-  // 좌측 보험사 선택(테이블)
-  const [selectedInsCode, setSelectedInsCode] = useState("03");
-  
+  const filteredInsurers = useMemo(() => {
+    const q = insurerQuery.trim().toLowerCase();
+    if (!q) return insurers;
+    return insurers.filter((x) => {
+      const code = String(x.bocomcode || "").toLowerCase();
+      const name = String(x.bocomname || "").toLowerCase();
+      return code.includes(q) || name.includes(q);
+    });
+  }, [insurers, insurerQuery]);
 
   const selectedInsurer = useMemo(
-    () => insurers.find((x) => x.code === selectedInsCode) || null,
-    [insurers, selectedInsCode]
+    () => insurers.find((x) => x.bocomcode === effectiveInsCode) || null,
+    [insurers, effectiveInsCode]
   );
 
-  // 선택 보험사의 담당자 목록(삭제는 숨김)
-  const viewAgents = useMemo(() => {
-    return agents
-      .filter((a) => a.insCode === selectedInsCode)
-      .filter((a) => a.status !== "삭제")
-      .sort((a, b) => a.agentName.localeCompare(b.agentName));
-  }, [agents, selectedInsCode]);
-
-  // 담당자 선택(테이블)
-  const [selectedAgentId, setSelectedAgentId] = useState("");
-
-  const selectedAgent = useMemo(
-    () => viewAgents.find((a) => a.id === selectedAgentId) || null,
-    [viewAgents, selectedAgentId]
+  // ── 선택 보험사의 담당자 목록 ──
+  const viewContacts = useMemo(
+    () => contacts.filter((a) => a.bocomcode === effectiveInsCode),
+    [contacts, effectiveInsCode]
   );
 
-  // 보험사 바뀌면: 담당자 선택 초기화 + 신규 모드
-  const onSelectInsurer = (row) => {
-    const nextInsCode = row.code;
+  // ── 담당자 선택 (복합키: bocomcode_seqno) ──
+  const [selectedKey, setSelectedKey] = useState("");
 
-    // 1) 보험사 선택
-    setSelectedInsCode(nextInsCode);
+  const selectedContact = useMemo(
+    () => viewContacts.find((a) => a.bocomcode + "_" + a.seqno === selectedKey) || null,
+    [viewContacts, selectedKey]
+  );
 
-    // 2) 다음 보험사의 담당자 목록(삭제 제외) 계산
-    const nextAgents = agents
-      .filter((a) => a.insCode === nextInsCode)
-      .filter((a) => a.status !== "삭제")
-      .sort((a, b) => a.agentName.localeCompare(b.agentName));
-
-    // 3) 첫 담당자 자동 선택
-    const first = nextAgents[0];
-
-    if (first) {
-      setSelectedAgentId(first.id);
-      setMode("edit");
-      setForm({
-        ...first,
-        emailDomainSel: EMAIL_DOMAINS.includes(first.emailDomain) ? first.emailDomain : "직접입력",
-        emailDomainCustom: EMAIL_DOMAINS.includes(first.emailDomain) ? "" : first.emailDomain,
-      });
-    } else {
-      // 담당자가 없으면 신규 모드
-      setSelectedAgentId("");
-      setMode("new");
-      setForm(makeEmptyForm(nextInsCode));
-    }
-  };
-
-
-  // 폼
+  // ── 폼 ──
   const [mode, setMode] = useState("new"); // new | edit
-  const [form, setForm] = useState(() => makeEmptyForm(selectedInsCode));
+  const [form, setForm] = useState(() => makeEmptyForm(effectiveInsCode));
 
   const set = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
   const set2 = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
-  // 신규추가
+  // ── 보험사 선택 시 ──
+  const onSelectInsurer = (row) => {
+    const nextCode = row.bocomcode;
+    setSelectedInsCode(nextCode);
+
+    const nextContacts = contacts.filter((a) => a.bocomcode === nextCode);
+    const first = nextContacts[0];
+
+    if (first) {
+      setSelectedKey(first.bocomcode + "_" + first.seqno);
+      setMode("edit");
+      setForm(contactToForm(first));
+    } else {
+      setSelectedKey("");
+      setMode("new");
+      setForm(makeEmptyForm(nextCode));
+    }
+  };
+
+  // ── 담당자 클릭 → 수정 모드 ──
+  const onSelectContact = (row) => {
+    setSelectedKey(row.bocomcode + "_" + row.seqno);
+    setMode("edit");
+    setForm(contactToForm(row));
+  };
+
+  // ── 신규추가 ──
   const onNew = () => {
     setMode("new");
-    setSelectedAgentId("");
-    setForm(makeEmptyForm(selectedInsCode));
+    setSelectedKey("");
+    setForm(makeEmptyForm(effectiveInsCode));
   };
 
-  // 목록 클릭 → 수정 모드
-  const onSelectAgent = (row) => {
-    setSelectedAgentId(row.id);
-    setMode("edit");
-    setForm({
-      ...row,
-      emailDomainSel: EMAIL_DOMAINS.includes(row.emailDomain) ? row.emailDomain : "직접입력",
-      emailDomainCustom: EMAIL_DOMAINS.includes(row.emailDomain) ? "" : row.emailDomain,
-    });
-  };
-
-  // 저장(신규/수정)
+  // ── 저장 ──
   const onSave = async () => {
-    const agentName = (form.agentName || "").trim();
+    const boman_nm = (form.boman_nm || "").trim();
     if (!selectedInsurer) {
-      // alert("보험사를 선택하세요.");
       await warning("보험사를 선택하세요.");
       return;
     }
-    if (!agentName) {
-      // alert("담당자를 입력하세요.");
+    if (!boman_nm) {
       await warning("담당자를 입력하세요.");
       return;
     }
 
-    const emailDomain =
+    const email_smtp =
       form.emailDomainSel === "직접입력"
         ? (form.emailDomainCustom || "").trim()
         : form.emailDomainSel;
 
-    if (mode === "new") {
-      // const id = `A${String(Date.now()).slice(-6)}`;
-      const id = makeId(seqRef.current++);
-      const newRow = {
-        id,
-        insCode: selectedInsCode,
-        agentName,
-        hp1: onlyNum(form.hp1),
-        hp2: onlyNum(form.hp2),
-        hp3: onlyNum(form.hp3),
-        fax1: onlyNum(form.fax1),
-        fax2: onlyNum(form.fax2),
-        fax3: onlyNum(form.fax3),
-        emailId: (form.emailId || "").trim(),
-        emailDomain: emailDomain || "",
-        tel1: onlyNum(form.tel1),
-        tel2: onlyNum(form.tel2),
-        tel3: onlyNum(form.tel3),
-        memo: form.memo || "",
-        status: "사용",
-      };
+    const saveForm = {
+      ...form,
+      bocomcode: effectiveInsCode,
+      boman_nm,
+      email_smtp,
+    };
 
-      setAgents((prev) => [...prev, newRow]);
-      setSelectedAgentId(newRow.id);
-      setMode("edit");
-      setForm({
-        ...newRow,
-        emailDomainSel: EMAIL_DOMAINS.includes(newRow.emailDomain) ? newRow.emailDomain : "직접입력",
-        emailDomainCustom: EMAIL_DOMAINS.includes(newRow.emailDomain) ? "" : newRow.emailDomain,
-      });
-      // alert("등록(더미) 완료");
+    try {
+      await save(saveForm);
+      await refetchContacts();
       await info("저장 완료");
-      return;
-    }
 
-    // edit 저장
-    setAgents((prev) =>
-      prev.map((a) =>
-        a.id === selectedAgentId
-          ? {
-              ...a,
-              agentName,
-              hp1: onlyNum(form.hp1),
-              hp2: onlyNum(form.hp2),
-              hp3: onlyNum(form.hp3),
-              fax1: onlyNum(form.fax1),
-              fax2: onlyNum(form.fax2),
-              fax3: onlyNum(form.fax3),
-              emailId: (form.emailId || "").trim(),
-              emailDomain: emailDomain || "",
-              tel1: onlyNum(form.tel1),
-              tel2: onlyNum(form.tel2),
-              tel3: onlyNum(form.tel3),
-              memo: form.memo || "",
-            }
-          : a
-      )
-    );
-    // alert("저장(더미) 완료");
-    await info("저장 완료");
+      // 신규 저장 후: 재조회된 목록에서 마지막 항목 선택 or 신규 모드 유지
+      if (mode === "new") {
+        setMode("new");
+        setSelectedKey("");
+        setForm(makeEmptyForm(effectiveInsCode));
+      }
+    } catch (err) {
+      await warning(err?.message || "저장에 실패했습니다.");
+    }
   };
 
-  // 목록에서 행 삭제(소프트 삭제)
-   const onDeleteRow = async (row) => {
-    if (!row?.id) return;
+  // ── 삭제 ──
+  const onDeleteRow = async (row) => {
+    if (!row?.seqno) return;
 
-    // const ok = confirm(`${row.agentName} 담당자를 삭제 처리할까요?`);
     const ok = await confirm(
-      `${row.agentName} 담당자를 삭제 처리할까요?`,
-      "삭제 확인", 
+      `${row.boman_nm} 담당자를 삭제할까요?`,
+      "삭제 확인",
       { confirmText: "삭제", cancelText: "취소" }
     );
     if (!ok) return;
 
-    setAgents((prev) => prev.map((a) => (a.id === row.id ? { ...a, status: "삭제" } : a)));
+    try {
+      await remove(row.bocomcode, row.seqno);
+      await refetchContacts();
+      // await info("삭제 완료");
 
-    // 삭제한 행이 선택중이면 폼/선택 초기화
-    if (selectedAgentId === row.id) {
-      setSelectedAgentId("");
-      setMode("new");
-      setForm(makeEmptyForm(selectedInsCode));
+      // 삭제한 행이 선택중이면 초기화
+      if (selectedKey === row.bocomcode + "_" + row.seqno) {
+        setSelectedKey("");
+        setMode("new");
+        setForm(makeEmptyForm(effectiveInsCode));
+      }
+    } catch (err) {
+      await warning(err?.message || "삭제에 실패했습니다.");
     }
   };
 
-  // FixedHeadTable: 보험사 컬럼
+  // ── 보험사 테이블 컬럼 ──
   const insurerCols = useMemo(
     () => [
       {
-        key: "code",
+        key: "bocomcode",
         title: "코드",
         width: "30%",
         align: "left",
@@ -263,7 +175,7 @@ export default function InsurerContactsPage() {
         render: (val) => <span className="font-mono text-gray-700">{val}</span>,
       },
       {
-        key: "name",
+        key: "bocomname",
         title: "보험사",
         width: "70%",
         align: "left",
@@ -273,20 +185,17 @@ export default function InsurerContactsPage() {
     []
   );
 
-
-  // FixedHeadTable: 담당자 컬럼 
-  const agentCols = [
+  // ── 담당자 테이블 컬럼 ──
+  const contactCols = [
     {
-      key: "insName",
+      key: "bocomname",
       title: "보험사명",
-      width: "60%",
+      width: "55%",
       align: "left",
-      render: () => (
-        <span className="text-gray-700">{selectedInsurer?.name || "-"}</span>
-      ),
+      render: (val) => <span className="text-gray-700">{val || selectedInsurer?.bocomname || "-"}</span>,
     },
     {
-      key: "agentName",
+      key: "boman_nm",
       title: "담당자",
       width: "28%",
       align: "left",
@@ -295,14 +204,12 @@ export default function InsurerContactsPage() {
     {
       key: "__del",
       title: "",
-      width: "20%",
+      width: "17%",
       align: "center",
-      truncate: false,    // FixedHeadTable이 지원하면 권장
       render: (_v, row) => (
         <IconBtn
           icon={Trash2}
           label=""
-          // variant="ghost"
           className="h-9 w-10 justify-center p-0"
           onClick={(e) => {
             e?.stopPropagation?.();
@@ -311,19 +218,15 @@ export default function InsurerContactsPage() {
         />
       ),
     },
-  
   ];
-  
 
   return (
-    // 모든 인풋 Enter/Shift+Enter 이동(위임)
     <div className="space-y-4" onKeyDown={moveFocusOnEnter}>
       {/* Header */}
       <div className="flex items-start gap-3">
         <div>
           <div className="text-lg font-semibold text-gray-900">보험 담당자 등록</div>
         </div>
-
         <div className="ml-auto flex gap-2">
           <IconBtn
             icon={Plus}
@@ -339,26 +242,32 @@ export default function InsurerContactsPage() {
             className="h-10 w-28 justify-center whitespace-nowrap"
             onClick={onSave}
           />
-          
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-0">
-        {/* Left: 보험사/담당자 목록 */}
-        <section className="xl:col-span-5 rounded-l-md border border-gray-200 bg-white overflow-hidden min-h-0">
-          {/* 상단: 보험사 목록 */}
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-0 xl:gap-3">
+        {/* Left: 보험사 + 담당자 목록 */}
+        <section className="xl:col-span-5 rounded-md border border-gray-200 bg-white overflow-hidden min-h-0">
+          {/* 상단: 보험사 — 고정 높이로 제한 */}
           <div className="border-b border-gray-200">
-            <div className="p-3 text-sm font-semibold text-gray-900">보험사</div>
-            <div className="p-0">
+            <div className="p-4 border-b border-gray-200 flex items-center gap-2">
+              <div className="text-base font-semibold text-gray-900">보험사</div>
+              <input
+                className="ml-auto h-9 w-48 rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900/10"
+                value={insurerQuery}
+                onChange={(e) => setInsurerQuery(e.target.value)}
+                placeholder="코드/보험사 검색"
+              />
+            </div>
+            <div style={{ height: 300 }}>
               <FixedHeadTable
                 columns={insurerCols}
-                rows={insurers}
-                rowKey={(r) => r.code}
-                selectedKey={selectedInsCode}
-                onRowClick={(row) => onSelectInsurer(row)}
-                height={220}
-                className="min-h-0 w-full"
-                emptyText="보험사가 없습니다."
+                rows={filteredInsurers}
+                rowKey={(r) => r.bocomcode}
+                selectedKey={effectiveInsCode}
+                onRowClick={onSelectInsurer}
+                className="min-h-0 w-full h-full"
+                emptyText="검색 결과가 없습니다."
                 rowSelectedClass="!bg-blue-50 hover:!bg-blue-50"
                 rowHoverClass="hover:!bg-gray-50"
                 gutterSelectedClass="!bg-blue-50"
@@ -367,66 +276,78 @@ export default function InsurerContactsPage() {
             </div>
           </div>
 
-          {/* 하단: 담당자 목록 */}
-          <div className=" border-t border-gray-200 p-0 min-h-0 mt-3 ">
+          {/* 하단: 담당자 — 고정 높이로 제한 */}
+          <div className="min-h-0 mt-3">
             <div className="p-3 border-b border-gray-200 flex items-center">
               <div className="text-sm font-semibold text-gray-900">담당자</div>
-              <div className="ml-auto text-xs text-gray-500">{viewAgents.length}건</div>
+              <div className="ml-auto text-xs text-gray-500">{viewContacts.length}건</div>
             </div>
 
-            <FixedHeadTable
-              columns={agentCols}
-              rows={viewAgents}
-              rowKey={(r) => r.id}
-              selectedKey={selectedAgentId}
-              onRowClick={(row) => onSelectAgent(row)}
-              height={340}
-              className="min-h-0 w-full"
-              emptyText="담당자가 없습니다."
-              rowSelectedClass="!bg-blue-50 hover:!bg-blue-50"
-              rowHoverClass="hover:!bg-gray-50"
-              gutterSelectedClass="!bg-blue-50"
-              gutterHoverClass="!bg-gray-50"
-            />
+            <div style={{ height: 310 }}>
+              <FixedHeadTable
+                columns={contactCols}
+                rows={viewContacts}
+                rowKey={(r) => r.bocomcode + "_" + r.seqno}
+                selectedKey={selectedKey}
+                onRowClick={onSelectContact}
+                className="min-h-0 w-full h-full"
+                emptyText="담당자가 없습니다."
+                rowSelectedClass="!bg-blue-50 hover:!bg-blue-50"
+                rowHoverClass="hover:!bg-gray-50"
+                gutterSelectedClass="!bg-blue-50"
+                gutterHoverClass="!bg-gray-50"
+              />
+            </div>
           </div>
         </section>
 
         {/* Right: 입력 폼 */}
-        <section className="xl:col-span-7 rounded-r-md border border-gray-200 border-l-0 bg-white overflow-hidden min-h-0">
+        <section className="xl:col-span-7 rounded-md border border-gray-200 bg-white overflow-hidden min-h-0">
           <div className="p-4 border-b border-gray-200">
             <div className="flex items-center">
               <div className="text-base font-semibold text-gray-900">
-                {selectedInsurer ? `보험사: ${selectedInsurer.code} ${selectedInsurer.name}` : "보험사 선택"}
+                {selectedInsurer
+                  ? `보험사: ${selectedInsurer.bocomcode} ${selectedInsurer.bocomname}`
+                  : "보험사 선택"}
               </div>
             </div>
           </div>
 
           <div className="p-5 space-y-4">
             <Field label="담당자">
-              <input className={inputBase} value={form.agentName} onChange={set("agentName")} />
+              <input className={inputBase} value={form.boman_nm} onChange={set("boman_nm")} />
             </Field>
 
             <Field label="휴대번호">
-              <Phone3 v1={form.hp1} v2={form.hp2} v3={form.hp3} on1={set("hp1")} on2={set("hp2")} on3={set("hp3")} />
+              <Phone3
+                v1={form.hp0} v2={form.hp1} v3={form.hp2}
+                on1={set("hp0")} on2={set("hp1")} on3={set("hp2")}
+              />
             </Field>
 
             <Field label="팩스번호">
-              <Phone3 v1={form.fax1} v2={form.fax2} v3={form.fax3} on1={set("fax1")} on2={set("fax2")} on3={set("fax3")} />
-            </Field>
-
-            <Field label="이메일">
-              <EmailRow
-                emailId={form.emailId}
-                emailDomainSel={form.emailDomainSel}
-                emailDomainCustom={form.emailDomainCustom}
-                onEmailId={set("emailId")}
-                onDomainSel={(v) => set2("emailDomainSel", v)}
-                onDomainCustom={set("emailDomainCustom")}
+              <Phone3
+                v1={form.fax0} v2={form.fax1} v3={form.fax2}
+                on1={set("fax0")} on2={set("fax1")} on3={set("fax2")}
               />
             </Field>
 
             <Field label="전화번호">
-              <Phone3 v1={form.tel1} v2={form.tel2} v3={form.tel3} on1={set("tel1")} on2={set("tel2")} on3={set("tel3")} />
+              <Phone3
+                v1={form.tel0} v2={form.tel1} v3={form.tel2}
+                on1={set("tel0")} on2={set("tel1")} on3={set("tel2")}
+              />
+            </Field>
+
+            <Field label="이메일">
+              <EmailRow
+                emailId={form.email_acc}
+                emailDomainSel={form.emailDomainSel}
+                emailDomainCustom={form.emailDomainCustom}
+                onEmailId={set("email_acc")}
+                onDomainSel={(v) => set2("emailDomainSel", v)}
+                onDomainCustom={set("emailDomainCustom")}
+              />
             </Field>
 
             <Field label="메모" alignTop>
@@ -441,31 +362,33 @@ export default function InsurerContactsPage() {
 
 /* ---------- helpers ---------- */
 
-function makeEmptyForm(insCode) {
+function makeEmptyForm(bocomcode) {
   return {
-    id: "",
-    insCode: insCode || "01",
-    agentName: "",
-    hp1: "010",
-    hp2: "",
-    hp3: "",
-    fax1: "",
-    fax2: "",
-    fax3: "",
-    emailId: "",
+    bocomcode: bocomcode || "",
+    seqno: "",
+    boman_nm: "",
+    hp0: "010", hp1: "", hp2: "",
+    fax0: "", fax1: "", fax2: "",
+    email_acc: "",
+    email_smtp: "hanmail.net",
     emailDomainSel: "hanmail.net",
     emailDomainCustom: "",
-    tel1: "",
-    tel2: "",
-    tel3: "",
+    tel0: "", tel1: "", tel2: "",
     memo: "",
-    status: "사용",
   };
 }
 
-function onlyNum(v) {
-  return (v ?? "").toString().replace(/[^\d]/g, "");
+/** API row → 폼 객체 (emailDomainSel/Custom 추가) */
+function contactToForm(row) {
+  const smtp = row.email_smtp || "";
+  return {
+    ...row,
+    emailDomainSel: EMAIL_DOMAINS.includes(smtp) ? smtp : "직접입력",
+    emailDomainCustom: EMAIL_DOMAINS.includes(smtp) ? "" : smtp,
+  };
 }
+
+/* ---------- UI bits ---------- */
 
 function Field({ label, children, alignTop }) {
   return (
@@ -493,26 +416,21 @@ function Phone3({ v1, v2, v3, on1, on2, on3 }) {
 function EmailRow({ emailId, emailDomainSel, emailDomainCustom, onEmailId, onDomainSel, onDomainCustom }) {
   return (
     <div className="flex items-center gap-2">
-      <input className={inputBase + " w-40"} value={emailId} onChange={onEmailId}  />
+      <input className={inputBase + " w-40"} value={emailId} onChange={onEmailId} />
       <span className="text-gray-400">@</span>
-
-      {/* select-base로 고정 */}
-      <select className="select-base w-40" value={emailDomainSel} onChange={(e) => onDomainSel(e.target.value)}>
-        {EMAIL_DOMAINS.map((d) => (
-          <option key={d} value={d}>
-            {d}
-          </option>
-        ))}
-      </select>
-
+      
       {emailDomainSel === "직접입력" ? (
         <input className={inputBase + " w-44"} value={emailDomainCustom} onChange={onDomainCustom} placeholder="example.com" />
       ) : null}
+      <select className="select-base w-40" value={emailDomainSel} onChange={(e) => onDomainSel(e.target.value)}>
+        {EMAIL_DOMAINS.map((d) => (
+          <option key={d} value={d}>{d}</option>
+        ))}
+      </select>
     </div>
   );
 }
 
-// ✅ input은 기존 스타일 유지
 const inputBase =
   "h-10 rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900/10 w-full";
 

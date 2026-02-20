@@ -5,12 +5,8 @@ import MoneyInput from "../components/MoneyInput";
 import { moveFocusOnEnter } from "../utils/focusUtils";
 import CheckBox from "../components/CheckBox"; 
 import { useAlert } from "../alerts";
-
-const OPT_WORK_BASE = [
-    { value: "1", label: "1 건교부" },
-    { value: "2", label: "2 연합회" },
-  ];
-
+import { useLaborSettings } from "../hooks/useLaborSettings";
+import { useTbCode } from "../hooks/useTbCode";
 
 function PercentInput({ value, onChange }) {
   return (
@@ -31,35 +27,10 @@ function PercentInput({ value, onChange }) {
   
 export default function LaborSettingsPage() {
   const { confirm, success, info } = useAlert();
-  const [form, setForm] = useState({
-    // 상단
-    기본탈부착작업: "1건공부",
-    기본도장작업: "1건공부",
-    "2005도장재료비인상율": "0",
-    "2018도장재료비인상율": "0",
-    부분판금율: "80",
-    "가열건조비": "15869",
+  const { form, setForm, loading, saving, error, refetch, save } = useLaborSettings();
+  const { codes: paykindList } = useTbCode("PYK01");
+  const { codes: pntkindList } = useTbCode("PNK01");
 
-    // [국산차공임]
-    공임_탈착_MH: "36650",
-    공임_판금_MH: "36650",
-    공임_도장_MH: "36650",
-
-    // [외제차 공임]
-    외제_탈착_MH: "50000",
-    외제_판금_MH: "50000",
-    외제_도장_MH: "50000",
-
-    // 하단
-    작성자: "이명기",
-    조색기기모델: "안녕",
-
-    // 체크옵션
-    도장재료대공임액에합산하기: false,
-    aos국토부정비이력전송기본설정: true,
-  });
-
-  // const set = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
   const set = (k) => (v) => {
     // MoneyInput은 raw string을 넘기고,
     // select/input 같은 기본 컨트롤은 이벤트를 넘길 수 있으니 둘 다 처리
@@ -67,15 +38,20 @@ export default function LaborSettingsPage() {
     setForm((p) => ({ ...p, [k]: value }));
   };
   
-  // const setCheck = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.checked }));
   const setCheck = (k) => (checked) => setForm((p) => ({ ...p, [k]: checked }));
-  const onSave = () => console.log("저장(더미)", form);
+  const onSave = async () => {
+    try {
+      await save(form);
+      await info("저장 완료");
+    } catch (err) {
+      await info(err.message || "저장 실패");
+    }
+  };
   
   return (
     <div 
       className="space-y-4"
       onKeyDown={(e) => {
-        // if (e.target.tagName === "TEXTAREA") return;
         if (e.key === "Enter") moveFocusOnEnter(e);
       }}
     >
@@ -92,6 +68,7 @@ export default function LaborSettingsPage() {
             variant="primary"
             className="h-10 w-28 justify-center whitespace-nowrap"
             onClick={onSave}
+            disabled={saving}
           />
         </div>
       </div>
@@ -106,13 +83,16 @@ export default function LaborSettingsPage() {
             <Field label="기본 탈부착작업">
               <select 
                 className="w-full select-base" 
-                value={form.기본탈부착작업} 
-                onChange={set("기본탈부착작업")}
+                value={form.paykind} 
+                onChange={set("paykind")}
               >
-              {OPT_WORK_BASE.map((o) => (
+              {/* {OPT_WORK_BASE.map((o) => (
                 <option key={o.value} value={o.value}>
                     {o.label}
                 </option>
+              ))} */}
+                {paykindList.filter((o) => o.state === "1").map((o) => (
+                  <option key={o.value} value={o.value}>{o.value} {o.label}</option>
                 ))}
               </select>
             </Field>
@@ -120,40 +100,43 @@ export default function LaborSettingsPage() {
             <Field label="기본 도장작업">
               <select 
                 className="w-full select-base" 
-                value={form.기본도장작업} 
-                onChange={set("기본도장작업")}
+                value={form.pntkind} 
+                onChange={set("pntkind")}
               >
-                {OPT_WORK_BASE.map((o) => (
+                {/* {OPT_WORK_BASE.map((o) => (
                   <option key={o.value} value={o.value}>
                     {o.label}
                   </option>
+                ))} */}
+                {pntkindList.filter((o) => o.state === "1").map((o) => (
+                  <option key={o.value} value={o.value}>{o.value} {o.label}</option>
                 ))}
               </select>
             </Field>
 
             <Field label="2005 도장재료비 인상율">
               <PercentInput
-                value={form["2005도장재료비인상율"]}
-                onChange={set("2005도장재료비인상율")}
+                value={form.pntrate_m05}
+                onChange={set("pntrate_m05")}
               />
             </Field>
 
             <Field label="2018 도장재료비 인상율">
               <PercentInput
-                value={form["2018도장재료비인상율"]}
-                onChange={set("2018도장재료비인상율")}
+                value={form.pntrate_m18}
+                onChange={set("pntrate_m18")}
               />
             </Field>
 
             <Field label="부분판금율">
               <PercentInput
-                value={form.부분판금율}
-                onChange={set("부분판금율")}
+                value={form.pntrate_sec}
+                onChange={set("pntrate_sec")}
               />
             </Field>
 
             <Field label="가열건조비">
-              <MoneyInput value={form["가열건조비"]} onChange={set("가열건조비")} />
+              <MoneyInput value={form.pnt_drypay} onChange={set("pnt_drypay")} />
             </Field>
           </div>
         </section>
@@ -167,15 +150,15 @@ export default function LaborSettingsPage() {
 
           <div className="mt-4 space-y-4">
             <RateGroup title="[ 국산차공임 ]">
-              <RateRow labelLeft="탈착 M/H" value={form.공임_탈착_MH} onChange={set("공임_탈착_MH")} />
-              <RateRow labelLeft="판금 M/H" value={form.공임_판금_MH} onChange={set("공임_판금_MH")} />
-              <RateRow labelLeft="도장 M/H" value={form.공임_도장_MH} onChange={set("공임_도장_MH")} />
+              <RateRow labelLeft="탈착 M/H" value={form.xpay} onChange={set("xpay")} />
+              <RateRow labelLeft="판금 M/H" value={form.bpay} onChange={set("bpay")} />
+              <RateRow labelLeft="도장 M/H" value={form.ppay} onChange={set("ppay")} />
             </RateGroup>
 
             <RateGroup title="[ 외제차 공임 ]">
-              <RateRow labelLeft="탈착 M/H" value={form.외제_탈착_MH} onChange={set("외제_탈착_MH")} />
-              <RateRow labelLeft="판금 M/H" value={form.외제_판금_MH} onChange={set("외제_판금_MH")} />
-              <RateRow labelLeft="도장 M/H" value={form.외제_도장_MH} onChange={set("외제_도장_MH")} />
+              <RateRow labelLeft="탈착 M/H" value={form.expay} onChange={set("expay")} />
+              <RateRow labelLeft="판금 M/H" value={form.ebpay} onChange={set("ebpay")} />
+              <RateRow labelLeft="도장 M/H" value={form.eppay} onChange={set("eppay")} />
             </RateGroup>
           </div>
         </section>
@@ -192,8 +175,8 @@ export default function LaborSettingsPage() {
             <Field label="작성자">
               <input 
                 className={inputBase} 
-                value={form.작성자} 
-                onChange={set("작성자")} 
+                value={form.w_manname}  
+                onChange={set("w_manname")} 
                 onKeyDown={moveFocusOnEnter}
               />
             </Field>
@@ -201,8 +184,8 @@ export default function LaborSettingsPage() {
             <Field label="조색기기 모델">
               <input 
                 className={inputBase} 
-                value={form.조색기기모델} 
-                onChange={set("조색기기모델")} 
+                value={form.pntmix_model} 
+                onChange={set("pntmix_model")} 
                 onKeyDown={moveFocusOnEnter}
               />
             </Field>
@@ -215,15 +198,15 @@ export default function LaborSettingsPage() {
           <div className="mt-4 flex flex-col gap-2">
             <CheckBox
               label="도장재료대 공임액에 합산하기"
-              checked={form.도장재료대공임액에합산하기}
-              onChange={setCheck("도장재료대공임액에합산하기")}
+              checked={form.pnt_material}
+              onChange={setCheck("pnt_material")}
               labelClassName="text-gray-800 font-medium"
             />
 
             <CheckBox
               label="aos 국토부 정비이력전송을 기본으로 설정"
-              checked={form.aos국토부정비이력전송기본설정}
-              onChange={setCheck("aos국토부정비이력전송기본설정")}
+              checked={form.est_aosonly}
+              onChange={setCheck("est_aosonly")}
               labelClassName="text-gray-800 font-medium"
             />
 
@@ -249,7 +232,6 @@ function RateGroup({ title, children }) {
   return (
     <div className="rounded-md border border-gray-200 p-4">
       <div className="text-sm font-semibold text-gray-900 mb-3">{title}</div>
-      {/* ✅ 요청: 한 줄씩 배치 → space-y */}
       <div className="space-y-3">{children}</div>
     </div>
   );

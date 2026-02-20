@@ -1,102 +1,73 @@
-import { useMemo, useState } from "react";
+import { useRef, useLayoutEffect, useMemo, useState } from "react";
 import { Save } from "lucide-react";
-import FixedHeadTable from "../components/FixedHeadTable"; 
-import IconBtn from "../components/IconBtn"; 
-import MoneyInput from "../components/MoneyInput"; 
-import { moveFocusOnEnter } from "../utils/focusUtils"; 
+import FixedHeadTable from "../components/FixedHeadTable";
+import IconBtn from "../components/IconBtn";
+import MoneyInput from "../components/MoneyInput";
+import { moveFocusOnEnter } from "../utils/focusUtils";
 import { useAlert } from "../alerts";
-
-// 화면 전용(더미) 보험사 목록
-const seedInsurers = [
-  { code: "01", name: "메리츠" },
-  { code: "02", name: "한화" },
-  { code: "03", name: "롯데" },
-  { code: "04", name: "MG" },
-  { code: "05", name: "흥국" },
-  { code: "06", name: "삼성" },
-  { code: "07", name: "현대" },
-  { code: "08", name: "KB" },
-  { code: "09", name: "DB" },
-  { code: "10", name: "NH농협손해보험" },
-  { code: "11", name: "AIG" },
-  { code: "12", name: "택시공제" },
-  { code: "13", name: "버스공제" },
-  { code: "14", name: "화물공제" },
-  { code: "15", name: "개인택시공제" },
-  { code: "16", name: "전세버스공제" },
-  { code: "17", name: "렌터카공제" },
-  { code: "18", name: "대리운전공제" },
-  { code: "19", name: "교보-AXA" },
-  { code: "20", name: "하나손해보험" },
-  { code: "21", name: "ERGO다음다이렉트" },
-];
-
-// 보험사별 공임(더미)
-function makeDefaultLabor() {
-  return {
-    // 국산
-    dom: { 탈착: "35000", 판금: "35000", 도장: "35000" },
-    // 외제
-    for: { 탈착: "45000", 판금: "45000", 도장: "45000" },
-  };
-}
+import { useInsurers } from "../hooks/useInsurers";
 
 export default function InsurersPage() {
   const { confirm, warning, error, info } = useAlert();
-  const [insurers] = useState(seedInsurers);
-  const [selectedCode, setSelectedCode] = useState("01");
+  const { insurers, setInsurers, loading, saving, save, refetch } = useInsurers();
 
-  // 보험사별 공임 데이터(화면용)
-  const [laborByInsurer, setLaborByInsurer] = useState(() => {
-    const map = {};
-    for (const it of seedInsurers) map[it.code] = makeDefaultLabor();
-    return map;
-  });
+  const [selectedCode, setSelectedCode] = useState("");
+  const [rightHeight, setRightHeight] = useState(undefined);
+
+  const rightPanelRef = useRef(null);
+  // 우측 패널 렌더 높이를 측정 → 좌측 section max-height로 사용
+  useLayoutEffect(() => {
+    const right = rightPanelRef.current;
+    if (!right) return;
+
+    const calc = () => {
+      const h = right.getBoundingClientRect().height;
+      if (h > 0) setRightHeight(h);
+    };
+
+    calc();
+
+    const ro = new ResizeObserver(calc);
+    ro.observe(right);
+    return () => ro.disconnect();
+  }, []);
+
+  // derived: selectedCode가 비어있으면 첫 번째 보험사
+  const effectiveCode = selectedCode || insurers[0]?.bocomcode || "";
 
   const selectedInsurer = useMemo(
-    () => insurers.find((x) => x.code === selectedCode) || null,
-    [insurers, selectedCode]
+    () => insurers.find((x) => x.bocomcode === effectiveCode) || null,
+    [insurers, effectiveCode]
   );
 
-  const labor = laborByInsurer[selectedCode] || makeDefaultLabor();
-
-  // const setLabor = (section, key) => (e) => {
-  //   const v = e.target.value; // MoneyInput: 숫자만 들어옴
-  //   setLaborByInsurer((prev) => ({
-  //     ...prev,
-  //     [selectedCode]: {
-  //       ...prev[selectedCode],
-  //       [section]: { ...prev[selectedCode][section], [key]: v },
-  //     },
-  //   }));
-  // };
-
-  const setLabor = (section, key) => (v) => {
+  // 선택된 보험사의 필드 수정
+  const setField = (field) => (v) => {
     const value = v && v.target ? v.target.value : v;
-  
-    setLaborByInsurer((prev) => ({
-      ...prev,
-      [selectedCode]: {
-        ...prev[selectedCode],
-        [section]: { ...prev[selectedCode][section], [key]: value },
-      },
-    }));
+    setInsurers((prev) =>
+      prev.map((r) =>
+        r.bocomcode === effectiveCode ? { ...r, [field]: value } : r
+      )
+    );
   };
-  
 
   const onSave = async () => {
-    // 화면만: 저장 로그
-    // console.log("저장(더미)", { insurer: selectedInsurer, labor });
-    // alert("저장(더미) 완료");
-    await info("저장 완료");
-
+    if (!selectedInsurer) {
+      await warning("보험사를 선택하세요.");
+      return;
+    }
+    try {
+      await save(selectedInsurer);
+      await info("저장 완료");
+    } catch (err) {
+      await warning(err?.message || "저장에 실패했습니다.");
+    }
   };
 
-  // ✅ FixedHeadTable columns
+  // FixedHeadTable columns
   const columns = useMemo(
     () => [
       {
-        key: "code",
+        key: "bocomcode",
         title: "코드",
         width: "30%",
         align: "left",
@@ -104,7 +75,7 @@ export default function InsurersPage() {
         render: (val) => <span className="font-mono text-gray-700">{val}</span>,
       },
       {
-        key: "name",
+        key: "bocomname",
         title: "보험사",
         width: "70%",
         align: "left",
@@ -123,7 +94,7 @@ export default function InsurersPage() {
         <div>
           <div className="text-lg font-semibold text-gray-900">보험사 M/H설정</div>
           <div className="text-sm text-gray-500 mt-0.5">
-            보험사별 시간당 공임(국산/외제) 금액 설정
+            보험사별 시간당 공임(국산/수입차) 금액 설정
           </div>
         </div>
 
@@ -139,23 +110,27 @@ export default function InsurersPage() {
       </div>
 
       {/* Body */}
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-0">
-        {/* Left: 보험사 목록 */}
-        <section className="xl:col-span-4 rounded-l-md border border-gray-200 bg-white overflow-hidden min-h-0">
-          <div className="p-4 border-b border-gray-200">
+      {/* <div className="grid grid-cols-1 xl:grid-cols-12 gap-0 xl:auto-rows-[1fr]"> */}
+      <div 
+        className="grid grid-cols-1 xl:grid-cols-12 gap-0 xl:gap-3"
+      >
+        {/* Left: 보험사 목록 — 우측 높이에 맞춰 max-height 제한 */}
+        <section
+          className="xl:col-span-4 rounded-md border border-gray-200 bg-white overflow-hidden min-h-0 flex flex-col"
+          style={rightHeight ? { maxHeight: rightHeight } : undefined}
+        >
+          <div className="p-4 border-b border-gray-200 shrink-0">
             <div className="text-base font-semibold text-gray-900">보험사</div>
           </div>
 
-          {/* ✅ FixedHeadTable */}
-          <div className="p-0 min-h-0">
+          <div className="min-h-0 flex-1 ">
             <FixedHeadTable
               columns={columns}
               rows={insurers}
-              rowKey={(r) => r.code}
-              selectedKey={selectedCode}
-              onRowClick={(row) => setSelectedCode(row.code)}
-              height={560}
-              className="min-h-0 w-full"
+              rowKey={(r) => r.bocomcode}
+              selectedKey={effectiveCode}
+              onRowClick={(row) => setSelectedCode(row.bocomcode)}
+              className="min-h-0 w-full h-full"
               emptyText="보험사가 없습니다."
               rowSelectedClass="!bg-blue-50 hover:!bg-blue-50"
               rowHoverClass="hover:!bg-gray-50"
@@ -166,36 +141,38 @@ export default function InsurersPage() {
         </section>
 
         {/* Right: 공임 입력 */}
-        <section className="xl:col-span-8 rounded-r-md border border-gray-200 border-l-0 bg-white overflow-hidden min-h-0">
+        <section 
+          ref={rightPanelRef} 
+          className="xl:col-span-8 rounded-md border border-gray-200 bg-white overflow-hidden min-h-0 flex flex-col self-stretch"
+        >
           <div className="p-4 border-b border-gray-200">
             <div className="text-base font-semibold text-gray-900">
-              {selectedInsurer ? `보험사: ${selectedInsurer.code} ${selectedInsurer.name}` : "보험사 선택"}
+              {selectedInsurer ? `보험사: ${selectedInsurer.bocomcode} ${selectedInsurer.bocomname}` : "보험사 선택"}
             </div>
           </div>
 
           <div className="p-5 space-y-6">
             <RateBox title="[ 공임사항 ]">
               <RateRow label="탈착 M/H">
-                {/* ✅ MoneyInput: 천단위 콤마 */}
-                <MoneyInput value={labor.dom.탈착} onChange={setLabor("dom", "탈착")} />
+                <MoneyInput value={selectedInsurer?.xpay ?? ""} onChange={setField("xpay")} />
               </RateRow>
               <RateRow label="판금 M/H">
-                <MoneyInput value={labor.dom.판금} onChange={setLabor("dom", "판금")} />
+                <MoneyInput value={selectedInsurer?.bpay ?? ""} onChange={setField("bpay")} />
               </RateRow>
               <RateRow label="도장 M/H">
-                <MoneyInput value={labor.dom.도장} onChange={setLabor("dom", "도장")} />
+                <MoneyInput value={selectedInsurer?.ppay ?? ""} onChange={setField("ppay")} />
               </RateRow>
             </RateBox>
 
-            <RateBox title="[ 외제차 공임 ]">
+            <RateBox title="[ 수입차 공임 ]">
               <RateRow label="탈착 M/H">
-                <MoneyInput value={labor.for.탈착} onChange={setLabor("for", "탈착")} />
+                <MoneyInput value={selectedInsurer?.expay ?? ""} onChange={setField("expay")} />
               </RateRow>
               <RateRow label="판금 M/H">
-                <MoneyInput value={labor.for.판금} onChange={setLabor("for", "판금")} />
+                <MoneyInput value={selectedInsurer?.ebpay ?? ""} onChange={setField("ebpay")} />
               </RateRow>
               <RateRow label="도장 M/H">
-                <MoneyInput value={labor.for.도장} onChange={setLabor("for", "도장")} />
+                <MoneyInput value={selectedInsurer?.eppay ?? ""} onChange={setField("eppay")} />
               </RateRow>
             </RateBox>
           </div>
