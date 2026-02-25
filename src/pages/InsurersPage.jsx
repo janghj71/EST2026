@@ -1,4 +1,4 @@
-import { useRef, useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useLayoutEffect, useMemo, useState } from "react";
 import { Save } from "lucide-react";
 import FixedHeadTable from "../components/FixedHeadTable";
 import IconBtn from "../components/IconBtn";
@@ -9,7 +9,12 @@ import { useInsurers } from "../hooks/useInsurers";
 
 export default function InsurersPage() {
   const { confirm, warning, error, info } = useAlert();
-  const { insurers, setInsurers, loading, saving, save, refetch } = useInsurers();
+  const { insurers, setInsurers, loading, saving, error: insError, save, refetch } = useInsurers();
+
+  // 조회 에러 → 메시지 표시
+  useEffect(() => {
+    if (insError) warning(insError.message || "조회에 실패했습니다.");
+  }, [insError]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [selectedCode, setSelectedCode] = useState("");
   const [rightHeight, setRightHeight] = useState(undefined);
@@ -105,6 +110,7 @@ export default function InsurersPage() {
             variant="primary"
             className="h-10 w-28 justify-center whitespace-nowrap"
             onClick={onSave}
+            disabled={!!insError}
           />
         </div>
       </div>

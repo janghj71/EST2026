@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Save, RotateCcw, Upload, Trash2, Search } from "lucide-react";
 import IconBtn from "../components/IconBtn";
 import { moveFocusOnEnter } from "../utils/focusUtils";
@@ -9,14 +9,22 @@ import { useTbCode } from "../hooks/useTbCode";
 import { useSealImage } from "../hooks/useSealImage";
 
 
-// 화면 전용(더미) 페이지: API/훅 없음
 export default function CompanyInfoPage() {
-  const { confirm, info } = useAlert();
+  const { confirm, info, warning } = useAlert();
   const { form, setForm, loading,  saving, error, refetch, save  } = useCompanyInfo();
-  const { companySeal, managerSeal, saving: sealSaving, saveSeal, deleteSeal } = useSealImage();
+  const { companySeal, managerSeal, saving: sealSaving, error: sealError, saveSeal, deleteSeal } = useSealImage();
   const { codes: shopKindList } = useTbCode("SKD01");
 
+  const hasError = !!(error || sealError);
+
   const onChange = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
+
+  // 조회 에러 → 메시지 표시
+  React.useEffect(() => {
+    const msg = error?.message || sealError?.message;
+    if (msg) warning(msg || "조회에 실패했습니다.");
+  }, [error, sealError]); // eslint-disable-line react-hooks/exhaustive-deps
+
 
   const onSave = async () => {
     try {
@@ -41,9 +49,6 @@ export default function CompanyInfoPage() {
       <div className="flex items-start gap-3">
         <div>
           <div className="text-lg font-semibold text-gray-900">업체정보</div>
-          {/* <div className="text-sm text-gray-500 mt-0.5">
-            기초사항
-          </div> */}
         </div>
 
         <div className="ml-auto flex gap-2">
@@ -53,7 +58,7 @@ export default function CompanyInfoPage() {
             variant="primary"
             className="h-10 w-25 justify-center"
             onClick={onSave}
-            disabled={saving}
+            disabled={saving || hasError}
           />
         </div>
       </div>
@@ -156,12 +161,12 @@ export default function CompanyInfoPage() {
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <SealUploader
           title="회사 직인"
-          imageUrl={companySeal}
+          imageUrl={sealError ? "" : companySeal}
+          disabled={hasError}
           onUpload={async (file) => {
             if (!file) return;
             try {
               await saveSeal(1, file);
-              // await info("회사 직인 저장 완료");
             } catch (err) {
               await info(err.message || "회사 직인 저장 실패");
             }
@@ -171,7 +176,6 @@ export default function CompanyInfoPage() {
             if (!ok) return;
             try {
               await deleteSeal(1);
-              // await info("회사 직인 삭제 완료");
             } catch (err) {
               await info(err.message || "회사 직인 삭제 실패");
             }
@@ -180,12 +184,12 @@ export default function CompanyInfoPage() {
 
         <SealUploader
           title="정비책임자 인감"
-          imageUrl={managerSeal}
+          imageUrl={sealError ? "" : managerSeal}
+          disabled={hasError}
           onUpload={async (file) => {
             if (!file) return;
             try {
               await saveSeal(2, file);
-              // await info("정비책임자 인감 저장 완료");
             } catch (err) {
               await info(err.message || "정비책임자 인감 저장 실패");
             }
@@ -195,7 +199,6 @@ export default function CompanyInfoPage() {
             if (!ok) return;
             try {
               await deleteSeal(2);
-              // await info("정비책임자 인감 삭제 완료");
             } catch (err) {
               await info(err.message || "정비책임자 인감 삭제 실패");
             }

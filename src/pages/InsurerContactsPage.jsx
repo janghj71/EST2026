@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Plus, Save, Trash2 } from "lucide-react";
 import FixedHeadTable from "../components/FixedHeadTable";
 import IconBtn from "../components/IconBtn";
@@ -16,11 +16,17 @@ const EMAIL_DOMAINS = [
 
 export default function InsurerContactsPage() {
   const { confirm, info, warning } = useAlert();
-  const { insurers } = useInsurers();
+  const { insurers, error: insError } = useInsurers();
   const {
     contacts, loading: contactsLoading, saving, deleting,
-    save, remove, refetch: refetchContacts,
+    error: contactError, save, remove, refetch: refetchContacts,
   } = useInsurerContacts();
+
+  // 조회 에러 → 메시지 표시
+  useEffect(() => {
+    const msg = insError?.message || contactError?.message;
+    if (msg) warning(msg || "조회에 실패했습니다.");
+  }, [insError, contactError]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── 좌측 보험사 선택 ──
   const [selectedInsCode, setSelectedInsCode] = useState("");
@@ -241,6 +247,7 @@ export default function InsurerContactsPage() {
             variant="primary"
             className="h-10 w-28 justify-center whitespace-nowrap"
             onClick={onSave}
+            disabled={!!(insError || contactError)}
           />
         </div>
       </div>

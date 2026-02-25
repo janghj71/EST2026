@@ -4,13 +4,18 @@ import { request } from "../api/request";
 import { getComcode } from "../api/config";
 import { apiOk } from "../api/apiOk";
 
-/** 모듈 레벨 캐시: 앱 전체에서 1회만 호출 */
+/** 모듈 레벨 캐시: 하루(24h) 유효 */
 let _cache = null;    // 전체 dataset 배열
+let _cacheAt = 0;     // 캐시 저장 시각 (ms)
 let _promise = null;  // 진행 중인 요청
 
+const ONE_DAY = 24 * 60 * 60 * 1000;
+
 async function fetchTbCode() {
-  // 이미 캐시되었으면 즉시 반환
-  if (_cache) return _cache;
+  // 캐시가 있고 24시간 이내이면 즉시 반환
+  if (_cache && Date.now() - _cacheAt < ONE_DAY) return _cache;
+  // 만료됐으면 캐시 초기화
+  if (_cache) { _cache = null; _cacheAt = 0; }
   // 진행 중인 요청이 있으면 대기
   if (_promise) return _promise;
 
@@ -23,6 +28,7 @@ async function fetchTbCode() {
     });
     apiOk(json, "공통코드 조회");
     _cache = json.dataset;
+    _cacheAt = Date.now();
     _promise = null;
     return _cache;
   })();
@@ -33,6 +39,7 @@ async function fetchTbCode() {
 /** 캐시 강제 초기화 (로그아웃, comcode 변경 시 호출) */
 export function clearTbCodeCache() {
   _cache = null;
+  _cacheAt = 0;
   _promise = null;
 }
 

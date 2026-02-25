@@ -3,11 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { useAlert } from "../alerts";
 
 
-/**
- * Dashboard layout (renewal)
- * - React + Tailwind only
- * - 메뉴/리스트는 더미 데이터 (추후 API 연결)
- */
 
 export default function Dashboard() {
   const navigate = useNavigate();

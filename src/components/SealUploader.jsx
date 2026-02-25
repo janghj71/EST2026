@@ -10,6 +10,7 @@ export default function SealUploader({
   rounded = "rounded-md",
   card = true,              // 추가: 외곽 카드 사용 여부
   className = "",           // 추가: 래퍼 커스터마이즈
+  disabled = false,         // 등록/삭제 버튼 비활성화
 }) {
   const Wrapper = card ? "section" : "div";
 
@@ -44,11 +45,12 @@ export default function SealUploader({
         </div>
 
         <div className="flex flex-col gap-2">
-          <label className="inline-flex">
+          <label className={`inline-flex ${disabled ? "pointer-events-none opacity-50" : ""}`}>
             <input
               type="file"
               accept="image/jpeg"
               className="hidden"
+              disabled={disabled}
               onChange={(e) => {
                 onUpload?.(e.target.files?.[0]);
                 e.target.value = "";
@@ -76,7 +78,7 @@ export default function SealUploader({
             variant="danger"
             className="h-10 w-28 justify-center whitespace-nowrap"
             onClick={onDelete}
-            disabled={!imageUrl}
+            disabled={disabled || !imageUrl}
           />
         </div>
       </div>

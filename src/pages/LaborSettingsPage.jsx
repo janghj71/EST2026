@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Save, RotateCcw } from "lucide-react";
 import IconBtn from "../components/IconBtn";
 import MoneyInput from "../components/MoneyInput";
@@ -26,10 +26,15 @@ function PercentInput({ value, onChange }) {
 }
   
 export default function LaborSettingsPage() {
-  const { confirm, success, info } = useAlert();
+  const { confirm, success, info, warning } = useAlert();
   const { form, setForm, loading, saving, error, refetch, save } = useLaborSettings();
   const { codes: paykindList } = useTbCode("PYK01");
   const { codes: pntkindList } = useTbCode("PNK01");
+
+  // 조회 에러 → 메시지 표시
+  useEffect(() => {
+    if (error) warning(error.message || "조회에 실패했습니다.");
+  }, [error]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const set = (k) => (v) => {
     // MoneyInput은 raw string을 넘기고,
@@ -68,7 +73,7 @@ export default function LaborSettingsPage() {
             variant="primary"
             className="h-10 w-28 justify-center whitespace-nowrap"
             onClick={onSave}
-            disabled={saving}
+            disabled={saving || !!error}
           />
         </div>
       </div>

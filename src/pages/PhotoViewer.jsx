@@ -8,62 +8,13 @@ import {
   Trash2,
   X,
   ChevronDown,
+  Save,
 } from "lucide-react";
 import IconBtn from "../components/IconBtn";
 import { openCenteredWindow } from "../utils/popup";
 import { useAlert } from "../alerts";
-
-
-const CATS = [
-  { key: "all", label: "전체사진" },
-  { key: "before", label: "수리전" },
-  { key: "sheet", label: "판금" },
-  { key: "paint", label: "도장" },
-  { key: "diag", label: "진단" },
-  { key: "func", label: "기능" },
-  { key: "doc", label: "문서" },
-  { key: "etc", label: "기타" },
-];
-
-function makeDummyPhotos(count = 80) {
-
-  // 외부 이미지 없이 “색+텍스트”로 썸네일 생성 (data URL)
-  const cats = ["before", "sheet", "paint", "diag", "func", "doc", "etc"];
-  const rand = (n) => Math.floor(Math.random() * n);
-
-  const svgToDataUrl = (svg) =>
-    `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
-
-  return Array.from({ length: count }).map((_, i) => {
-    const cat = cats[i % cats.length];
-    const hue = (i * 33) % 360;
-    const label = `${CATS.find((c) => c.key === cat)?.label || "사진"} ${String(i + 1).padStart(3, "0")}`;
-
-    const svg = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="480" height="320">
-        <defs>
-          <linearGradient id="g" x1="0" x2="1">
-            <stop offset="0" stop-color="hsl(${hue},60%,55%)"/>
-            <stop offset="1" stop-color="hsl(${(hue + 40) % 360},60%,45%)"/>
-          </linearGradient>
-        </defs>
-        <rect width="100%" height="100%" fill="url(#g)"/>
-        <rect x="14" y="14" rx="10" ry="10" width="180" height="44" fill="rgba(0,0,0,0.40)"/>
-        <text x="28" y="44" font-size="18" fill="white" font-family="Arial, sans-serif">${label}</text>
-        <text x="28" y="86" font-size="14" fill="rgba(255,255,255,0.85)" font-family="Arial, sans-serif">drag to reorder</text>
-      </svg>
-    `.trim();
-
-    return {
-      id: `p${i + 1}`,
-      cat,
-      name: label,
-      url: svgToDataUrl(svg),
-      createdAt: Date.now() - rand(1000 * 60 * 60 * 24 * 30),
-    };
-  });
-}
-
+import { usePhoto } from "../hooks/usePhoto";
+import { useTbCode } from "../hooks/useTbCode";
 
 function Check({ checked, onChange, label }) {
   return (
@@ -88,6 +39,7 @@ function CatPill({ label }) {
 }
 
 export default function PhotoViewer() {
+  const { warning, info } = useAlert();
   const ctx = useUrlContextSnapshot({
     storageKey: "photoViewerCtx",
     keys: ["est_serial", "carno"],
@@ -116,6 +68,24 @@ export default function PhotoViewer() {
     }
   });
 
+  // ── API hooks ──
+  const { photos, loading: photoLoading, error: photoError, fetchPhotos, saving, savePhotoOrder } = usePhoto();
+  const { codes: photoCodes } = useTbCode("PTOKND");
+
+  // tbcode("PTOKND") → CATS 동적 생성 ("전체사진"은 tbcode에 없으므로 하드코딩)
+  const CATS = useMemo(() => {
+    const cats = [{ key: "all", label: "전체사진" }];
+    photoCodes.forEach((c) => {
+      cats.push({ key: c.value, label: c.label });
+    });
+    return cats;
+  }, [photoCodes]);
+
+  // 조회 에러 → 메시지 표시
+  useEffect(() => {
+    if (photoError?.message) warning(photoError.message || "사진 조회에 실패했습니다.");
+  }, [photoError]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const hydratedRef = useRef(false);
 
   useEffect(() => {
@@ -130,11 +100,9 @@ export default function PhotoViewer() {
           carno: ctx.carno || "",
         })
       );
-    } catch {}
+    } catch { /* empty */ }
 
     // 2) 첫 로딩에서만(딱 1회) state 보정
-    //    - ctx가 늦게 들어오는 경우를 커버
-    //    - 이미 state가 있으면 덮어쓰지 않음
     if (hydratedRef.current) return;
     hydratedRef.current = true;
 
@@ -143,41 +111,54 @@ export default function PhotoViewer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctx.est_serial, ctx.carno]);
 
+  // estId 변경 → 사진 조회
+  useEffect(() => {
+    if (estId) fetchPhotos(estId);
+  }, [estId]); // eslint-disable-line react-hooks/exhaustive-deps
+
 
   // 3) 부모(InsuranceEstimate)에서 estId 갱신 메시지 받기
-  
+  //    + 자식(PhotoPopup)에서 PHOTO_SAVED 메시지 → 재조회
+
   useEffect(() => {
     const handler = (ev) => {
       if (ev.origin !== window.location.origin) return;
       const msg = ev.data;
-      if (!msg || msg.type !== "PHOTO_VIEWER_SET_CTX") return;
+      if (!msg) return;
 
-      const nextEstId = msg?.payload?.est_serial || "";
-      const nextCarNo = msg?.payload?.carno || "";
+      if (msg.type === "PHOTO_VIEWER_SET_CTX") {
+        const nextEstId = msg?.payload?.est_serial || "";
+        const nextCarNo = msg?.payload?.carno || "";
 
-      if (!nextEstId && !nextCarNo) return;
+        if (!nextEstId && !nextCarNo) return;
 
-      // sessionStorage 저장 → F5에도 유지
-      try {
-        sessionStorage.setItem(
-          "photoViewerCtx", 
-          JSON.stringify({ 
-            est_serial: nextEstId || estId, 
-            carno: nextCarNo || carNo,
-          }));
-      } catch {}
+        // sessionStorage 저장 → F5에도 유지
+        try {
+          sessionStorage.setItem(
+            "photoViewerCtx",
+            JSON.stringify({
+              est_serial: nextEstId || estId,
+              carno: nextCarNo || carNo,
+            }));
+        } catch { /* empty */ }
 
-      // 화면 갱신(리프레시) - 전체 리로드 말고 “데이터만” 다시 로딩하게 만드는 게 UX가 더 좋음
-      if (nextEstId) setEstId(nextEstId);
-      if (nextCarNo) setCarNo(nextCarNo);
+        if (nextEstId) setEstId(nextEstId);
+        if (nextCarNo) setCarNo(nextCarNo);
+      }
 
-      // 필요하면 여기서 데이터 fetch 다시 호출
-      // fetchPhotos(nextEstId);
+      // PhotoPopup 저장 완료 → 사진 재조회
+      if (msg.type === "PHOTO_SAVED") {
+        const serial = msg?.payload?.est_serial || estId;
+        if (serial) {
+          setCacheBuster(Date.now());
+          fetchPhotos(serial);
+        }
+      }
     };
 
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
 
   // 자식 팝업(예: PhotoPopup) 추적
@@ -190,13 +171,13 @@ export default function PhotoViewer() {
     // 이미 닫힌 창은 정리
     try {
       if (w.closed) childWinsRef.current.delete(w);
-    } catch {}
+    } catch { /* empty */ }
 
     // 주기적으로 닫힌 창 정리(가벼움)
     setTimeout(() => {
       try {
         if (w.closed) childWinsRef.current.delete(w);
-      } catch {}
+      } catch { /* empty */ }
     }, 500);
   };
 
@@ -204,19 +185,50 @@ export default function PhotoViewer() {
     childWinsRef.current.forEach((w) => {
       try {
         if (w && !w.closed) w.close();
-      } catch {}
+      } catch { /* empty */ }
     });
     childWinsRef.current.clear();
   };
-  
 
-  const [items, setItems] = useState(() => makeDummyPhotos(96));
-  const [checkedCats, setCheckedCats] = useState(() => {
-    // 기본: 전체사진 ON
+
+  // cache-busting: 회전 저장 후 재조회 시 브라우저 이미지 캐시 무효화
+  const [cacheBuster, setCacheBuster] = useState(0);
+
+  /** file_url에 ?t=timestamp 추가하여 브라우저 캐시 우회 */
+  const bustUrl = (url) => {
+    if (!url || !cacheBuster) return url || "";
+    const sep = url.includes("?") ? "&" : "?";
+    return `${url}${sep}t=${cacheBuster}`;
+  };
+
+  // API 사진 데이터 → 로컬 items (photo_order 순 정렬은 hook에서 이미 처리됨)
+  const [items, setItems] = useState([]);
+
+  useEffect(() => {
+    if (photos.length > 0) {
+      setItems(photos.map((p) => ({
+        id: p.photo_seqno || `${p.photokind}_${p.photo_order}`,
+        cat: p.photokind || "",
+        name: p.memo || p.file_url?.split("/").pop() || "사진",
+        url: bustUrl(p.file_url),
+        memo: p.memo || "",
+        photo_order: p.photo_order,
+        // 원본 데이터 보관
+        _raw: p,
+      })));
+    } else {
+      setItems([]);
+    }
+  }, [photos, cacheBuster]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [checkedCats, setCheckedCats] = useState({ all: true });
+
+  // CATS 목록이 변경되면 checkedCats 초기화 (전체사진 ON)
+  useEffect(() => {
     const init = {};
     CATS.forEach((c) => (init[c.key] = c.key === "all"));
-    return init;
-  });
+    setCheckedCats(init);
+  }, [CATS]);
 
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [printOpen, setPrintOpen] = useState(false);
@@ -272,61 +284,15 @@ export default function PhotoViewer() {
           carNo,
           file: it?.name || "",
           imgUrl: it?.url || "",
-          cat: it?.cat || "etc",
-          memo: "",
+          cat: it?.cat || "",
+          memo: it?.memo || "",
+          photoSeqno: it?._raw?.photo_seqno || "",
+          photoOrder: it?._raw?.photo_order || "",
         },
-        // targetOrigin 생략하면 자동으로 window.location.origin
-        // intervals/attempts도 필요시 조절 가능
       },
     });
     registerChildWin(win);
   };
-  // const openPhotoPopup = (it) => {
-  //   // 화면만: 라우트는 네 프로젝트에 맞춰서 "/photo-popup"로 가정
-  //   const w = 800;
-  //   const h = 950;
-
-  //   const popup = openCenteredWindow(
-  //     "/photo-popup",
-  //     "photoPopup",
-  //     w,
-  //     h,
-  //     {
-  //       scrollbars: "yes",
-  //       resizable: "yes",
-  //     }
-  //   );
-
-  //   // 팝업이 막혔거나 못 열면 종료
-  //   if (!popup) return;
-
-  //   // (PhotoPopup에서 postMessage 수신해서 타이틀/이미지/인풋 바인딩하게 만들면 됨)
-  //   const payload = {
-  //     // estId도 함께 보내면 팝업에서 제목/정보 구성하기 좋음
-  //     estId,
-  //     carNo: "11가1234", // 지금은 화면만이라 임시값. 실제는 보험견적에서 넘어온 값으로 치환
-  //     file: it?.name || "",
-  //     imgUrl: it?.url || "",
-  //     cat: it?.cat || "etc",
-  //     memo: "", // 화면만: 초기 메모 비움
-  //   };
-
-  //   // 팝업 로딩 타이밍 때문에 약간의 딜레이/재시도
-  //   const send = () => {
-  //     try {
-  //       popup.postMessage(
-  //         { type: "PHOTO_POPUP_SET_CTX", payload },
-  //         window.location.origin
-  //       );
-  //     } catch {}
-  //   };
-
-  //   // openCenteredWindow 내부에서도 focus/이동/리사이즈를 한번 더 하므로
-  //   // postMessage는 동일하게 2~3회 재시도 유지
-  //   send();
-  //   setTimeout(send, 200);
-  //   setTimeout(send, 600);
-  // };
 
 
   const onPick = (id, multi) => {
@@ -367,7 +333,7 @@ export default function PhotoViewer() {
         setItems((prev) => [
           {
             id: `u${Date.now()}_${Math.random().toString(16).slice(2)}`,
-            cat: "etc",
+            cat: "",
             name: f.name,
             url: String(reader.result),
             createdAt: Date.now(),
@@ -384,9 +350,30 @@ export default function PhotoViewer() {
     addFiles(e.dataTransfer.files);
   };
 
+  // 자리이동(photo_order) 저장
+  const onSave = async () => {
+    if (!estId) return;
+    // items 배열의 현재 순서를 photo_order에 반영
+    const updates = items
+      .filter((it) => it._raw)  // API에서 온 항목만 (로컬 추가 제외)
+      .map((it, idx) => ({
+        photo_seqno: it._raw.photo_seqno,
+        photokind: it._raw.photokind,
+        photo_order: String(idx + 1).padStart(3, "0"),
+        memo: it._raw.memo || "",
+      }));
+    if (updates.length === 0) return;
+    try {
+      await savePhotoOrder(estId, updates);
+      await info("저장 완료");
+      fetchPhotos(estId);
+    } catch (e) {
+      warning(e.message || "저장에 실패했습니다.");
+    }
+  };
+
   const onRefresh = () => {
-    // 더미는 재생성
-    setItems(makeDummyPhotos(96));
+    if (estId) fetchPhotos(estId);
     setSelectedIds(new Set());
   };
 
@@ -429,6 +416,8 @@ export default function PhotoViewer() {
     };
   }, []);
 
+  // catLabel 찾기 헬퍼
+  const getCatLabel = (catKey) => CATS.find((c) => c.key === catKey)?.label || catKey || "기타";
 
   return (
     <div className="h-screen bg-white overflow-hidden flex flex-col">
@@ -443,16 +432,16 @@ export default function PhotoViewer() {
           </div>
 
           <div className="ml-auto flex items-center gap-2">
-            <IconBtn 
-              icon={X} 
-              label="닫기" 
-              variant="primary" 
+            <IconBtn
+              icon={X}
+              label="닫기"
+              variant="primary"
               onClick={() => {
                 closeAllChildWins();
                 window.close();
-                }} 
+                }}
             />
-            
+
           </div>
         </div>
       </div>
@@ -463,7 +452,7 @@ export default function PhotoViewer() {
           <IconBtn icon={Mail} label="메일" onClick={onMail}>메일</IconBtn>
 
           <div className="relative">
-            <IconBtn 
+            <IconBtn
               icon={Printer}
               label="인쇄"
               onClick={(e) => {
@@ -498,11 +487,18 @@ export default function PhotoViewer() {
           <div className="mx-2 h-6 w-px bg-zinc-200" />
 
           <IconBtn icon={Trash2} label="선택 삭제" onClick={onRemoveSelected}>선택삭제</IconBtn>
-          
           <div className="text-sm text-zinc-500">
               선택 {selectedIds.size}장
           </div>
-          
+
+          <div className="ml-auto flex items-center">
+            <IconBtn icon={Save} variant="primary" label="저장" onClick={onSave} disabled={saving || !!photoError}>
+              {saving ? "저장중..." : "저장"}
+            </IconBtn>
+          </div>
+
+
+
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-4">
@@ -543,14 +539,20 @@ export default function PhotoViewer() {
       </div>
 
       {/* Grid */}
-      {/* <div className="px-6 pb-8"> */}
       <div className="px-6 pb-6 min-h-0 flex-1 flex flex-col">
-        {/* <div className="h-[calc(100vh-310px)] overflow-auto pr-2"> */}
+        {photoLoading && (
+          <div className="py-10 text-center text-gray-500">로딩중...</div>
+        )}
+
+        {!photoLoading && viewItems.length === 0 && (
+          <div className="py-10 text-center text-gray-400">사진이 없습니다.</div>
+        )}
+
         <div className="min-h-0 flex-1 overflow-auto p-1 pr-2">
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             {viewItems.map((it) => {
               const isSel = selectedIds.has(it.id);
-              const catLabel = CATS.find((c) => c.key === it.cat)?.label || "기타";
+              const catLabel = getCatLabel(it.cat);
 
               return (
                 <div
@@ -579,7 +581,7 @@ export default function PhotoViewer() {
                   }}
                 >
                   <CatPill label={catLabel} />
-                  
+
                   <button
                     type="button"
                     title="삭제"

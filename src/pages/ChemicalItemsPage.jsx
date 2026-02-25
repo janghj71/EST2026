@@ -1,7 +1,10 @@
 // src/pages/ChemicalItemsPage.jsx
-import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import React, { useMemo, useRef, useState, useCallback } from "react";
 import FixedHeadTable from "../components/FixedHeadTable";
+import IconBtn from "../components/IconBtn";
 import { Search, Save, RefreshCcw } from "lucide-react";
+import { useChemicalItems } from "../hooks/useChemicalItems";
+import { useAlert } from "../alerts";
 
 /**
  * 필드 매핑
@@ -19,16 +22,6 @@ const CELL_INPUT_BASE =
 
 const CELL_WRAP = "h-[40px] flex items-center"; 
 
-
-function makeDemoRows() {
-  return [
-    { material_cd: "744475", material_nm: "폴리우레탄 실리콘 310ml", unit: "개", price: 1000, hour2: 0.55, descr: "차체밀봉(방음/방청)" },
-    { material_cd: "286272", material_nm: "멀티 실러드 300ml(MS 9320 회색/검정)", unit: "개", price: 50000, hour2: 0.45, descr: "차체밀봉(방음/방청/언더코팅)" },
-    { material_cd: "286273", material_nm: "파워 실러드 300ml(MS 9320 회색/검정)", unit: "개", price: 0, hour2: 0.45, descr: "차체밀봉(방음/방청/방진)" },
-    { material_cd: "794224", material_nm: "캐비티 이너왁스 500ml(WX215)", unit: "개", price: 12000, hour2: 0.45, descr: "차체부식방지" },
-    { material_cd: "739358", material_nm: "캐비티 이너왁스 1ℓ(350-1리터)", unit: "개", price: 0, hour2: 0.65, descr: "차체부식방지" },
-  ];
-}
 
 function onlyDigits(v) {
   return String(v ?? "").replace(/[^\d]/g, "");
@@ -57,22 +50,31 @@ function toHourNumber(v) {
 }
 
 export default function ChemicalItemsPage() {
+  const { info, warning } = useAlert();
+  const { items, setItems, loading, saving, error, refetch, saveItem } = useChemicalItems();
   const [rows, setRows] = useState([]);
   const [q, setQ] = useState("");
   const [selectedId, setSelectedId] = useState(null);
 
-  // ✅ 변경 추적(단가/시간 둘 다)
+  // 조회 에러 → 메시지 표시
+  React.useEffect(() => {
+    if (error) warning(error.message || "조회에 실패했습니다.");
+  }, [error]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // API 데이터 → 로컬 rows 동기화
+  React.useEffect(() => {
+    if (items.length > 0) {
+      setRows(items);
+      setSelectedId((prev) => prev ?? items[0]?.material_cd ?? null);
+      setDirtyMap(new Map());
+    }
+  }, [items]);
+
   // key: material_cd, value: { price?, hour2? }
   const [dirtyMap, setDirtyMap] = useState(() => new Map());
 
   const priceRefs = useRef(new Map()); // material_cd -> input
   const hourRefs = useRef(new Map());  // material_cd -> input
-
-  useEffect(() => {
-    const data = makeDemoRows();
-    setRows(data);
-    setSelectedId(data[0]?.material_cd ?? null);
-  }, []);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -160,25 +162,34 @@ export default function ChemicalItemsPage() {
   }, [filtered, focusHour, focusPrice]);
 
   const onSave = useCallback(async () => {
-    if (dirtyMap.size === 0) return;
+    // 원본(items)과 현재(rows)를 비교하여 변경된 행만 추출
+    const origMap = new Map(items.map((r) => [r.material_cd, r]));
+    const changed = rows.filter((r) => {
+      const orig = origMap.get(r.material_cd);
+      if (!orig) return false;
+      return String(orig.hour2) !== String(r.hour2) || String(orig.price) !== String(r.price);
+    });
 
-    const payload = Array.from(dirtyMap.entries()).map(([material_cd, changed]) => ({
-      material_cd,
-      ...changed,
-    }));
+    if (changed.length === 0) {
+      await info("변경된 항목이 없습니다.");
+      return;
+    }
 
-    console.log("SAVE payload:", payload);
-
-    // 저장 성공 가정
-    setDirtyMap(new Map());
-  }, [dirtyMap]);
+    try {
+      for (const row of changed) {
+        await saveItem(row);
+      }
+      await refetch();
+      setDirtyMap(new Map());
+      await info("저장 완료");
+    } catch (err) {
+      await warning(err?.message || "저장에 실패했습니다.");
+    }
+  }, [items, rows, saveItem, refetch, info, warning]);
 
   const onReload = useCallback(() => {
-    const data = makeDemoRows();
-    setRows(data);
-    setDirtyMap(new Map());
-    setSelectedId(data[0]?.material_cd ?? null);
-  }, []);
+    refetch();
+  }, [refetch]);
 
   
   // 특정 필드로 포커스
@@ -308,7 +319,7 @@ export default function ChemicalItemsPage() {
                 inputMode="decimal"
                 value={String(row.hour2 ?? "")}
                 onFocus={() => setSelectedId(id)}
-                onChange={(e) => setCell(id, "hour2", toHourNumber(e.target.value))}
+                onChange={(e) => setCell(id, "hour2", onlyHour(e.target.value))}
                 onKeyDown={(e) => {
                   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                     e.preventDefault();
@@ -370,7 +381,7 @@ export default function ChemicalItemsPage() {
         </div>
   
         {/* 2) 툴바(검색/새로고침/저장) - 타이틀 다음 라인 */}
-        <div className="app-container py-3">
+        <div className="app-container py-2">
           <div className="flex items-center gap-2">
             <div className="relative">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -382,38 +393,25 @@ export default function ChemicalItemsPage() {
               />
             </div>
 
-            <button
-              type="button"
-              onClick={onReload}
-              className="h-9 px-3 rounded-md bg-white border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-              title="새로고침"
-            >
-              <RefreshCcw className="w-4 h-4" />
-              새로고침
-            </button>
 
-            <button
-              type="button"
-              onClick={onSave}
-              disabled={dirtyCount === 0}
-              className={[
-                "h-9 px-3 rounded-md text-sm font-semibold flex items-center gap-2",
-                dirtyCount === 0
-                  ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-                  : "bg-gray-900 text-white hover:bg-gray-800",
-              ].join(" ")}
-              title="저장"
-            >
-              <Save className="w-4 h-4" />
-              저장{dirtyCount ? `(${dirtyCount})` : ""}
-            </button>
+            <div className="ml-auto flex gap-2">
+              <IconBtn
+                icon={Save}
+                label={`저장${dirtyCount ? `(${dirtyCount})` : ""}`}
+                title="저장"
+                variant="primary"
+                className="h-10 w-25 justify-center"
+                onClick={onSave}
+                disabled={!!error}
+              />
+            </div>
           </div>
         </div>
         
       </div>
   
       {/* 3) 테이블 영역 */}
-      <div className="app-container min-h-0 flex-1 py-4">
+      <div className="app-container min-h-0 flex-1 pt-1 pb-4">
         <div className="h-full rounded-md border border-gray-200 bg-white overflow-hidden">
           <FixedHeadTable
             columns={columns}

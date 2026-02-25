@@ -122,6 +122,7 @@ export function useSealImage() {
     loading,
     saving,
     deleting,
+    error,
     refetch,
     saveSeal,
     deleteSeal,

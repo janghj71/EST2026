@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import IconBtn from "../components/IconBtn"; 
 import FixedHeadTable from "../components/FixedHeadTable"; 
@@ -9,8 +9,13 @@ import { useWorkStatus } from "../hooks/useWorkStatus";
 
 export default function WorkStatusPage() {
   const { warning, remove: removeAlert, info } = useAlert();
-  const { codes, loading, reload } = useTbCode("UKND02");
+  const { codes, loading, error: tbError, reload } = useTbCode("UKND02");
   const { create, creating, remove, deleting } = useWorkStatus(reload);
+
+  // 조회 에러 → 메시지 표시
+  useEffect(() => {
+    if (tbError) warning(tbError || "조회에 실패했습니다.");
+  }, [tbError]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const rows = useMemo(
     () => codes.map((c) => ({
@@ -188,6 +193,7 @@ export default function WorkStatusPage() {
                   variant="primary"
                   className="h-10 w-28 justify-center whitespace-nowrap"
                   onClick={onCreate}
+                  disabled={!!tbError}
                 />
               </div>
             </div>

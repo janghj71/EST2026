@@ -13,17 +13,8 @@ import {
 import { useUrlContextSnapshot } from "../hooks/useUrlContextSnapshot";
 import IconBtn from "../components/IconBtn";
 import { useAlert } from "../alerts";
-
-
-const CATS = [
-  { key: "before", label: "수리전" },
-  { key: "sheet", label: "판금" },
-  { key: "paint", label: "도장" },
-  { key: "diag", label: "진단" },
-  { key: "func", label: "기능" },
-  { key: "doc", label: "문서" },
-  { key: "etc", label: "기타" },
-];
+import { usePhoto } from "../hooks/usePhoto";
+import { useTbCode } from "../hooks/useTbCode";
 
 
 function clamp(n, min, max) {
@@ -31,11 +22,24 @@ function clamp(n, min, max) {
 }
 
 export default function PhotoPopup() {
-  const { confirm, warning, error, info } = useAlert();
+  const { confirm, warning, error: alertError, info } = useAlert();
+
+  // ── API hooks ──
+  const { saving, savePhotoDetail } = usePhoto();
+  const { codes: photoCodes } = useTbCode("PTOKND");
+
+  // tbcode("PTOKND") → CATS 동적 생성 (전체사진 제외 — PhotoPopup에서는 불필요)
+  const CATS = useMemo(() => {
+    if (photoCodes.length > 0) {
+      return photoCodes.map((c) => ({ key: c.value, label: c.label }));
+    }
+    // tbcode 로딩 전 fallback
+    return [];
+  }, [photoCodes]);
 
   const ctx = useUrlContextSnapshot({
     storageKey: "photoPopupCtx",
-    keys: ["estId", "carNo", "file", "imgUrl", "cat", "memo"],
+    keys: ["estId", "carNo", "file", "imgUrl", "cat", "memo", "photoSeqno", "photoOrder"],
     cleanPath: "/photo-popup",
   });
 
@@ -50,11 +54,14 @@ export default function PhotoPopup() {
 
   const saved = readSaved();
 
+  const [estId, setEstId] = useState(ctx.estId || saved?.estId || "");
   const [carNo, setCarNo] = useState(ctx.carNo || saved?.carNo || "");
   const [fileName, setFileName] = useState(ctx.file || saved?.file || "");
   const [imgUrl, setImgUrl] = useState(ctx.imgUrl || saved?.imgUrl || "");
-  const [cat, setCat] = useState(ctx.cat || saved?.cat || "etc");
+  const [cat, setCat] = useState(ctx.cat || saved?.cat || "");
   const [memo, setMemo] = useState(ctx.memo || saved?.memo || "");
+  const [photoSeqno, setPhotoSeqno] = useState(ctx.photoSeqno || saved?.photoSeqno || "");
+  const [photoOrder, setPhotoOrder] = useState(ctx.photoOrder || saved?.photoOrder || "");
 
   // 사진 뷰 상태(줌/회전)
   const [scale, setScale] = useState(1);
@@ -83,25 +90,30 @@ export default function PhotoPopup() {
       if (!msg || msg.type !== "PHOTO_POPUP_SET_CTX") return;
 
       const p = msg.payload || {};
+      if (p.estId != null) setEstId(p.estId);
       if (typeof p.carNo === "string") setCarNo(p.carNo);
       if (typeof p.file === "string") setFileName(p.file);
       if (typeof p.imgUrl === "string") setImgUrl(p.imgUrl);
       if (typeof p.cat === "string") setCat(p.cat);
       if (typeof p.memo === "string") setMemo(p.memo);
+      if (p.photoSeqno != null) setPhotoSeqno(p.photoSeqno);
+      if (p.photoOrder != null) setPhotoOrder(p.photoOrder);
 
       try {
         sessionStorage.setItem(
           "photoPopupCtx",
           JSON.stringify({
-            estId: p.estId ?? "",
+            estId: p.estId ?? estId,
             carNo: typeof p.carNo === "string" ? p.carNo : carNo,
             file: typeof p.file === "string" ? p.file : fileName,
             imgUrl: typeof p.imgUrl === "string" ? p.imgUrl : imgUrl,
             cat: typeof p.cat === "string" ? p.cat : cat,
             memo: typeof p.memo === "string" ? p.memo : memo,
+            photoSeqno: p.photoSeqno ?? photoSeqno,
+            photoOrder: p.photoOrder ?? photoOrder,
           })
         );
-      } catch {}
+      } catch { /* empty */ }
 
       setScale(1);
       setRotate(0);
@@ -143,8 +155,73 @@ export default function PhotoPopup() {
   };
 
   const onSave = async () => {
-    // 실제는 API 저장으로 연결 (분류/메모)
-    await info(`저장(예시)\n- 분류: ${cat}\n- 메모: ${memo}`);
+    if (!estId || !photoSeqno) {
+      warning("저장할 사진 정보가 없습니다.");
+      return;
+    }
+    const updates = [{
+      photo_seqno: photoSeqno,
+      photokind: cat,
+      photo_order: photoOrder,
+      memo,
+    }];
+
+    try {
+      // 회전이 있으면 회전된 이미지를 blob으로 만들어서 전송
+      let fileBlob = null;
+      let fName = null;
+      if (rotate !== 0 && imgUrl) {
+        fileBlob = await rotateImageToBlob(imgUrl, rotate);
+        fName = fileName || "photo.jpg";
+      }
+      await savePhotoDetail(estId, updates, fileBlob, fName);
+
+      // 부모(PhotoViewer)에 새로고침 요청
+      try {
+        if (window.opener && !window.opener.closed) {
+          window.opener.postMessage(
+            { type: "PHOTO_SAVED", payload: { est_serial: estId } },
+            window.location.origin
+          );
+        }
+      } catch { /* cross-origin 등 무시 */ }
+
+      // 회전 초기화 (서버에 저장된 이미지가 이미 회전 상태)
+      setRotate(0);
+      setPan({ x: 0, y: 0 });
+
+      await info("저장 완료");
+    } catch (e) {
+      warning(e.message || "저장에 실패했습니다.");
+    }
+  };
+
+  /** 이미지 URL + 회전각도 → Canvas → Blob */
+  const rotateImageToBlob = (url, deg) => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        const rad = (deg * Math.PI) / 180;
+        const sin = Math.abs(Math.sin(rad));
+        const cos = Math.abs(Math.cos(rad));
+        const w = Math.round(img.width * cos + img.height * sin);
+        const h = Math.round(img.width * sin + img.height * cos);
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx2d = canvas.getContext("2d");
+        ctx2d.translate(w / 2, h / 2);
+        ctx2d.rotate(rad);
+        ctx2d.drawImage(img, -img.width / 2, -img.height / 2);
+        canvas.toBlob((blob) => {
+          if (blob) resolve(blob);
+          else reject(new Error("이미지 변환 실패"));
+        }, "image/jpeg", 0.92);
+      };
+      img.onerror = () => reject(new Error("이미지 로드 실패"));
+      img.src = url;
+    });
   };
 
   const canPan = scale > 1.001; // 확대된 경우에만 팬 허용
@@ -235,7 +312,7 @@ export default function PhotoPopup() {
           </div>
 
           <div className="ml-auto flex items-center gap-2">
-            <IconBtn icon={Save} label="저장" onClick={onSave} />
+            <IconBtn icon={Save} label="저장" onClick={onSave} disabled={saving} />
             <IconBtn icon={X} label="닫기" variant="primary" onClick={() => window.close()} />
 
           </div>

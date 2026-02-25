@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import FixedHeadTable from "../components/FixedHeadTable";
 import { openCenteredWindow } from "../utils/popup";
 import CheckBox from "../components/CheckBox";
 import { useAlert } from "../alerts";
+import { useEstimate } from "../hooks/useEstimate";
 
 /**
  * 보험 견적일지 (UI 샘플)
@@ -33,7 +34,13 @@ function addMonths(baseDate, delta) {
 
 export default function InsuranceEstimate() {
   const navigate = useNavigate();
-  const { confirm, info } = useAlert();
+  const { error, info, warning } = useAlert();
+  const {
+    estimates, estLoading, estError, fetchEstimates,
+    claims, claimLoading, claimError, fetchClaims,
+    details, detailLoading, detailError, fetchDetails,
+  } = useEstimate();
+
   const workBodyElRef = useRef(null);      // FixedHeadTable 바디 DOM
   const workScrollPosRef = useRef({ top: 0, left: 0 });      // 닫기 전 scrollTop 저장
   const photoWinRef = useRef(null);
@@ -63,11 +70,10 @@ export default function InsuranceEstimate() {
   };
 
   const openEstimateEdit = (row, mode = "edit") => {
-    const est_serial = row?.id || "0000000000"; 
+    const est_serial = row?.est_serial || "0000000000";
     navigate(`/estimate-edit/${encodeURIComponent(est_serial)}`, {
       state: {
         mode, // "new" | "edit"
-        // EstimateEditPage에서 필요하면 꺼내 쓰기
         ctx: {
           est_serial,
           carno: row?.carno || "",
@@ -77,18 +83,19 @@ export default function InsuranceEstimate() {
   };
 
   // ====== 검색/조회 ======
-  const [dateFrom, setDateFrom] = useState("2026-01-02");
-  const [dateTo, setDateTo] = useState("2026-01-02");
+  const [dateFrom, setDateFrom] = useState(() => monthRange(new Date()).from);
+  const [dateTo, setDateTo] = useState(() => monthRange(new Date()).to);
   const [searchText, setSearchText] = useState("");
   const [chkEstimate, setChkEstimate] = useState(true);
   const [chkWork, setChkWork] = useState(true);
   const [chkClosed, setChkClosed] = useState(false);
   const [sortKey, setSortKey] = useState("입고일자 역순");
-  const [monthAnchor, setMonthAnchor] = useState(() => new Date(dateTo));
+  const [monthAnchor, setMonthAnchor] = useState(() => new Date());
 
 
   // ====== 선택/상세 ======
   const [selected, setSelected] = useState(null);
+  const [selectedClaim, setSelectedClaim] = useState(null);
   const [detailOpen, setDetailOpen] = useState(false);
 
   // ====== 분할바 (견적상세 바로 위) ======
@@ -100,76 +107,28 @@ export default function InsuranceEstimate() {
   // ====== Row Action Bar ======
   const [printOpen, setPrintOpen] = useState(false);
 
-  // ====== 예시 데이터 (실제는 API로 교체) ======
-  const estimateRows = useMemo(() => {
-    const statuses = ["작업", "종결", "도장대기", "입고"];
-    const insurers = ["택시공제", "ERGO다음다이렉트", "삼성화재", "현대해상", "DB손해보험"];
-    const cars = ["더 뉴 K7", "K9", "쏘나타", "K5", "아반떼", "그랜저"];
-    const rows = [];
-    for (let i = 1; i <= 10; i++) {
-      const inD = new Date(2025, (i % 12), (i % 28) + 1);
-      const outD = i % 4 === 0 ? new Date(2025, (i % 12), (i % 28) + 2) : null;
-      rows.push({
-        id: `E-${pad2(Math.floor(i / 10))}${pad2(i)}`,
-        seccodename: i % 3 === 0 ? "작업" : "견적",
-        carno: `${10 + (i % 80)}가${1000 + i}`,
-        carname: cars[i % cars.length],
-        custom_name: i % 5 === 0 ? "장희정" : `고객${i}`,
-        tel: `010-37${pad2(i)}-****`,
-        bocomname: insurers[i % insurers.length],
-        saletotal: 100000 + i * 23944,
-        inday: ymd(inD),
-        outday: outD ? ymd(outD) : "",
-        preoutdate: `${ymd(new Date(2025, (i % 12), (i % 28) + 3))} ${pad2(i % 24)} 시`,
-        statename: statuses[i % statuses.length],
-      });
-    }
-    return rows;
-  }, []);
-  
+  // ====== 조회 에러 → 메시지 표시 ======
+  useEffect(() => {
+    const msg = estError?.message || claimError?.message || detailError?.message;
+    if (msg) warning(msg);
+  }, [estError, claimError, detailError]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const claimRows = useMemo(() => {
-    const insurers = ["택시공제", "ERGO다음다이렉트", "삼성화재", "현대해상", "DB손해보험"];
-    const rows = [];
-  
-    // 60개 견적에 대해, 각 견적당 0~4건 청구 생성
-    for (let e = 1; e <= 60; e++) {
-      const claimCount = (e % 5); // 0~4
-      for (let c = 1; c <= claimCount; c++) {
-        rows.push({
-          estimateId: `E-${pad2(Math.floor(e / 10))}${pad2(e)}`,   // 어떤 견적의 청구인지 연결
-          bocomname: insurers[(e + c) % insurers.length],
-          regno: `202501${pad2((e % 28) + 1)}-${pad2(e)}-${pad2(c)}`,
-          dambo: c % 2 ? "대물" : "자차",
-          misrate: `${((e * 10) + c * 5) % 90}`,
-          insura_exemp: c % 2 ? 0 : 70000,
-          endpaysum: 500000 + e * 12000 + c * 27000,
-          endpartsum: 150000 + e * 6000 + c * 9000,
-          boman_nm: c % 2 ? "다이렉" : "택공남",
-          boman_hp: `010-${1000 + e}-${pad2(c)}**`,
-          boman_fax: `070-${3000 + e}-****`,
-          reqtotal: 600000 + e * 15000 + c * 33333,
-          incom: c % 3 === 0 ? 200000 : 0,
-          inday: c % 3 === 0 ? ymd(new Date(2025, e % 12, (e % 28) + 2)) : "",
-        });
-      }
-    }
-  
-    return rows;
-  }, []);
+  // ====== 초기 조회 (금월) ======
+  useEffect(() => {
+    fetchEstimates(dateFrom, dateTo);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const estimateColumns = useMemo(
     () => [
       { key: "seccodename", title: "구분", width: "6%", align: "left" },
       { key: "carno", title: "차량번호", width: "9%", align: "left" },
-      { key: "carName", title: "차량명", width: "12%", align: "left" },
+      { key: "carname", title: "차량명", width: "12%", align: "left" },
       { key: "custom_name", title: "고객명", width: "9%", align: "left" },
-      { key: "tel", title: "연락처", width: "11%", align: "left" },
-      { key: "bocomname", title: "보험사", width: "11%", align: "left" },
-      { key: "saletotal", title: "견적금액", width: "8%", align: "right", render: (v) => fmt(v) },
-      { key: "inday", title: "입고일자", width: "8%", align: "left" },
-      { key: "outday", title: "출고일자", width: "8%", align: "left", render: (v) => v || "-" },
-      { key: "preoutdate", title: "출고예정일시", width: "10%", align: "left" },
+      { key: "bocomname", title: "보험사", width: "12%", align: "left" },
+      { key: "saletotal", title: "견적금액", width: "9%", align: "right", render: (v) => fmt(v) },
+      { key: "inday", title: "입고일자", width: "9%", align: "left" },
+      { key: "outday", title: "출고일자", width: "9%", align: "left", render: (v) => v || "-" },
+      { key: "preoutdate", title: "출고예정일시", width: "12%", align: "left" },
       { key: "statename", title: "상태", width: "8%", align: "left", render: (v) => <StatusBadge value={v} /> },
     ],
     []
@@ -196,39 +155,18 @@ export default function InsuranceEstimate() {
 
   const workColumns = useMemo(
     () => [
-      { key: "gubun", title: "구분", width: "7%", align: "left" },
-      { key: "name", title: "작업내용", width: "25%", align: "left" },
-      { key: "kind", title: "작업", width: "8%", align: "left" },
+      { key: "paykindname", title: "구분", width: "7%", align: "left" },
+      { key: "payname", title: "작업내용", width: "25%", align: "left" },
+      { key: "workcodename", title: "작업", width: "8%", align: "left" },
       { key: "qty", title: "시간", width: "8%", align: "right" },
       { key: "paysum", title: "공임액", width: "10%", align: "right", render: (v) => fmt(v) },
       { key: "partsum", title: "부품액", width: "10%", align: "right", render: (v) => fmt(v) },
-      { key: "partCode", title: "부품코드", width: "14%", align: "left" },
-      { key: "nation", title: "국토부", width: "8%", align: "left" },
-      { key: "status", title: "상태", width: "10%", align: "left" },
+      { key: "part_makercode", title: "부품코드", width: "14%", align: "left" },
+      { key: "ts_payno", title: "국토부", width: "8%", align: "left" },
+      { key: "statename", title: "상태", width: "10%", align: "left" },
     ],
     []
   );
-  
-
-  const workRows = useMemo(() => {
-    const kinds = ["교환", "도장", "탈착", "판금"];
-    const gubuns = ["주체", "부품", "#부품", "도장"];
-    const rows = [];
-    for (let i = 1; i <= 200; i++) {
-      rows.push({
-        gubun: gubuns[i % gubuns.length],
-        name: `프론트 범퍼 작업 ${i}`,
-        kind: kinds[i % kinds.length],
-        qty: (Math.round(((i % 400) / 100) * 100) / 100).toFixed(2),
-        paysum: (i % 5 === 0 ? 0 : 1200 + i * 37),
-        partsum: (i % 3 === 0 ? 50000 : 0),
-        partCode: i % 7 === 0 ? `865${i}T000` : "",
-        nation: i % 4 === 0 ? "B03" : "",
-        status: i % 6 === 0 ? "중고재생" : i % 5 === 0 ? "외측판금" : "신품",
-      });
-    }
-    return rows;
-  }, []);
   
 
   // ====== 분할바 드래그 핸들러 ======
@@ -278,11 +216,11 @@ export default function InsuranceEstimate() {
     if (!requireSelected()) return;
     openEstimateEdit(selected, "edit");
   };
-  const onDelete = () => requireSelected() && alert(`견적삭제: ${selected.id}`);
-  const onClose = () => requireSelected() && alert(`견적종결: ${selected.id}`);
+  const onDelete = () => requireSelected() && alert(`견적삭제: ${selected.est_serial}`);
+  const onClose = () => requireSelected() && alert(`견적종결: ${selected.est_serial}`);
   
   const openPhotoViewer = () => {
-    const estId = selected?.id || "";
+    const estId = selected?.est_serial || "";
     const carNo = selected?.carno || "";
     
     const url =
@@ -314,12 +252,12 @@ export default function InsuranceEstimate() {
     registerChildWin(win);
   };
 
-  // const onSms = () => requireSelected() && alert(`문자발송: ${selected.id}`);
+  // const onSms = () => requireSelected() && alert(`문자발송: ${selected.est_serial}`);
   const openSmsPopup = () => {
-    const est_serial = selected?.id || "";       // 실제 est_serial 키로 교체
+    const est_serial = selected?.est_serial || "";       // 실제 est_serial 키로 교체
     const carno = selected?.carno || "";
-    const hp = (selected?.tel || "").replaceAll("*", ""); // 예시
-    const isset = selected?.seccodename === "견적" ? "1" : "0"; // 예시
+    const hp = [selected?.hp0, selected?.hp1, selected?.hp2].filter(Boolean).join("");
+    const isset = selected?.isestname === "견적" ? "1" : "0";
     const inday = selected?.inday || "";
   
     const url =
@@ -356,7 +294,7 @@ export default function InsuranceEstimate() {
   };
   
   const openMemoPopup = () => {
-    const est_serial = selected?.id || "";
+    const est_serial = selected?.est_serial || "";
     const carno = selected?.carno || "";
   
     const url =
@@ -388,22 +326,39 @@ export default function InsuranceEstimate() {
   };
 
   const onPrint = (kind) =>
-    requireSelected() && alert(`인쇄(${kind}): ${selected.id}`);
+    requireSelected() && alert(`인쇄(${kind}): ${selected.est_serial}`);
 
   // ====== 조회 버튼 ======
-  const onSearch = () => {
-    console.log({ dateFrom, dateTo, searchText, chkEstimate, chkWork, chkClosed, sortKey });
-    alert("조회");
-  };
+  const onSearch = useCallback(() => {
+    setSelected(null);
+    fetchEstimates(dateFrom, dateTo);
+  }, [dateFrom, dateTo, fetchEstimates]);
 
   useEffect(() => {
     setMonthAnchor(new Date(dateTo));
   }, [dateTo]);
 
-  const filteredClaimRows = useMemo(() => {
-    if (!selected) return [];
-    return claimRows.filter((r) => r.estimateId === selected.id);
-  }, [claimRows, selected]);
+  // 견적 선택 시 → 청구보험 조회 + 청구 선택 초기화
+  useEffect(() => {
+    if (selected?.est_serial) {
+      setSelectedClaim(null);
+      fetchClaims(selected.est_serial);
+    }
+  }, [selected?.est_serial]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 청구보험 조회 완료 → 첫 번째 항목 자동 선택
+  useEffect(() => {
+    if (claims.length > 0) {
+      setSelectedClaim(claims[0]);
+    }
+  }, [claims]);
+
+  // 청구보험 선택 시 → 견적상세 조회
+  useEffect(() => {
+    if (selectedClaim?.estbo_seqno && selected?.est_serial) {
+      fetchDetails(selected.est_serial, selectedClaim.estbo_seqno);
+    }
+  }, [selectedClaim?.estbo_seqno]); // eslint-disable-line react-hooks/exhaustive-deps
   
   const saveWorkScroll = () => {
     const el = workBodyElRef.current;
@@ -423,7 +378,7 @@ export default function InsuranceEstimate() {
   const openDepositPopup = () => {
     if (!requireSelected()) return;
 
-    const est_serial = selected?.id || "";
+    const est_serial = selected?.est_serial || "";
     const carno = selected?.carno || "";
 
     sessionStorage.setItem(
@@ -431,7 +386,7 @@ export default function InsuranceEstimate() {
       JSON.stringify({
         est_serial,
         carno,
-        claims: filteredClaimRows.slice(0, 2),
+        claims: claims.slice(0, 2),
       })
     );
 
@@ -449,7 +404,7 @@ export default function InsuranceEstimate() {
             payload: {
               est_serial,
               carno,
-              claims: filteredClaimRows.slice(0, 2), // 핵심
+              claims: claims.slice(0, 2), // 핵심
             },
           },
           window.location.origin
@@ -469,7 +424,7 @@ export default function InsuranceEstimate() {
     const payload = {
       est_serial,
       carno,
-      claims: filteredClaimRows.slice(0, 2),
+      claims: claims.slice(0, 2),
     };
 
     setTimeout(() => {
@@ -499,10 +454,10 @@ export default function InsuranceEstimate() {
     if (!selected) return;
   
     const payload = {
-      est_serial: selected?.id || "",
+      est_serial: selected?.est_serial || "",
       carno: selected?.carno || "",
-      hp: (selected?.tel || "").replaceAll("*", ""),
-      isset: selected?.seccodename === "견적",   // boolean
+      hp: [selected?.hp0, selected?.hp1, selected?.hp2].filter(Boolean).join(""),
+      isset: selected?.isestname === "견적",
       inday: selected?.inday || "",
     };
   
@@ -510,10 +465,12 @@ export default function InsuranceEstimate() {
       w.postMessage(
         { type: "SMS_SEND_SET_CTX", payload },  window.location.origin);
     } catch {}
-  }, [selected?.id,
+  }, [selected?.est_serial,
     selected?.carno,
-    selected?.tel,
-    selected?.seccodename,
+    selected?.hp0,
+    selected?.hp1,
+    selected?.hp2,
+    selected?.isestname,
     selected?.inday,]);
 
   useEffect(() => {
@@ -522,7 +479,7 @@ export default function InsuranceEstimate() {
     if (!selected) return;
   
     const payload = {
-      est_serial: selected?.id || "",
+      est_serial: selected?.est_serial || "",
       carno: selected?.carno || "",
     };
   
@@ -534,7 +491,7 @@ export default function InsuranceEstimate() {
     } catch { /* empty */ }
   }, [
     // id만이 아니라 PhotoViewer에 영향 있는 값이 바뀌면 갱신되게
-    selected?.id,
+    selected?.est_serial,
     selected?.carno,
   ]);
     
@@ -544,7 +501,7 @@ export default function InsuranceEstimate() {
     if (!selected) return;
   
     const payload = {
-      est_serial: selected?.id || "",
+      est_serial: selected?.est_serial || "",
       carno: selected?.carno || "",
     };
   
@@ -554,7 +511,7 @@ export default function InsuranceEstimate() {
         window.location.origin
       );
     } catch { /* empty */ }
-  }, [selected?.id, selected?.carno]);
+  }, [selected?.est_serial, selected?.carno]);
 
   useEffect(() => {
     const w = depositWinRef.current;
@@ -562,9 +519,9 @@ export default function InsuranceEstimate() {
     if (!selected) return;
   
     const payload = {
-      est_serial: selected?.id || "",
+      est_serial: selected?.est_serial || "",
       carno: selected?.carno || "",
-      claims: filteredClaimRows.slice(0, 2),
+      claims: claims.slice(0, 2),
     };
   
     try {
@@ -573,7 +530,7 @@ export default function InsuranceEstimate() {
         window.location.origin
       );
     } catch { /* empty */ }
-  }, [selected?.id, selected?.carno, filteredClaimRows]);
+  }, [selected?.est_serial, selected?.carno, claims]);
   
   useEffect(() => {
     if (!detailOpen) return;
@@ -602,7 +559,7 @@ export default function InsuranceEstimate() {
         el.scrollLeft = 0; // 가로도 같이 초기화(원치 않으면 제거)
       });
     });
-  }, [selected?.id, detailOpen]);
+  }, [selected?.est_serial, detailOpen]);
 
   useEffect(() => {
     const onBeforeUnload = () => closeAllChildWins();
@@ -791,19 +748,19 @@ export default function InsuranceEstimate() {
               <div className="border-b border-zinc-100 px-4 py-3">
                 <div className="flex items-center justify-between">
                   <div className="text-sm font-semibold text-zinc-900">견적목록</div>
-                  <div className="text-xs text-zinc-500">{estimateRows.length}건</div>
+                  <div className="text-xs text-zinc-500">{estimates.length}건</div>
                 </div>
               </div>
 
               <div className="min-h-0 flex-1 overflow-hidden">
                 <FixedHeadTable
                   columns={estimateColumns}
-                  rows={estimateRows}
-                  rowKey={(r) => r.id}
-                  selectedKey={selected?.id}
+                  rows={estimates}
+                  rowKey={(r) => r.est_serial}
+                  selectedKey={selected?.est_serial}
                   onRowClick={(r) => setSelected(r)}
                   // 선택 행 아래에 인라인 액션 표시 (기존 UX 그대로)
-                  expandedKey={selected?.id}
+                  expandedKey={selected?.est_serial}
                   expandedRowRender={() => (
                     <InlineActions
                       onModify={onModify}
@@ -844,12 +801,16 @@ export default function InsuranceEstimate() {
               <div className="min-h-0 flex-1 overflow-hidden">
                 <FixedHeadTable
                   columns={claimColumns}
-                  rows={selected ? filteredClaimRows : []}
-                  rowKey={(r, idx) => `${r.estimateId}-${idx}`}
+                  rows={selected ? claims : []}
+                  rowKey={(r, idx) => r.estbo_seqno || idx}
+                  selectedKey={selectedClaim?.estbo_seqno}
+                  onRowClick={(r) => setSelectedClaim(r)}
                   emptyText={selected ? "청구 내역이 없습니다." : "견적을 선택하면 청구보험 목록이 표시됩니다."}
                   headerClassName=""
                   bodyClassName="min-h-0 flex-1"
                   height="100%"
+                  rowSelectedClass="!bg-blue-100 hover:!bg-blue-100"
+                  rowHoverClass="hover:!bg-gray-50"
                 />
 
               </div>
@@ -916,8 +877,8 @@ export default function InsuranceEstimate() {
               ) : (
                 <FixedHeadTable
                   columns={workColumns}
-                  rows={workRows}
-                  rowKey={(r, idx) => idx}
+                  rows={details}
+                  rowKey={(r, idx) => r.estb_orgseqno || idx}
                   height="100%"
                   bodyClassName="min-h-0 flex-1"
                   bodyScrollRef={workBodyElRef}

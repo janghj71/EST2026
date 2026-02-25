@@ -65,14 +65,13 @@ export async function request(
     throw new Error(`HTTP ${res.status}: ${text}`)
   }
 
-  // 응답이 항상 JSON이라는 보장이 없으면 try-catch
+  // body stream은 1회만 읽을 수 있으므로 text로 1회 읽고 JSON 파싱 시도
+  const raw = await res.text()
   let json
   try {
-    json = await res.json()
+    json = raw ? JSON.parse(raw) : {}
   } catch {
-    // 필요 시 text로 대체
-    const text = await res.text()
-    return text
+    return raw
   }
 
   // 서버 표준 오류 포맷 대응 (프로젝트 규칙에 맞게)
