@@ -10,10 +10,23 @@ export function useAlert() {
     open: async (opt) => {
       const type = opt?.type ?? "info";
       const msg = opt?.message ?? "";
+
       if (type === "confirm") return window.confirm(msg);
+      
+      if (type === "choice") {
+        const actions = opt?.actions ?? [];
+        const guide = actions
+          .map((a, idx) => `${idx + 1}. ${a.label}`)
+          .join("\n");
+        const input = window.prompt(`${msg}\n\n${guide}`, "1");
+        const picked = actions[Number(input) - 1];
+        return picked?.key ?? null;
+      }
+
       window.alert(msg);
       return true;
     },
+
     close: () => {},
     info: async (message) => {
       window.alert(message ?? "");
@@ -31,6 +44,11 @@ export function useAlert() {
       window.alert(message ?? "");
       return true;
     },
-    confirm: async (message) => window.confirm(message ?? ""),
+    choice: async (message, title, actions = []) => {
+      const guide = actions.map((a, idx) => `${idx + 1}. ${a.label}`).join("\n");
+      const input = window.prompt(`${title ? `${title}\n\n` : ""}${message}\n\n${guide}`, "1");
+      const picked = actions[Number(input) - 1];
+      return picked?.key ?? null;
+    },
   };
 }

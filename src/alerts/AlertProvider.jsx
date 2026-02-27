@@ -2,8 +2,6 @@ import React, { useCallback, useMemo, useRef, useState } from "react";
 import AlertModal from "../components/AlertModal";
 import { AlertContext } from "./AlertContext";
 
-// export const AlertContext = createContext(null);
-
 const normalize = (opt) => ({
   type: opt?.type ?? "info",
   title: opt?.title,
@@ -12,6 +10,7 @@ const normalize = (opt) => ({
   cancelText: opt?.cancelText ?? "취소",
   showCancel: !!opt?.showCancel,
   closeOnBackdrop: opt?.closeOnBackdrop !== false,
+  actions: Array.isArray(opt?.actions) ? opt.actions : null,
 });
 
 export function AlertProvider({ children }) {
@@ -53,6 +52,16 @@ export function AlertProvider({ children }) {
         cancelText: opt?.cancelText ?? "취소",
       });
 
+    const choice = (message, title, actions = []) =>
+      openAlert({
+        type: "choice",
+        title,
+        message,
+        showCancel: false,
+        closeOnBackdrop: false,
+        actions,
+      });
+
     const remove = (message, title, opt) =>
       openAlert({
         type: "remove",
@@ -63,7 +72,7 @@ export function AlertProvider({ children }) {
         cancelText: opt?.cancelText ?? "취소",
       });
 
-    return { open: openAlert, close, info, success, warning, error, confirm, remove };
+    return { open: openAlert, close, info, success, warning, error, confirm, choice, remove };
   }, [close, openAlert]);
 
   return (
@@ -77,6 +86,7 @@ export function AlertProvider({ children }) {
         confirmText={options.confirmText}
         cancelText={options.cancelText}
         showCancel={options.showCancel}
+        actions={options.actions}
         onClose={() => {
           if (options.closeOnBackdrop) {
             close();
@@ -90,6 +100,10 @@ export function AlertProvider({ children }) {
         onConfirm={() => {
           close();
           resolve(true);
+        }}
+        onAction={(key) => {
+          close();
+          resolve(key);
         }}
       />
     </AlertContext.Provider>

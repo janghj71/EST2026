@@ -63,6 +63,15 @@ export default function PhotoPopup() {
   const [photoSeqno, setPhotoSeqno] = useState(ctx.photoSeqno || saved?.photoSeqno || "");
   const [photoOrder, setPhotoOrder] = useState(ctx.photoOrder || saved?.photoOrder || "");
 
+  const makeCacheBust = () =>
+    `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+  const stripQuery = (url = "") => url.split("?")[0];
+
+  // cache-busting 카운터 (impure 함수 호출 없이 URL 갱신)
+  const [imgVer, setImgVer] = useState(() => makeCacheBust());
+  // const [imgVer, setImgVer] = useState(0);
+
   // 사진 뷰 상태(줌/회전)
   const [scale, setScale] = useState(1);
   const [rotate, setRotate] = useState(0);
@@ -77,10 +86,16 @@ export default function PhotoPopup() {
 
   const title = useMemo(() => {
     return carNo?.trim() ? carNo.trim() : "차량번호";
-    // const left = carNo?.trim() ? carNo.trim() : "차량번호";
-    // const right = fileName?.trim() ? fileName.trim() : "파일명";
-    // return `${left} - ${right}`;
   }, [carNo]);
+
+
+  const refreshImage = () => setImgVer(makeCacheBust());
+
+  const displayImgSrc = useMemo(() => {
+    const base = stripQuery(imgUrl);
+    return base ? `${base}?_cb=${imgVer}` : "";
+  }, [imgUrl, imgVer]);
+
 
   // 부모창에서 postMessage로도 갱신 가능하게(그리드 클릭 시 재사용)
   useEffect(() => {
@@ -93,7 +108,13 @@ export default function PhotoPopup() {
       if (p.estId != null) setEstId(p.estId);
       if (typeof p.carNo === "string") setCarNo(p.carNo);
       if (typeof p.file === "string") setFileName(p.file);
-      if (typeof p.imgUrl === "string") setImgUrl(p.imgUrl);
+
+      // if (typeof p.imgUrl === "string") setImgUrl(p.imgUrl);
+      if (typeof p.imgUrl === "string") {
+        setImgUrl(p.imgUrl);
+        refreshImage(); // 팝업 재사용 시에도 항상 새 URL로 로드
+      }
+
       if (typeof p.cat === "string") setCat(p.cat);
       if (typeof p.memo === "string") setMemo(p.memo);
       if (p.photoSeqno != null) setPhotoSeqno(p.photoSeqno);
@@ -172,7 +193,11 @@ export default function PhotoPopup() {
       let fName = null;
       if (rotate !== 0 && imgUrl) {
         fileBlob = await rotateImageToBlob(imgUrl, rotate);
-        fName = fileName || "photo.jpg";
+        // fileName에서 확장자 포함된 실제 파일명 사용, 없으면 imgUrl에서 추출
+        const urlName = imgUrl.split("/").pop()?.split("?")[0] || "";
+        fName = (fileName && fileName.includes(".")) ? fileName
+              : (urlName && urlName.includes(".")) ? urlName
+              : "photo.jpg";
       }
       await savePhotoDetail(estId, updates, fileBlob, fName);
 
@@ -190,6 +215,12 @@ export default function PhotoPopup() {
       setRotate(0);
       setPan({ x: 0, y: 0 });
 
+      // imgUrl cache-busting → 브라우저가 서버의 회전된 이미지를 새로 로드
+      if (fileBlob) {
+        // setImgVer((v) => v + 1);
+        refreshImage();
+      }
+
       await info("저장 완료");
     } catch (e) {
       warning(e.message || "저장에 실패했습니다.");
@@ -197,6 +228,35 @@ export default function PhotoPopup() {
   };
 
   /** 이미지 URL + 회전각도 → Canvas → Blob */
+  // const rotateImageToBlob = (url, deg) => {
+  //   return new Promise((resolve, reject) => {
+  //     const img = new Image();
+  //     img.crossOrigin = "anonymous";
+  //     img.onload = () => {
+  //       const rad = (deg * Math.PI) / 180;
+  //       const sin = Math.abs(Math.sin(rad));
+  //       const cos = Math.abs(Math.cos(rad));
+  //       const w = Math.round(img.width * cos + img.height * sin);
+  //       const h = Math.round(img.width * sin + img.height * cos);
+  //       const canvas = document.createElement("canvas");
+  //       canvas.width = w;
+  //       canvas.height = h;
+  //       const ctx2d = canvas.getContext("2d");
+  //       ctx2d.translate(w / 2, h / 2);
+  //       ctx2d.rotate(rad);
+  //       ctx2d.drawImage(img, -img.width / 2, -img.height / 2);
+  //       canvas.toBlob((blob) => {
+  //         if (blob) resolve(blob);
+  //         else reject(new Error("이미지 변환 실패"));
+  //       }, "image/jpeg", 0.92);
+  //     };
+  //     img.onerror = () => reject(new Error("이미지 로드 실패"));
+  //     // 기존 cache-busting 파라미터 제거 후 새 파라미터로 서버에서 원본 이미지 강제 로드
+  //     const base = url.split("?")[0];
+  //     img.src = `${base}?_cb=${imgVer + 1}`;
+  //   });
+  // };
+// rotateImageToBlob 교체
   const rotateImageToBlob = (url, deg) => {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -214,15 +274,23 @@ export default function PhotoPopup() {
         ctx2d.translate(w / 2, h / 2);
         ctx2d.rotate(rad);
         ctx2d.drawImage(img, -img.width / 2, -img.height / 2);
-        canvas.toBlob((blob) => {
-          if (blob) resolve(blob);
-          else reject(new Error("이미지 변환 실패"));
-        }, "image/jpeg", 0.92);
+        canvas.toBlob(
+          (blob) => {
+            if (blob) resolve(blob);
+            else reject(new Error("이미지 변환 실패"));
+          },
+          "image/jpeg",
+          0.92
+        );
       };
       img.onerror = () => reject(new Error("이미지 로드 실패"));
-      img.src = url;
+
+      const base = stripQuery(url);
+      img.src = `${base}?_cb=${makeCacheBust()}`; // 매번 고유 키
     });
   };
+
+
 
   const canPan = scale > 1.001; // 확대된 경우에만 팬 허용
 
@@ -368,9 +436,11 @@ export default function PhotoPopup() {
                 onMouseUp={onPanMouseUp}
                 onMouseLeave={onPanMouseUp}
               >
+
+              {/*}    
                 {imgUrl ? (
                   <img
-                    src={imgUrl}
+                    src={imgVer ? `${imgUrl.split("?")[0]}?v=${imgVer}` : imgUrl}
                     alt={fileName || "photo"}
                     draggable={false}
                     className="absolute inset-0 w-full h-full object-contain select-none"
@@ -384,6 +454,25 @@ export default function PhotoPopup() {
                     이미지가 없습니다.
                   </div>
                 )}
+              */}
+                {displayImgSrc ? (
+                  <img
+                    src={displayImgSrc}
+                    alt={fileName || "photo"}
+                    draggable={false}
+                    className="absolute inset-0 w-full h-full object-contain select-none"
+                    style={{
+                      transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale}) rotate(${rotate}deg)`,
+                      transformOrigin: "center center",
+                    }}
+                  />
+                ) : (
+                  <div className="h-full flex items-center justify-center text-sm text-zinc-500">
+                    이미지가 없습니다.
+                  </div>
+                )}
+
+
               </div>
             {/* </div> */}
 

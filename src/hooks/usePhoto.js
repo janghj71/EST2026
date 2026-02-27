@@ -81,6 +81,24 @@ export function usePhoto() {
    * @param {Blob|File|null} fileBlob  - 회전된 이미지 blob 등
    * @param {string} [fileName]        - 파일명
    */
+  // ── 삭제 (est_photo_d.aspx) ──
+  const {
+    loading: deleting,
+    error: deleteError,
+    refetch: runDelete,
+  } = useApi({
+    path: "/est_photo_d.aspx",
+    method: "POST",
+    bodyType: "form",
+    immediate: false,
+    onMap: (json) => { apiOk(json, "사진 삭제"); return json; },
+  });
+
+  const deletePhoto = useCallback(
+    (est_serial, photo_seqno) => runDelete({ est_serial, photo_seqno }),
+    [runDelete]
+  );
+
   const savePhotoDetail = useCallback(async (estSerial, updates, fileBlob, fileName) => {
     setSaving(true);
     setSaveError(null);
@@ -95,7 +113,8 @@ export function usePhoto() {
       });
       const form = new FormData();
       form.append("jsonData", reqdata);
-      if (fileBlob) form.append("file", fileBlob, fileName || "photo.jpg");
+      console.log('fileName :' + fileName)
+      if (fileBlob) form.append("file", fileBlob, fileName);
 
       const json = await request("/est_photo_u.aspx", {
         method: "POST",
@@ -111,6 +130,32 @@ export function usePhoto() {
     }
   }, []);
 
+  // ── 추가 (est_photo_c.aspx) ──
+  const [creating, setCreating] = useState(false);
+
+  const createPhoto = useCallback(async ({ estSerial, photokind, memo, userid, carno, files }) => {
+    setCreating(true);
+    try {
+      const form = new FormData();
+      form.append("comcode", getComcode());
+      form.append("est_serial", estSerial);
+      form.append("photokind", photokind);
+      form.append("memo", memo || "");
+      form.append("userid", userid);
+      form.append("carno", carno);
+      Array.from(files).forEach((f) => form.append("files", f));
+
+      const json = await request("/est_photo_c.aspx", {
+        method: "POST",
+        body: form,
+      });
+      apiOk(json, "사진 추가");
+      return json;
+    } finally {
+      setCreating(false);
+    }
+  }, []);
+
   return {
     photos: photos ?? [],
     loading,
@@ -121,5 +166,12 @@ export function usePhoto() {
     saveError,
     savePhotoOrder,
     savePhotoDetail,
+    // 삭제
+    deleting,
+    deleteError,
+    deletePhoto,
+    // 추가
+    creating,
+    createPhoto,
   };
 }

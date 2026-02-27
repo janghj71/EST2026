@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+﻿import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useUrlContextSnapshot } from "../hooks/useUrlContextSnapshot";
 import {
   Mail,
@@ -12,9 +12,11 @@ import {
 } from "lucide-react";
 import IconBtn from "../components/IconBtn";
 import { openCenteredWindow } from "../utils/popup";
+import { buildPhotoPrintHtml } from "../prints/photoPrintHtml";
 import { useAlert } from "../alerts";
 import { usePhoto } from "../hooks/usePhoto";
 import { useTbCode } from "../hooks/useTbCode";
+import { getUserid } from "../api/config";
 
 function Check({ checked, onChange, label }) {
   return (
@@ -39,7 +41,7 @@ function CatPill({ label }) {
 }
 
 export default function PhotoViewer() {
-  const { warning, info } = useAlert();
+  const { warning, info, confirm, choice } = useAlert();
   const ctx = useUrlContextSnapshot({
     storageKey: "photoViewerCtx",
     keys: ["est_serial", "carno"],
@@ -69,7 +71,7 @@ export default function PhotoViewer() {
   });
 
   // ── API hooks ──
-  const { photos, loading: photoLoading, error: photoError, fetchPhotos, saving, savePhotoOrder } = usePhoto();
+  const { photos, loading: photoLoading, error: photoError, fetchPhotos, saving, savePhotoOrder, deleting, deletePhoto, creating, createPhoto } = usePhoto();
   const { codes: photoCodes } = useTbCode("PTOKND");
 
   // tbcode("PTOKND") → CATS 동적 생성 ("전체사진"은 tbcode에 없으므로 하드코딩)
@@ -116,10 +118,6 @@ export default function PhotoViewer() {
     if (estId) fetchPhotos(estId);
   }, [estId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-
-  // 3) 부모(InsuranceEstimate)에서 estId 갱신 메시지 받기
-  //    + 자식(PhotoPopup)에서 PHOTO_SAVED 메시지 → 재조회
-
   useEffect(() => {
     const handler = (ev) => {
       if (ev.origin !== window.location.origin) return;
@@ -150,10 +148,11 @@ export default function PhotoViewer() {
       if (msg.type === "PHOTO_SAVED") {
         const serial = msg?.payload?.est_serial || estId;
         if (serial) {
-          setCacheBuster(Date.now());
+          setCacheBuster((v) => v + 1);
           fetchPhotos(serial);
         }
       }
+
     };
 
     window.addEventListener("message", handler);
@@ -190,36 +189,75 @@ export default function PhotoViewer() {
     childWinsRef.current.clear();
   };
 
+  // 숫자 기반 cache-buster로 통일 (문자열/숫자 혼합 방지)
+  const [cacheBuster, setCacheBuster] = useState(() => Date.now());
 
-  // cache-busting: 회전 저장 후 재조회 시 브라우저 이미지 캐시 무효화
-  const [cacheBuster, setCacheBuster] = useState(0);
-
-  /** file_url에 ?t=timestamp 추가하여 브라우저 캐시 우회 */
   const bustUrl = (url) => {
-    if (!url || !cacheBuster) return url || "";
-    const sep = url.includes("?") ? "&" : "?";
-    return `${url}${sep}t=${cacheBuster}`;
+    if (!url) return "";
+    const base = url.split("?")[0];
+    return `${base}?_cb=${cacheBuster}`;
   };
+
+  const keepPrevOrder = (nextItems, prevItems) => {
+    if (!prevItems?.length) return nextItems;
+  
+    const prevIndex = new Map(
+      prevItems.map((it, idx) => [String(it.id), idx])
+    );
+  
+    return [...nextItems].sort((a, b) => {
+      const ai = prevIndex.has(String(a.id)) ? prevIndex.get(String(a.id)) : Number.MAX_SAFE_INTEGER;
+      const bi = prevIndex.has(String(b.id)) ? prevIndex.get(String(b.id)) : Number.MAX_SAFE_INTEGER;
+  
+      if (ai !== bi) return ai - bi;
+  
+      // 둘 다 신규/미매칭이면 서버 순서(photo_order) 유지
+      const ao = Number(a.photo_order) || 0;
+      const bo = Number(b.photo_order) || 0;
+      return ao - bo;
+    });
+  };
+
 
   // API 사진 데이터 → 로컬 items (photo_order 순 정렬은 hook에서 이미 처리됨)
   const [items, setItems] = useState([]);
+  const forceServerOrderRef = useRef(false);
 
   useEffect(() => {
     if (photos.length > 0) {
-      setItems(photos.map((p) => ({
-        id: p.photo_seqno || `${p.photokind}_${p.photo_order}`,
-        cat: p.photokind || "",
-        name: p.memo || p.file_url?.split("/").pop() || "사진",
-        url: bustUrl(p.file_url),
-        memo: p.memo || "",
-        photo_order: p.photo_order,
-        // 원본 데이터 보관
-        _raw: p,
-      })));
+      const mapped = photos.map((p) => {
+        const rawUrl = p.file_url || "";
+        const baseUrl = rawUrl.split("?")[0];
+        const urlFileName = baseUrl.split("/").pop() || "";
+
+        return {
+          id: p.photo_seqno || `${p.photokind}_${p.photo_order}`,
+          cat: p.photokind || "",
+          name: p.memo || urlFileName || "사진",
+          fileName: urlFileName,
+          sourceUrl: baseUrl,
+          url: bustUrl(rawUrl),
+          memo: p.memo || "",
+          photo_order: p.photo_order,
+          _raw: p,
+        };
+      });
+
+      if (forceServerOrderRef.current) {
+        // 새로고침 시: 서버 순서(photo_order) 그대로
+        setItems(mapped);
+        forceServerOrderRef.current = false;
+      } else {
+        // 그 외: 기존 사용자 정렬 유지
+        setItems((prev) => keepPrevOrder(mapped, prev));
+      }
+
     } else {
       setItems([]);
+      forceServerOrderRef.current = false;
     }
   }, [photos, cacheBuster]); // eslint-disable-line react-hooks/exhaustive-deps
+
 
   const [checkedCats, setCheckedCats] = useState({ all: true });
 
@@ -248,7 +286,10 @@ export default function PhotoViewer() {
 
   const viewItems = useMemo(() => {
     if (!enabledCatKeys) return items;
-    return items.filter((it) => enabledCatKeys.includes(it.cat));
+    return items.filter((it) =>
+      enabledCatKeys.includes(it.cat) ||
+      (enabledCatKeys.includes("9") && !it.cat)
+    );
   }, [items, enabledCatKeys]);
 
   const toggleCat = (key, on) => {
@@ -275,6 +316,11 @@ export default function PhotoViewer() {
   };
 
   const openPhotoPopup = (it) => {
+    const popupImgUrl =
+      it?.sourceUrl ||
+      (it?._raw?.file_url ? it._raw.file_url.split("?")[0] : "") ||
+      "";
+      
     const win = openCenteredWindow("/photo-popup", "photoPopup", 800, 1000, {
       windowFeatures: { scrollbars: "no", resizable: "yes" },
       postMessage: {
@@ -282,8 +328,9 @@ export default function PhotoViewer() {
         payload: {
           estId,
           carNo,
-          file: it?.name || "",
-          imgUrl: it?.url || "",
+          file: it?.fileName || "",
+          // imgUrl: it?.url || "",
+          imgUrl: popupImgUrl,
           cat: it?.cat || "",
           memo: it?.memo || "",
           photoSeqno: it?._raw?.photo_seqno || "",
@@ -320,34 +367,33 @@ export default function PhotoViewer() {
     });
   };
 
-  // 파일 추가(드랍/클릭)
+  // 파일 추가(드랍/클릭) → 서버 업로드
   const fileInputRef = useRef(null);
 
-  const addFiles = (files) => {
+  const addFiles = async (files) => {
     const arr = Array.from(files || []).filter((f) => /^image\/(jpeg|png|jpg)/i.test(f.type));
     if (arr.length === 0) return;
+    if (!estId) { warning("견적번호가 없습니다."); return; }
 
-    arr.forEach((f) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setItems((prev) => [
-          {
-            id: `u${Date.now()}_${Math.random().toString(16).slice(2)}`,
-            cat: "",
-            name: f.name,
-            url: String(reader.result),
-            createdAt: Date.now(),
-          },
-          ...prev,
-        ]);
-      };
-      reader.readAsDataURL(f);
-    });
-  };
+    // photokind 결정: 전체사진(all)이면 "" / 아니면 첫 번째 체크된 카테고리 key
+    const checkedKeys = Object.entries(checkedCats)
+      .filter(([k, v]) => v && k !== "all")
+      .map(([k]) => k);
+    const photokind = checkedKeys.length > 0 ? checkedKeys[0] : "9";
 
-  const onDropZoneDrop = (e) => {
-    e.preventDefault();
-    addFiles(e.dataTransfer.files);
+    try {
+      await createPhoto({
+        estSerial: estId,
+        photokind,
+        memo: "",
+        userid: getUserid(),
+        carno: carNo,
+        files: arr,
+      });
+      fetchPhotos(estId);
+    } catch (e) {
+      warning(e.message || "사진 추가에 실패했습니다.");
+    }
   };
 
   // 자리이동(photo_order) 저장
@@ -373,28 +419,163 @@ export default function PhotoViewer() {
   };
 
   const onRefresh = () => {
-    if (estId) fetchPhotos(estId);
+    if (estId) {
+      forceServerOrderRef.current = true;
+      setCacheBuster((v) => v + 1);
+      fetchPhotos(estId);
+    }
     setSelectedIds(new Set());
   };
 
-  const onDownload = () => {
-    alert("다운로드는 실제 API 연동 시 zip 생성/다운로드로 연결하면 됩니다.");
+  const downloadPhotos = async (targets) => {
+    if (!targets || targets.length === 0) return;
+  
+    const failed = [];
+  
+    for (const photo of targets) {
+      try {
+        // 표시용 URL(it.url) 대신 원본 URL(sourceUrl) 우선 사용
+        const src = photo.sourceUrl || photo.url;
+        if (!src) throw new Error("다운로드 URL이 없습니다.");
+  
+        const res = await fetch(src, { mode: "cors" });
+        if (!res.ok) throw new Error(`(${res.status}) ${res.statusText}`);
+  
+        const blob = await res.blob();
+        const objUrl = URL.createObjectURL(blob);
+  
+        const a = document.createElement("a");
+        const fallbackName = src.split("?")[0].split("/").pop() || `${photo.id}.jpg`;
+        const filename = photo.fileName || fallbackName;
+  
+        a.href = objUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+  
+        URL.revokeObjectURL(objUrl);
+      } catch (err) {
+        failed.push(photo.fileName || photo.name || photo.id);
+        console.error("사진 다운로드 실패:", err);
+      }
+    }
+  
+    if (failed.length > 0) {
+      warning(`일부 사진 다운로드 실패 (${failed.length}건)`);
+    } else {
+      await info(`다운로드 완료 (${targets.length}건)`);
+    }
+  };
+
+  
+  const onDownload = async () => {
+    if (items.length === 0) {
+      warning("다운로드할 사진이 없습니다.");
+      return;
+    }
+  
+    // 1) 선택 우선 (멀티/단독 모두 포함)
+    const selectedItems = items.filter((it) => selectedIds.has(it.id));
+    if (selectedItems.length >= 2) {
+      const ok = await confirm(`선택한 사진 ${selectedItems.length}장을 다운로드할까요?`);
+      if (!ok) return;
+      await downloadPhotos(selectedItems);
+      return;
+    }
+    if (selectedItems.length === 1) {
+      const mode = await choice(
+        `다운로드 대상을 선택하세요.\n현재 출력 전체: ${viewItems.length}장`,
+        "다운로드",
+        [
+          { key: "single", label: "1장", variant: "primary" },
+          { key: "all", label: "전체", variant: "secondary" },
+          { key: "cancel", label: "취소", variant: "ghost" },
+        ]
+      );
+    
+      if (mode === "single") {
+        await downloadPhotos(selectedItems);
+        return;
+      }
+    
+      if (mode === "all") {
+        await downloadPhotos(viewItems);
+        return;
+      }
+    
+      return;
+    }
+    
+
+    // 2) 선택이 없으면 필터된 전체
+    const isFiltered = viewItems.length > 0 && viewItems.length !== items.length;
+    if (isFiltered) {
+      const ok = await confirm(`필터된 사진 ${viewItems.length}장을 다운로드할까요?`);
+      if (!ok) return;
+      await downloadPhotos(viewItems);
+      return;
+    }
+
+    // 3) 선택도 필터도 없으면 중단
+    warning("선택한 사진이 없고 필터도 적용되지 않았습니다.");
+
   };
 
   const onMail = () => {
     alert("메일 전송 팝업/연동은 다음 단계로 연결하면 됩니다.");
   };
 
-  const onPrint = (mode) => {
+  const onPrint = (count) => {
     setPrintOpen(false);
-    alert(`인쇄: ${mode}`);
+
+    if (viewItems.length === 0) {
+      warning('인쇄할 사진이 없습니다.');
+      return;
+    }
+
+    const html = buildPhotoPrintHtml({ viewItems, count, carNo, checkedCats, CATS });
+
+    const popupName = `PrintWindow_${Date.now()}`;
+    const popup = openCenteredWindow('about:blank', popupName, 900, 700, {
+      windowFeatures: { toolbar: 'no', location: 'no', menubar: 'no', status: 'no', resizable: 'yes' },
+    });
+    popup.document.write(html);
+    popup.document.close();
   };
 
-  const onRemoveSelected = () => {
+  const onRemoveSelected = async () => {
     if (selectedIds.size === 0) return;
-    if (!confirm(`선택한 사진 ${selectedIds.size}장을 삭제할까요?`)) return;
-    setItems((prev) => prev.filter((x) => !selectedIds.has(x.id)));
-    setSelectedIds(new Set());
+    const ok = await confirm(`선택한 사진 ${selectedIds.size}장을 삭제할까요?`);
+    if (!ok) return;
+
+    // API에서 온 항목(서버 삭제) vs 로컬 추가 항목 분리
+    const serverItems = items.filter((x) => selectedIds.has(x.id) && x._raw?.photo_seqno);
+    const localOnlyIds = [...selectedIds].filter((id) => {
+      const it = items.find((x) => x.id === id);
+      return it && !it._raw?.photo_seqno;
+    });
+
+    try {
+      // 서버 삭제: 순차 호출
+      for (const it of serverItems) {
+        await deletePhoto(estId, it._raw.photo_seqno);
+      }
+
+      // 로컬 전용 항목 제거
+      if (localOnlyIds.length > 0) {
+        setItems((prev) => prev.filter((x) => !localOnlyIds.includes(x.id)));
+      }
+
+      setSelectedIds(new Set());
+
+      // 서버 삭제가 있었으면 재조회
+      if (serverItems.length > 0 && estId) {
+        fetchPhotos(estId);
+      }
+    } catch (e) {
+      warning(e.message || "삭제에 실패했습니다.");
+    }
   };
 
   useEffect(() => {
@@ -460,7 +641,7 @@ export default function PhotoViewer() {
                 setPrintOpen((v) => !v);
               }}
             >
-              인쇄 <span className="text-zinc-500">(4/page)</span> ▾
+              인쇄 <span className="text-zinc-500">(페이지당 4장)</span> ▾
             </IconBtn>
 
             {printOpen && (
@@ -468,14 +649,14 @@ export default function PhotoViewer() {
                 className="absolute left-0 mt-1 w-44 border border-zinc-200 bg-white shadow-sm z-50"
                 onClick={(e) => e.stopPropagation()}
               >
-                <button className="w-full text-left px-3 py-2 text-sm hover:bg-zinc-50" onClick={() => onPrint("1/page")}>
-                  1/page
+                <button className="w-full text-left px-3 py-2 text-sm hover:bg-zinc-50" onClick={() => onPrint(4)}>
+                  페이지당 4장
                 </button>
-                <button className="w-full text-left px-3 py-2 text-sm hover:bg-zinc-50" onClick={() => onPrint("2/page")}>
-                  2/page
+                <button className="w-full text-left px-3 py-2 text-sm hover:bg-zinc-50" onClick={() => onPrint(6)}>
+                  페이지당 6장
                 </button>
-                <button className="w-full text-left px-3 py-2 text-sm hover:bg-zinc-50" onClick={() => onPrint("4/page")}>
-                  4/page
+                <button className="w-full text-left px-3 py-2 text-sm hover:bg-zinc-50" onClick={() => onPrint(12)}>
+                  페이지당 12장
                 </button>
               </div>
             )}
@@ -486,16 +667,20 @@ export default function PhotoViewer() {
 
           <div className="mx-2 h-6 w-px bg-zinc-200" />
 
-          <IconBtn icon={Trash2} label="선택 삭제" onClick={onRemoveSelected}>선택삭제</IconBtn>
+          <IconBtn icon={Trash2} label="선택 삭제" onClick={onRemoveSelected} disabled={deleting || saving || creating}>
+            {deleting ? "삭제중..." : "선택삭제"}
+          </IconBtn>
           <div className="text-sm text-zinc-500">
               선택 {selectedIds.size}장
           </div>
 
-          <div className="ml-auto flex items-center">
-            <IconBtn icon={Save} variant="primary" label="저장" onClick={onSave} disabled={saving || !!photoError}>
+          <div className="mx-2 h-6 w-px bg-zinc-200" />
+
+          {/* <div className="ml-auto flex items-center"> */}
+            <IconBtn icon={Save} label="사진순서 저장" onClick={onSave} disabled={saving || deleting || creating || !!photoError}>
               {saving ? "저장중..." : "저장"}
             </IconBtn>
-          </div>
+          {/* </div> */}
 
 
 
@@ -516,16 +701,23 @@ export default function PhotoViewer() {
       {/* Drop zone */}
       <div className="px-6 py-4">
         <div
-          className="border border-zinc-300 bg-white h-[110px] flex items-center justify-center text-center text-zinc-600"
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={onDropZoneDrop}
-          onClick={() => fileInputRef.current?.click()}
+          className={[
+            "border border-zinc-300 bg-white h-[110px] flex items-center justify-center text-center",
+            creating ? "text-zinc-400 cursor-wait" : "text-zinc-600 cursor-pointer",
+          ].join(" ")}
+          onDragOver={(e) => { e.preventDefault(); }}
+          onDrop={(e) => { e.preventDefault(); if (!creating) addFiles(e.dataTransfer.files); }}
+          onClick={() => { if (!creating) fileInputRef.current?.click(); }}
           role="button"
           tabIndex={0}
         >
           <div>
-            <div className="font-medium">사진을 드래그하거나 클릭하여 추가하세요</div>
-            <div className="text-sm text-zinc-500">(JPG/JPEG/PNG, 다중 선택 가능)</div>
+            <div className="font-medium">
+              {creating ? "업로드중..." : "사진을 드래그하거나 클릭하여 추가하세요"}
+            </div>
+            {!creating && (
+              <div className="text-sm text-zinc-500">(JPG/JPEG/PNG, 다중 선택 가능)</div>
+            )}
           </div>
         </div>
         <input
@@ -595,14 +787,25 @@ export default function PhotoViewer() {
                       text-zinc-700
                       hover:bg-red-50 hover:border-red-300 hover:text-red-600
                     "
-                    onClick={(e) => {
+                    onClick={async (e) => {
                       e.stopPropagation();
-                      setItems((prev) => prev.filter((x) => x.id !== it.id));
-                      setSelectedIds((prev) => {
-                        const next = new Set(prev);
-                        next.delete(it.id);
-                        return next;
-                      });
+                      const ok = await confirm("이 사진을 삭제할까요?");
+                      if (!ok) return;
+                      try {
+                        if (it._raw?.photo_seqno) {
+                          await deletePhoto(estId, it._raw.photo_seqno);
+                          if (estId) fetchPhotos(estId);
+                        } else {
+                          setItems((prev) => prev.filter((x) => x.id !== it.id));
+                        }
+                        setSelectedIds((prev) => {
+                          const next = new Set(prev);
+                          next.delete(it.id);
+                          return next;
+                        });
+                      } catch (err) {
+                        warning(err.message || "삭제에 실패했습니다.");
+                      }
                     }}
                   >
                     <Trash2 size={16} strokeWidth={2} />

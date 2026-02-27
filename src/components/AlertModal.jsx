@@ -8,6 +8,7 @@ const iconByType = {
   error: XCircle,
   confirm: AlertTriangle,
   remove: Trash2,
+  choice: AlertTriangle,
 };
 
 const titleByType = {
@@ -17,6 +18,7 @@ const titleByType = {
   error: "오류",
   confirm: "확인",
   remove: "삭제",
+  choice: "선택",
 };
 
 const toneByType = {
@@ -26,6 +28,13 @@ const toneByType = {
   error:   { headerBg: "bg-rose-50/70", headerFg: "text-rose-600", iconBg: "bg-rose-50",   iconFg: "text-rose-600" },
   confirm: { headerBg: "bg-indigo-50/70", headerFg: "text-indigo-600", iconBg: "bg-indigo-50",  iconFg: "text-indigo-600" },
   remove:  { headerBg: "bg-rose-50/70", headerFg: "text-rose-700", iconBg: "bg-rose-50",   iconFg: "text-rose-700" },
+  choice:  { headerBg: "bg-indigo-50/70", headerFg: "text-indigo-600", iconBg: "bg-indigo-50", iconFg: "text-indigo-600" },
+};
+
+const btnClassByVariant = {
+  primary: "h-10 rounded-md bg-zinc-900 px-4 text-sm font-semibold text-white hover:bg-zinc-800",
+  secondary: "h-10 rounded-md border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-800 hover:bg-gray-50",
+  ghost: "h-10 rounded-md border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-500 hover:bg-gray-50",
 };
 
 export default function AlertModal({
@@ -36,9 +45,11 @@ export default function AlertModal({
   confirmText = "확인",
   cancelText = "취소",
   showCancel = false,
+  actions = null,
   onConfirm,
   onCancel,
   onClose,
+  onAction,
 }) {
   useEffect(() => {
     if (!open) return;
@@ -48,7 +59,7 @@ export default function AlertModal({
         e.preventDefault();
         onClose?.();
       }
-      if (e.key === "Enter") {
+      if (e.key === "Enter" && !actions?.length) {
         // confirm 포함: Enter=확인
         e.preventDefault();
         onConfirm?.();
@@ -57,7 +68,7 @@ export default function AlertModal({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose, onConfirm]);
+  }, [open, onClose, onConfirm, actions]);
 
   if (!open) return null;
 
@@ -109,6 +120,40 @@ export default function AlertModal({
 
           {/* footer */}
           <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-gray-200">
+            {actions?.length ? (
+              actions.map((action) => (
+                <button
+                  key={action.key}
+                  type="button"
+                  className={btnClassByVariant[action.variant || "secondary"]}
+                  onClick={() => onAction?.(action.key)}
+                >
+                  {action.label}
+                </button>
+              ))
+            ) : (
+              <>
+                {showCancel && (
+                  <button
+                    type="button"
+                    className="h-10 rounded-md border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-800 hover:bg-gray-50"
+                    onClick={() => onCancel?.()}
+                  >
+                    {cancelText}
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  className="h-10 rounded-md bg-zinc-900 px-4 text-sm font-semibold text-white hover:bg-zinc-800"
+                  onClick={() => onConfirm?.()}
+                >
+                  {confirmText}
+                </button>
+              </>
+            )}
+          </div>
+          {/* <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-gray-200">
             {showCancel && (
               <button
                 type="button"
@@ -126,7 +171,7 @@ export default function AlertModal({
             >
               {confirmText}
             </button>
-          </div>
+          </div> */}
         </div>
       </div>
     </div>
