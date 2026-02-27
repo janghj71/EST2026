@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import FixedHeadTable from "../components/FixedHeadTable";
 import { openCenteredWindow } from "../utils/popup";
@@ -134,6 +134,12 @@ export default function InsuranceEstimate() {
     []
   );
 
+  // 보험견적일지: 보험건(seccode=12)만 표시
+  const insuranceEstimates = useMemo(
+    () => estimates.filter((row) => String(row?.seccode ?? "") === "12"),
+    [estimates]
+  );
+
   const claimColumns = useMemo(
     () => [
       { key: "bocomname", title: "보험사", width: "12%", align: "left" },
@@ -144,8 +150,8 @@ export default function InsuranceEstimate() {
       { key: "endpaysum", title: "공임계", width: "7%", align: "right", render: (v) => fmt(v) },
       { key: "endpartsum", title: "부품계", width: "7%", align: "right", render: (v) => fmt(v) },
       { key: "boman_nm", title: "담당자", width: "6%", align: "left" },
-      { key: "boman_hp", title: "담당HP", width: "9%", align: "left" },
-      { key: "boman_fax", title: "담당FAX", width: "9%", align: "left" },
+      { key: "bomanhp", title: "담당HP", width: "9%", align: "left" },
+      { key: "bomanfax", title: "담당FAX", width: "9%", align: "left" },
       { key: "reqtotal", title: "청구액", width: "8%", align: "right", render: (v) => fmt(v) },
       { key: "incom", title: "입금액", width: "7%", align: "right", render: (v) => fmt(v) },
       { key: "inday", title: "입금일자", width: "7%", align: "left", render: (v) => v || "-" },
@@ -345,6 +351,12 @@ export default function InsuranceEstimate() {
       fetchClaims(selected.est_serial);
     }
   }, [selected?.est_serial]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!selected?.est_serial) return;
+    const exists = insuranceEstimates.some((row) => row.est_serial === selected.est_serial);
+    if (!exists) setSelected(null);
+  }, [insuranceEstimates, selected?.est_serial]);
 
   // 청구보험 조회 완료 → 첫 번째 항목 자동 선택
   useEffect(() => {
@@ -748,14 +760,14 @@ export default function InsuranceEstimate() {
               <div className="border-b border-zinc-100 px-4 py-3">
                 <div className="flex items-center justify-between">
                   <div className="text-sm font-semibold text-zinc-900">견적목록</div>
-                  <div className="text-xs text-zinc-500">{estimates.length}건</div>
+                  <div className="text-xs text-zinc-500">{insuranceEstimates.length}건</div>
                 </div>
               </div>
 
               <div className="min-h-0 flex-1 overflow-hidden">
                 <FixedHeadTable
                   columns={estimateColumns}
-                  rows={estimates}
+                  rows={insuranceEstimates}
                   rowKey={(r) => r.est_serial}
                   selectedKey={selected?.est_serial}
                   onRowClick={(r) => setSelected(r)}

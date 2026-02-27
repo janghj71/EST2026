@@ -523,7 +523,18 @@ export default function PhotoViewer() {
   };
 
   const onMail = () => {
-    alert("메일 전송 팝업/연동은 다음 단계로 연결하면 됩니다.");
+    const popupPath = `/photo-mail-send/${encodeURIComponent(estId || "")}?carno=${encodeURIComponent(carNo || "")}`;
+    const win = openCenteredWindow(popupPath, `photoMailSend_${Date.now()}`, 980, 860, {
+      windowFeatures: { scrollbars: "yes", resizable: "yes" },
+      postMessage: {
+        type: "PHOTO_MAIL_SET_CTX",
+        payload: {
+          est_serial: estId || "",
+          carno: carNo || "",
+        },
+      },
+    });
+    registerChildWin(win);
   };
 
   const onPrint = (count) => {

@@ -8,6 +8,7 @@ import AppLayout from "./pages/AppLayout";
 import InsuranceEstimate from "./pages/InsuranceEstimate";
 import PhotoViewer from "./pages/PhotoViewer";
 import PhotoPopup from "./pages/PhotoPopup";
+import PhotoMailSend from "./pages/PhotoMailSend";
 import SmsSend from "./pages/SmsSend";
 import EstimateMemo from "./pages/EstimateMemo";
 import DepositPopup from "./pages/DepositPopup";
@@ -37,6 +38,7 @@ export default function App() {
         <Route path="/" element={<Login />} />
         <Route path="photo-viewer" element={<PhotoViewer />} />
         <Route path="photo-popup" element={<PhotoPopup />} />
+        <Route path="photo-mail-send/:est_serial?" element={<PhotoMailSend />} />
         <Route path="/estsmsend" element={<SmsSend />} />
         <Route path="/estimate-memo" element={<EstimateMemo />} />
         <Route path="/estimate-deposit" element={<DepositPopup />} />
@@ -81,5 +83,4 @@ export default function App() {
 
   );
 }
-
 
