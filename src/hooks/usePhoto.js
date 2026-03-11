@@ -156,6 +156,39 @@ export function usePhoto() {
     }
   }, []);
 
+  const {
+    loading: sendingMail,
+    error: mailError,
+    refetch: runSendPhotoMail,
+  } = useApi({
+    path: "/est_mail_send.aspx",
+    method: "POST",
+    bodyType: "form",
+    immediate: false,
+    onMap: (json) => {
+      apiOk(json, "메일 발송");
+      return json;
+    },
+  });
+
+  const sendPhotoMail = useCallback(async ({
+    est_serial,
+    mailkind = "09",
+    mail_addr,
+    mail_subject,
+    mail_text,
+    photo_seqno,
+  }) => {
+    return runSendPhotoMail({
+      est_serial: est_serial || "",
+      mailkind: mailkind || "09",
+      mail_addr: mail_addr || "",
+      mail_subject: mail_subject || "",
+      mail_text: mail_text || "",
+      photo_seqno: photo_seqno || "",
+    });
+  }, [runSendPhotoMail]);
+
   return {
     photos: photos ?? [],
     loading,
@@ -173,5 +206,8 @@ export function usePhoto() {
     // 추가
     creating,
     createPhoto,
+    sendingMail,
+    mailError,
+    sendPhotoMail,
   };
 }

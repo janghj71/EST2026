@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
+  ChevronLeft,
+  ChevronRight,
   ZoomIn,
   ZoomOut,
   RotateCcw,
@@ -62,6 +64,11 @@ export default function PhotoPopup() {
   const [memo, setMemo] = useState(ctx.memo || saved?.memo || "");
   const [photoSeqno, setPhotoSeqno] = useState(ctx.photoSeqno || saved?.photoSeqno || "");
   const [photoOrder, setPhotoOrder] = useState(ctx.photoOrder || saved?.photoOrder || "");
+  const [popupItems, setPopupItems] = useState(() => Array.isArray(saved?.popupItems) ? saved.popupItems : []);
+  const [currentIndex, setCurrentIndex] = useState(() => {
+    const n = Number(saved?.currentIndex);
+    return Number.isFinite(n) ? n : 0;
+  });
 
   const makeCacheBust = () =>
     `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -91,6 +98,68 @@ export default function PhotoPopup() {
 
   const refreshImage = () => setImgVer(makeCacheBust());
 
+  const resetViewState = () => {
+    setScale(1);
+    setRotate(0);
+    setPan({ x: 0, y: 0 });
+    setIsPanning(false);
+    panStartRef.current = null;
+  };
+
+  const applyPopupItem = (item, nextIndex) => {
+    if (!item) return;
+    if (typeof item.file === "string") setFileName(item.file);
+    if (typeof item.imgUrl === "string") {
+      setImgUrl(item.imgUrl);
+      refreshImage();
+    }
+    if (typeof item.cat === "string") setCat(item.cat);
+    if (typeof item.memo === "string") setMemo(item.memo);
+    if (item.photoSeqno != null) setPhotoSeqno(item.photoSeqno);
+    if (item.photoOrder != null) setPhotoOrder(item.photoOrder);
+    if (typeof nextIndex === "number") setCurrentIndex(nextIndex);
+    resetViewState();
+  };
+
+  const syncCurrentPopupItem = () => {
+    setPopupItems((prev) => {
+      if (!Array.isArray(prev) || prev.length === 0) return prev;
+      if (currentIndex < 0 || currentIndex >= prev.length) return prev;
+
+      const next = [...prev];
+      next[currentIndex] = {
+        ...next[currentIndex],
+        file: fileName,
+        imgUrl,
+        cat,
+        memo,
+        photoSeqno,
+        photoOrder,
+      };
+
+      try {
+        const raw = sessionStorage.getItem("photoPopupCtx");
+        const savedCtx = raw ? JSON.parse(raw) : {};
+        sessionStorage.setItem(
+          "photoPopupCtx",
+          JSON.stringify({
+            ...savedCtx,
+            file: fileName,
+            imgUrl,
+            cat,
+            memo,
+            photoSeqno,
+            photoOrder,
+            popupItems: next,
+            currentIndex,
+          })
+        );
+      } catch { /* empty */ }
+
+      return next;
+    });
+  };
+
   const displayImgSrc = useMemo(() => {
     const base = stripQuery(imgUrl);
     return base ? `${base}?_cb=${imgVer}` : "";
@@ -119,6 +188,11 @@ export default function PhotoPopup() {
       if (typeof p.memo === "string") setMemo(p.memo);
       if (p.photoSeqno != null) setPhotoSeqno(p.photoSeqno);
       if (p.photoOrder != null) setPhotoOrder(p.photoOrder);
+      if (Array.isArray(p.popupItems)) setPopupItems(p.popupItems);
+      if (p.currentIndex != null) {
+        const nextIndex = Number(p.currentIndex);
+        if (Number.isFinite(nextIndex)) setCurrentIndex(nextIndex);
+      }
 
       try {
         sessionStorage.setItem(
@@ -136,11 +210,7 @@ export default function PhotoPopup() {
         );
       } catch { /* empty */ }
 
-      setScale(1);
-      setRotate(0);
-      setPan({ x: 0, y: 0 });
-      setIsPanning(false);
-      panStartRef.current = null;
+      resetViewState();
     };
 
     window.addEventListener("message", handler);
@@ -173,6 +243,13 @@ export default function PhotoPopup() {
     document.body.appendChild(a);
     a.click();
     a.remove();
+  };
+
+  const moveToSibling = (delta) => {
+    if (!popupItems.length) return;
+    const nextIndex = currentIndex + delta;
+    if (nextIndex < 0 || nextIndex >= popupItems.length) return;
+    applyPopupItem(popupItems[nextIndex], nextIndex);
   };
 
   const onSave = async () => {
@@ -220,6 +297,7 @@ export default function PhotoPopup() {
         // setImgVer((v) => v + 1);
         refreshImage();
       }
+      syncCurrentPopupItem();
 
       await info("저장 완료");
     } catch (e) {
@@ -365,6 +443,20 @@ export default function PhotoPopup() {
     }
   };
 
+  const onDoubleClickZoom = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (scale <= 1.001) {
+      setScale(2);
+      setPan({ x: 0, y: 0 });
+      return;
+    }
+
+    setScale(1);
+    setPan({ x: 0, y: 0 });
+  };
+
 
 
   return (
@@ -435,9 +527,11 @@ export default function PhotoPopup() {
                 onMouseMove={onPanMouseMove}
                 onMouseUp={onPanMouseUp}
                 onMouseLeave={onPanMouseUp}
+                onDoubleClick={onDoubleClickZoom}
               >
 
               {/*}    
+
                 {imgUrl ? (
                   <img
                     src={imgVer ? `${imgUrl.split("?")[0]}?v=${imgVer}` : imgUrl}
@@ -455,6 +549,38 @@ export default function PhotoPopup() {
                   </div>
                 )}
               */}
+                <button
+                  type="button"
+                  aria-label="이전"
+                  onClick={() => moveToSibling(-1)}
+                  disabled={currentIndex <= 0}
+                  className={[
+                    "absolute left-3 top-1/2 z-10 -translate-y-1/2",
+                    "inline-flex h-11 w-11 items-center justify-center rounded-full",
+                    "border border-zinc-200 bg-white/85 text-zinc-700 shadow-sm backdrop-blur",
+                    currentIndex <= 0 ? "cursor-not-allowed opacity-40" : "hover:bg-white",
+                  ].join(" ")}
+                >
+                  <ChevronLeft size={20} strokeWidth={2.25} />
+                </button>
+
+                <button
+                  type="button"
+                  aria-label="다음"
+                  onClick={() => moveToSibling(1)}
+                  disabled={!popupItems.length || currentIndex >= popupItems.length - 1}
+                  className={[
+                    "absolute right-3 top-1/2 z-10 -translate-y-1/2",
+                    "inline-flex h-11 w-11 items-center justify-center rounded-full",
+                    "border border-zinc-200 bg-white/85 text-zinc-700 shadow-sm backdrop-blur",
+                    (!popupItems.length || currentIndex >= popupItems.length - 1)
+                      ? "cursor-not-allowed opacity-40"
+                      : "hover:bg-white",
+                  ].join(" ")}
+                >
+                  <ChevronRight size={20} strokeWidth={2.25} />
+                </button>
+
                 {displayImgSrc ? (
                   <img
                     src={displayImgSrc}

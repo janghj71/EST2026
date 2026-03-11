@@ -263,14 +263,17 @@ export default function InsuranceEstimate() {
     const est_serial = selected?.est_serial || "";       // 실제 est_serial 키로 교체
     const carno = selected?.carno || "";
     const hp = [selected?.hp0, selected?.hp1, selected?.hp2].filter(Boolean).join("");
-    const isset = selected?.isestname === "견적" ? "1" : "0";
+    const isest =
+      selected?.isest === "1" || selected?.isest === "0"
+        ? selected.isest
+        : (selected?.isestname === "견적" ? "1" : "0");
     const inday = selected?.inday || "";
   
     const url =
       `/estsmsend?est_serial=${encodeURIComponent(est_serial)}` +
       `&carno=${encodeURIComponent(carno)}` +
       `&hp=${encodeURIComponent(hp)}` +
-      `&isset=${encodeURIComponent(isset)}` +
+      `&isest=${encodeURIComponent(isest)}` +
       `&inday=${encodeURIComponent(inday)}`;
   
     // 이미 열려있으면 재사용 + ctx만 갱신
@@ -280,7 +283,7 @@ export default function InsuranceEstimate() {
         smsWinRef.current.postMessage(
           {
             type: "SMS_SEND_SET_CTX",
-            payload: { est_serial, carno, hp, isset: isset === "1", inday },
+            payload: { est_serial, carno, hp, isest, inday },
           },
           window.location.origin
         );
@@ -469,19 +472,23 @@ export default function InsuranceEstimate() {
       est_serial: selected?.est_serial || "",
       carno: selected?.carno || "",
       hp: [selected?.hp0, selected?.hp1, selected?.hp2].filter(Boolean).join(""),
-      isset: selected?.isestname === "견적",
+      isest:
+        selected?.isest === "1" || selected?.isest === "0"
+          ? selected.isest
+          : (selected?.isestname === "견적" ? "1" : "0"),
       inday: selected?.inday || "",
     };
   
     try {
       w.postMessage(
         { type: "SMS_SEND_SET_CTX", payload },  window.location.origin);
-    } catch {}
+    } catch { /* empty */ }
   }, [selected?.est_serial,
     selected?.carno,
     selected?.hp0,
     selected?.hp1,
     selected?.hp2,
+    selected?.isest,
     selected?.isestname,
     selected?.inday,]);
 

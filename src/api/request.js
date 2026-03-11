@@ -36,18 +36,27 @@ export async function request(
 
   // body 구성
   if (body instanceof FormData) {
+    
     if (serviceKey) body.append('servicekey', serviceKey)
     // FormData는 Content-Type 제거(브라우저가 boundary 자동 지정)
     delete opts.headers['Content-Type']
     opts.body = body
+
   } else if (bodyType === 'json') {
+    
     const payload = (typeof body === 'object' && body) ? { ...body } : {}
     if (serviceKey) payload.servicekey = serviceKey
     opts.headers['Content-Type'] = 'application/json;charset=utf-8'
     opts.body = JSON.stringify(payload)
+
   } else if (bodyType === 'raw') {
+    
     // 문자열 전문 그대로 전송
+    if (!opts.headers['Content-Type']) {
+      opts.headers['Content-Type'] = 'application/x-www-form-urlencoded;charset=utf-8'
+    }
     opts.body = typeof body === 'string' ? body : ''
+
   } else {
     // 'form'
     const payload = (typeof body === 'object' && body) ? { ...body } : {}

@@ -5,6 +5,7 @@ import IconBtn from "../components/IconBtn";
 import { useAlert } from "../alerts";
 import { useUrlContextSnapshot } from "../hooks/useUrlContextSnapshot";
 import { useEstimate } from "../hooks/useEstimate";
+import { useInsurerContacts } from "../hooks/useInsurerContacts";
 import { useTbCode } from "../hooks/useTbCode";
 import { usePhoto } from "../hooks/usePhoto";
 
@@ -32,8 +33,11 @@ function Check({ checked, onChange, label }) {
 }
 
 function toEmail(row) {
-  const id = (row?.boman_email_acc || "").trim();
-  const domain = (row?.boman_email_smtp || "").trim();
+  const full = (row?.boman_email || "").trim();
+  if (full) return full;
+
+  const id = (row?.email_acc || "").trim();
+  const domain = (row?.email_smtp || "").trim();
   if (!id || !domain) return "";
   return `${id}@${domain}`;
 }
@@ -107,8 +111,9 @@ export default function PhotoMailSend() {
   }, [estId, carNo]);
 
   const { claims, fetchClaims } = useEstimate();
+  const { contacts } = useInsurerContacts();
   const { codes: photoCodes } = useTbCode("PTOKND");
-  const { photos, fetchPhotos } = usePhoto();
+  const { photos, fetchPhotos, sendPhotoMail, sendingMail } = usePhoto();
 
   useEffect(() => {
     if (estId) fetchPhotos(estId);
@@ -174,13 +179,25 @@ export default function PhotoMailSend() {
 
   const contactOptions = useMemo(() => {
     return claims
-      .map((row) => ({
+      .map((row) => {
+        const fallbackContact = contacts.find(
+          (contact) =>
+            String(contact?.bocomcode || "") === String(row?.bocomcode || "") &&
+            String(contact?.boman_nm || "").trim() === String(row?.boman_nm || "").trim()
+        );
+
+        return {
         key: `${row.estbo_seqno || ""}`,
         label: row.boman_nm || "(이름없음)",
-        email: toEmail(row),
-      }))
+        email: toEmail({
+          boman_email: row?.boman_email,
+          email_acc: fallbackContact?.email_acc,
+          email_smtp: fallbackContact?.email_smtp,
+        }),
+        };
+      })
       .filter((row) => row.key.trim() !== "");
-  }, [claims]);
+  }, [claims, contacts]);
 
   const [contactKey, setContactKey] = useState("");
   const [toEmailAddr, setToEmailAddr] = useState("");
@@ -194,8 +211,7 @@ export default function PhotoMailSend() {
   useEffect(() => {
     if (!contactKey) return;
     const picked = contactOptions.find((x) => x.key === contactKey);
-    if (!picked?.email) return;
-    setToEmailAddr(picked.email);
+    setToEmailAddr(picked?.email || "");
   }, [contactKey, contactOptions]);
 
   const onSendMail = async () => {
@@ -204,17 +220,27 @@ export default function PhotoMailSend() {
       return;
     }
 
-    const payload = {
-      est_serial: estId,
-      carno: carNo,
-      to: toEmailAddr.trim(),
-      subject: subject.trim(),
-      content,
-      categories: enabledCatKeys || ["all"],
-      photoCount: filteredPhotos.length,
-    };
-    console.log("SEND_PHOTO_MAIL", payload);
-    await info(`메일발송(준비)\n첨부 사진: ${filteredPhotos.length}장`);
+    const isAllPhotos = enabledCatKeys === null;
+    const photoSeqno = isAllPhotos
+      ? ""
+      : filteredPhotos
+          .map((photo) => photo?.photo_seqno || "")
+          .filter(Boolean)
+          .join(",");
+
+    try {
+      await sendPhotoMail({
+        est_serial: estId,
+        mailkind: "09",
+        mail_addr: toEmailAddr.trim(),
+        mail_subject: subject.trim(),
+        mail_text: content || "",
+        photo_seqno: photoSeqno,
+      });
+      await info(`메일발송 완료`);
+    } catch (e) {
+      warning(e?.message || "메일발송에 실패했습니다.");
+    }
   };
 
   return (
@@ -228,7 +254,7 @@ export default function PhotoMailSend() {
             </div>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <IconBtn icon={Mail} label="메일발송"  onClick={onSendMail} />
+            <IconBtn icon={Mail} label={sendingMail ? "발송중..." : "메일발송"} onClick={onSendMail} disabled={sendingMail} />
             <IconBtn icon={X} label="닫기" variant="primary" onClick={() => window.close()} />
           </div>
         </div>

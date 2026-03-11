@@ -1,8 +1,12 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useUrlContextSnapshot, setUrlContextSnapshot } from "../hooks/useUrlContextSnapshot";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useUrlContextSnapshot } from "../hooks/useUrlContextSnapshot";
 import { X } from "lucide-react";
 import IconBtn from "../components/IconBtn";
-// import { useAlert } from "../alerts";
+import { useAlert } from "../alerts";
+import { useCompanyInfo } from "../hooks/useCompanyInfo";
+import { useAlimtalkTemplate } from "../hooks/useAlimtalkTemplate";
+import { useSms } from "../hooks/useSms";
+import { useSmsSender } from "../hooks/useSmsSender";
 
 function pad2(n) {
   return String(n).padStart(2, "0");
@@ -21,29 +25,40 @@ function Row({ label, children }) {
 }
 
 export default function SmsSend() {
+  const { warning, success } = useAlert();
+  const { form: companyForm, loading: companyLoading } = useCompanyInfo();
+  const { fetchTemplate } = useAlimtalkTemplate();
+  const { sendSms, sendingSms } = useSms();
+  const { senders } = useSmsSender();
+
   /**
-   * ✅ 파람 키는 요구사항대로 고정:
-   * est_serial, carno, hp, isset, inday
+   * est_serial, carno, hp, isest, inday
    */
   const snap = useUrlContextSnapshot({
     storageKey: "smsSendCtx",
-    keys: ["est_serial", "carno", "hp", "isset", "inday"],
+    keys: ["est_serial", "carno", "hp", "isest", "inday"],
     cleanPath: "/estsmsend",
   });
 
-  // PhotoViewer처럼 “초기 1회 보정 + 저장” 패턴 유지 :contentReference[oaicite:4]{index=4}
   const [estSerial, setEstSerial] = useState(() => snap?.est_serial || "");
   const [carNo, setCarNo] = useState(() => snap?.carno || "");
   const [hp, setHp] = useState(() => snap?.hp || "");
-  const [isSet, setIsSet] = useState(() => !!snap?.isset);
+  const [isest, setIsest] = useState(() => (snap?.isest === "1" ? "1" : "0"));
   const [inDay, setInDay] = useState(() => snap?.inday || "");
 
   const hydratedRef = useRef(false);
 
   useEffect(() => {
-    if (!snap?.est_serial && !snap?.carno && !snap?.hp && !snap?.inday && !snap?.isset) return;
+    if (
+      !snap?.est_serial &&
+      !snap?.carno &&
+      !snap?.hp &&
+      !snap?.inday &&
+      typeof snap?.isest === "undefined"
+    ) {
+      return;
+    }
 
-    // 1) ctx 저장(F5 대비)
     try {
       sessionStorage.setItem(
         "smsSendCtx",
@@ -51,29 +66,25 @@ export default function SmsSend() {
           est_serial: snap?.est_serial || "",
           carno: snap?.carno || "",
           hp: snap?.hp || "",
-          isset: !!snap?.isset,
+          isest: snap?.isest === "1" ? "1" : "0",
           inday: snap?.inday || "",
         })
       );
-    } catch {}
+    } catch {
+      // ignore
+    }
 
-    // 2) 첫 로딩에서만 state 보정
     if (hydratedRef.current) return;
     hydratedRef.current = true;
 
     if (snap?.est_serial && !estSerial) setEstSerial(snap.est_serial);
     if (snap?.carno && !carNo) setCarNo(snap.carno);
     if (snap?.hp && !hp) setHp(snap.hp);
-    if (typeof snap?.isset !== "undefined") setIsSet(!!snap.isset);
+    if (typeof snap?.isest !== "undefined") setIsest(snap.isest === "1" ? "1" : "0");
     if (snap?.inday && !inDay) setInDay(snap.inday);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [snap?.est_serial, snap?.carno, snap?.hp, snap?.isset, snap?.inday]);
+  }, [snap?.est_serial, snap?.carno, snap?.hp, snap?.isest, snap?.inday]);
 
-  /**
-   * 부모(InsuranceEstimate)에서 선택 변경 시 ctx 갱신 메시지 받기
-   * - 받은 값도 sessionStorage에 저장해서 F5에도 유지
-   * PhotoViewer와 동일한 메시지 수신 패턴 
-   */
   useEffect(() => {
     const handler = (ev) => {
       if (ev.origin !== window.location.origin) return;
@@ -84,10 +95,9 @@ export default function SmsSend() {
       const nextEstSerial = next?.est_serial || "";
       const nextCarNo = next?.carno || "";
       const nextHp = next?.hp || "";
-      const nextIsSet = !!next?.isset;
+      const nextIsest = next?.isest === "1" ? "1" : "0";
       const nextInDay = next?.inday || "";
 
-      // sessionStorage 저장 (F5 유지)
       try {
         sessionStorage.setItem(
           "smsSendCtx",
@@ -95,83 +105,97 @@ export default function SmsSend() {
             est_serial: nextEstSerial || estSerial,
             carno: nextCarNo || carNo,
             hp: nextHp || hp,
-            isset: typeof next?.isset === "undefined" ? isSet : nextIsSet,
+            isest: typeof next?.isest === "undefined" ? isest : nextIsest,
             inday: nextInDay || inDay,
           })
         );
-      } catch {}
+      } catch {
+        // ignore
+      }
 
-      // 화면 갱신
       if (nextEstSerial) setEstSerial(nextEstSerial);
       if (nextCarNo) setCarNo(nextCarNo);
       if (nextHp) setHp(nextHp);
-      if (typeof next?.isset !== "undefined") setIsSet(nextIsSet);
+      if (typeof next?.isest !== "undefined") {
+        setIsest(nextIsest);
+      }
       if (nextInDay) setInDay(nextInDay);
     };
 
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [estSerial, carNo, hp, isSet, inDay]);
+  }, [estSerial, carNo, hp, isest, inDay]);
 
-  // ===== UI 상태 (필수 항목들) =====
   const today = useMemo(() => ymd(new Date()), []);
   const [recvHp, setRecvHp] = useState("");
-  const [sendNo, setSendNo] = useState("02-424-1901");
+  const [sendNo, setSendNo] = useState("");
   const [sendDay, setSendDay] = useState(today);
   const [sendHour, setSendHour] = useState("08");
   const [includeEstimateUrl, setIncludeEstimateUrl] = useState(true);
   const [msg, setMsg] = useState("");
 
-  // ctx(차량번호/입고일/수신번호) 바뀌면 메시지/수신번호 자동 갱신
-  const defaultMsg = useMemo(() => {
-    const dateText = inDay || today;
-    return `[${carNo}  점검정비견적서]
-
-인트라밴공업사 입니다.
-${dateText} 에 상담받으신 점검정비견적서입니다.
-
-더 좋은 서비스와 혜택으로
-고객님께 보답할 수 있도록 최선을 다하겠습니다.
-
-▶ 정비업체명 : 인트라밴공업사
-▶ 정비업체전화 : 02-424-1901`;
-  }, [carNo, inDay, today]);
-
   useEffect(() => {
     setRecvHp(hp || "");
-    setMsg(defaultMsg);
-  }, [hp, defaultMsg, estSerial]);
+  }, [hp, estSerial]);
 
-  // ===== 버튼 동작(화면만) =====
-  const onSearchHistory = () => {
-    alert(`문자발송 조회: est_serial=${estSerial}`);
-  };
+  useEffect(() => {
+    const firstCallback = senders?.[0]?.callback || "";
+    if (!firstCallback) return;
+    setSendNo(firstCallback);
+  }, [senders]);
 
-  const onSendSms = () => {
-    const payload = {
-      est_serial: estSerial,
+  const loadAlimtalkMsg = useCallback(() => {
+    if (companyLoading) return;
+    if (!carNo && !inDay) return;
+    if (!companyForm.comName) return;
+
+    fetchTemplate({
+      isest,
       carno: carNo,
-      hp: recvHp,
-      isset: isSet,
       inday: inDay,
-      sendNo,
-      sendDay,
-      sendHour,
-      includeEstimateUrl,
-      msg,
-    };
-    console.log("SEND_SMS", payload);
-    alert("문자발송(샘플)");
+      comname: companyForm.comName,
+      tel0: companyForm.tel0,
+      tel1: companyForm.tel1,
+      tel2: companyForm.tel2,
+      address1: companyForm.addr1,
+      address2: companyForm.addr2,
+    })
+      .then((text) => setMsg(text))
+      .catch((e) => warning(e.message || "알림톡 템플릿 조회 실패"));
+  }, [companyLoading, carNo, inDay, isest, companyForm, fetchTemplate, warning]);
+
+  useEffect(() => {
+    loadAlimtalkMsg();
+  }, [loadAlimtalkMsg]);
+
+  const onSendSms = async () => {
+    if (!estSerial) return warning("견적번호가 없습니다.");
+    if (!recvHp) return warning("수신번호를 입력하세요.");
+    if (!sendNo) return warning("발신번호를 입력하세요.");
+    if (!msg) return warning("메시지 내용을 입력하세요.");
+
+    const smskind = includeEstimateUrl ? (isest === "1" ? "03" : "02") : "";
+
+    try {
+      await sendSms({
+        est_serial: estSerial,
+        hp: recvHp,
+        callback: sendNo,
+        smskind,
+        smstxt: msg,
+      });
+      success("문자발송 했습니다.");
+    } catch (e) {
+      warning(e?.message || "문자발송에 실패했습니다.");
+    }
   };
 
   const onSendAlimtalk = () => {
-    alert("알림톡(샘플)");
+    loadAlimtalkMsg();
   };
 
   return (
     <div className="h-screen bg-white overflow-hidden flex flex-col">
-      {/* Header */}
       <div className="border-b border-zinc-200">
         <div className="px-6 py-4 flex items-start gap-4">
           <div className="min-w-0">
@@ -182,14 +206,6 @@ ${dateText} 에 상담받으신 점검정비견적서입니다.
           </div>
 
           <div className="ml-auto flex items-center gap-2">
-            {/* <button
-              type="button"
-              onClick={onSearchHistory}
-              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-50"
-            >
-              문자발송 조회
-            </button> */}
-
             <IconBtn
               icon={X}
               label="닫기"
@@ -200,9 +216,7 @@ ${dateText} 에 상담받으신 점검정비견적서입니다.
         </div>
       </div>
 
-      {/* Body */}
       <div className="px-6 py-5 min-h-0 flex-1 overflow-auto space-y-4">
-        {/* 메시지 */}
         <div className="rounded-md border border-zinc-200 bg-white shadow-sm">
           <div className="p-3">
             <textarea
@@ -214,7 +228,6 @@ ${dateText} 에 상담받으신 점검정비견적서입니다.
           </div>
         </div>
 
-        {/* 입력 폼 */}
         <div className="rounded-md border border-zinc-200 bg-white shadow-sm p-4 space-y-3">
           <Row label="수신번호">
             <input
@@ -226,14 +239,16 @@ ${dateText} 에 상담받으신 점검정비견적서입니다.
           </Row>
 
           <Row label="발신번호">
-            {/* 콤보박스는 부모창 스타일(select-base)로 */}
             <select
               value={sendNo}
               onChange={(e) => setSendNo(e.target.value)}
               className="select-base"
             >
-              <option value="02-424-1901">02-424-1901</option>
-              {/* 필요시 추가 */}
+              {(senders ?? []).map((s) => (
+                <option key={s.orderno || s.callback} value={s.callback || ""}>
+                  {s.callback || ""}
+                </option>
+              ))}
             </select>
           </Row>
 
@@ -263,24 +278,28 @@ ${dateText} 에 상담받으신 점검정비견적서입니다.
             </div>
           </Row>
 
-          <label className="inline-flex items-center gap-2 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              className="h-4 w-4 accent-zinc-900"
-              checked={includeEstimateUrl}
-              onChange={(e) => setIncludeEstimateUrl(e.target.checked)}
-            />
-            <span className="text-sm font-semibold text-zinc-700">
-              견적서 <span className="font-normal text-zinc-500">(URL이 포함되어 발송됩니다)</span>
-            </span>
-          </label>
+          <div className="grid grid-cols-[90px_1fr] items-center gap-3">
+            <div />
+            <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-zinc-900"
+                checked={includeEstimateUrl}
+                onChange={(e) => setIncludeEstimateUrl(e.target.checked)}
+              />
+              <span className="text-sm font-semibold text-zinc-700">
+                {isest === "1" ? "견적서" : "명세서"}{" "}
+                <span className="font-normal text-zinc-500">(URL이 포함되어 발송됩니다)</span>
+              </span>
+            </label>
+          </div>
         </div>
 
-        {/* 하단 버튼 */}
         <div className="grid grid-cols-2 gap-4">
           <button
             type="button"
             onClick={onSendSms}
+            disabled={sendingSms}
             className="rounded-md bg-zinc-700 px-4 py-3 text-sm font-semibold text-white hover:bg-zinc-800"
           >
             문자발송

@@ -320,6 +320,15 @@ export default function PhotoViewer() {
       it?.sourceUrl ||
       (it?._raw?.file_url ? it._raw.file_url.split("?")[0] : "") ||
       "";
+    const popupItems = viewItems.map((photo) => ({
+      file: photo?.fileName || "",
+      imgUrl: photo?.sourceUrl || photo?.url || "",
+      cat: photo?.cat || "",
+      memo: photo?.memo || "",
+      photoSeqno: photo?._raw?.photo_seqno || "",
+      photoOrder: photo?._raw?.photo_order || "",
+    }));
+    const currentIndex = Math.max(0, viewItems.findIndex((photo) => photo.id === it?.id));
       
     const win = openCenteredWindow("/photo-popup", "photoPopup", 800, 1000, {
       windowFeatures: { scrollbars: "no", resizable: "yes" },
@@ -335,6 +344,8 @@ export default function PhotoViewer() {
           memo: it?.memo || "",
           photoSeqno: it?._raw?.photo_seqno || "",
           photoOrder: it?._raw?.photo_order || "",
+          popupItems,
+          currentIndex,
         },
       },
     });
@@ -761,9 +772,10 @@ export default function PhotoViewer() {
                 <div
                   key={it.id}
                   draggable
-                  onDragStart={() => (dragIdRef.current = it.id)}
+                  onDragStart={(e) => { e.stopPropagation(); dragIdRef.current = it.id; }}
                   onDragOver={(e) => e.preventDefault()}
-                  onDrop={() => moveItem(dragIdRef.current, it.id)}
+                  onDrop={(e) => { e.preventDefault(); moveItem(dragIdRef.current, it.id); }}
+                  onDragEnd={() => { dragIdRef.current = null; }}
                   className={[
                     "relative border border-zinc-200 bg-white ",
                     isSel ? "ring-2 ring-zinc-800" : "",
