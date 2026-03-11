@@ -19,8 +19,9 @@ export function useSms() {
   });
 
   const sendSms = useCallback(
-    async ({ est_serial, hp, callback, smskind, smstxt }) => {
+    async ({ comcode, est_serial, hp, callback, smskind, smstxt }) => {
       return runSendSms({
+        comcode: comcode || "",
         est_serial: est_serial || "",
         hp: hp || "",
         callback: callback || "",
@@ -31,10 +32,47 @@ export function useSms() {
     [runSendSms]
   );
 
+  const sendAlimtalk = useCallback(
+    async ({
+      comcode,
+      est_serial,
+      hp,
+      callback,
+      smskind,
+      smstxt,
+      biztype,
+      yellowid_key,
+      templatecode,
+      resend,
+      btn_type_01,
+      btn_nm_01,
+      btn_01_url_01,
+      btn_01_url_02,
+    }) => {
+      return runSendSms({
+        comcode: comcode || "",
+        est_serial: est_serial || "",
+        hp: hp || "",
+        callback: callback || "",
+        smskind: smskind || "",
+        smstxt: smstxt || "",
+        biztype: biztype || "at",
+        yellowid_key: yellowid_key || "",
+        templatecode: templatecode || "",
+        resend: resend || "Y",
+        btn_type_01: btn_type_01 || "",
+        btn_nm_01: btn_nm_01 || "",
+        btn_01_url_01: btn_01_url_01 || "",
+        btn_01_url_02: btn_01_url_02 || "",
+      });
+    },
+    [runSendSms]
+  );
+
   return {
     sendingSms,
     smsError,
     sendSms,
+    sendAlimtalk,
   };
 }
-

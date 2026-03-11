@@ -10,6 +10,7 @@ const EMPTY_FORM = {
   fax0: "", fax1: "", fax2: "",
   zipCode: "", addr1: "", addr2: "",
   email: "",
+  yellowidKeyJmt: "",
 };
 
 
@@ -46,6 +47,7 @@ function mapToForm(json) {
     addr1:       m.address1  ?? "",
     addr2:       m.address2  ?? "",
     email:       m.email     ?? "",
+    yellowidKeyJmt: m.yellowid_key_jmt ?? "",
   };
 }
 

@@ -31,15 +31,21 @@ export function useAlimtalkTemplate() {
    * @param {string} [params.address2] - 주소2
    * @returns {Promise<string>} 변수가 치환된 알림톡 메시지 문자열
    */
-  const fetchTemplate = useCallback(async ({ isest, ...data }) => {
+  const fetchTemplate = useCallback(async ({ isest, smskind, ...data }) => {
     const json = await refetch();
     apiOk(json, '알림톡 템플릿 조회');
 
-    const altkindcode = isest === '1' ? '03' : '02';
+    const altkindcode = smskind || (isest === '1' ? '03' : '02');
     const item = json.dataset?.find((d) => d.altkindcode === altkindcode);
     if (!item) throw new Error(`알림톡 템플릿이 없습니다. (altkindcode: ${altkindcode})`);
 
-    return replaceTemplate_alimtalk(item.altmsg, data);
+    const text = replaceTemplate_alimtalk(item.altmsg, data);
+
+    return {
+      text,
+      template: item,
+      altkindcode,
+    };
   }, [refetch]);
 
   return { loading, fetchTemplate };

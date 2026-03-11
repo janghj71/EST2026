@@ -7,6 +7,7 @@ import { useCompanyInfo } from "../hooks/useCompanyInfo";
 import { useAlimtalkTemplate } from "../hooks/useAlimtalkTemplate";
 import { useSms } from "../hooks/useSms";
 import { useSmsSender } from "../hooks/useSmsSender";
+import { getComcode } from "../api/config";
 
 function pad2(n) {
   return String(n).padStart(2, "0");
@@ -28,7 +29,7 @@ export default function SmsSend() {
   const { warning, success } = useAlert();
   const { form: companyForm, loading: companyLoading } = useCompanyInfo();
   const { fetchTemplate } = useAlimtalkTemplate();
-  const { sendSms, sendingSms } = useSms();
+  const { sendSms, sendAlimtalk, sendingSms } = useSms();
   const { senders } = useSmsSender();
 
   /**
@@ -144,24 +145,30 @@ export default function SmsSend() {
     setSendNo(firstCallback);
   }, [senders]);
 
-  const loadAlimtalkMsg = useCallback(() => {
-    if (companyLoading) return;
-    if (!carNo && !inDay) return;
-    if (!companyForm.comName) return;
+  const loadAlimtalkMsg = useCallback(async ({ smskind } = {}) => {
+    if (companyLoading) return null;
+    if (!carNo && !inDay) return null;
+    if (!companyForm.comName) return null;
 
-    fetchTemplate({
-      isest,
-      carno: carNo,
-      inday: inDay,
-      comname: companyForm.comName,
-      tel0: companyForm.tel0,
-      tel1: companyForm.tel1,
-      tel2: companyForm.tel2,
-      address1: companyForm.addr1,
-      address2: companyForm.addr2,
-    })
-      .then((text) => setMsg(text))
-      .catch((e) => warning(e.message || "알림톡 템플릿 조회 실패"));
+    try {
+      const templateResult = await fetchTemplate({
+        isest,
+        smskind,
+        carno: carNo,
+        inday: inDay,
+        comname: companyForm.comName,
+        tel0: companyForm.tel0,
+        tel1: companyForm.tel1,
+        tel2: companyForm.tel2,
+        address1: companyForm.addr1,
+        address2: companyForm.addr2,
+      });
+      setMsg(templateResult?.text || "");
+      return templateResult;
+    } catch (e) {
+      warning(e?.message || "Failed to load alimtalk template.");
+      return null;
+    }
   }, [companyLoading, carNo, inDay, isest, companyForm, fetchTemplate, warning]);
 
   useEffect(() => {
@@ -177,7 +184,9 @@ export default function SmsSend() {
     const smskind = includeEstimateUrl ? (isest === "1" ? "03" : "02") : "";
 
     try {
+      const comcode = getComcode();
       await sendSms({
+        comcode,
         est_serial: estSerial,
         hp: recvHp,
         callback: sendNo,
@@ -190,8 +199,56 @@ export default function SmsSend() {
     }
   };
 
-  const onSendAlimtalk = () => {
-    loadAlimtalkMsg();
+  const onSendAlimtalk = async () => {
+    if (!estSerial) return warning("견적번호가 없습니다.");
+    if (!recvHp) return warning("수신번호를 입력하세요.");
+    if (!sendNo) return warning("발신번호를 입력하세요.");
+
+    const smskind = includeEstimateUrl ? (isest === "1" ? "03" : "02") : "";
+
+    try {
+      const templateResult = await loadAlimtalkMsg({ smskind });
+      if (!templateResult) return;
+
+      const { text, template, altkindcode } = templateResult;
+      const comcode = getComcode();
+      const hpClean = (recvHp || "").replace(/-/g, "");
+
+      const now = new Date();
+      const yyyymm = `${now.getFullYear()}${pad2(now.getMonth() + 1)}`;
+      const effectiveSmsKind = altkindcode || smskind;
+      const sNew = `a|comcode=${comcode}|sale_serial=${estSerial}|smskind=${effectiveSmsKind}|yyyymm=${yyyymm}|prgcode=208`;
+
+      const link1Mob = template?.link1_mob || "";
+      const link1Pc = template?.link1_pc || "";
+      const btn_01_url_01 = link1Mob ? link1Mob.replace(/#\{인쇄물정보\}/g, sNew) : "";
+      const btn_01_url_02 = link1Pc ? link1Pc.replace(/#\{인쇄물정보\}/g, sNew) : "";
+
+      const alimtalkParams = {
+        comcode,
+        est_serial: estSerial,
+        hp: hpClean,
+        callback: sendNo,
+        smskind: effectiveSmsKind,
+        smstxt: text || "",
+        biztype: "at",
+        yellowid_key: companyForm.yellowidKeyJmt || "",
+        templatecode: template?.templatecode || "",
+        resend: "Y",
+      };
+
+      if (template?.link1_name) {
+        alimtalkParams.btn_type_01 = template?.link1_type || "";
+        alimtalkParams.btn_nm_01 = template?.link1_name || "";
+        alimtalkParams.btn_01_url_01 = btn_01_url_01;
+        alimtalkParams.btn_01_url_02 = btn_01_url_02;
+      }
+
+      await sendAlimtalk(alimtalkParams);
+      success("알림톡 발송 성공");
+    } catch (e) {
+      warning(e?.message || "알림톡 발송 실패");
+    }
   };
 
   return (
@@ -316,3 +373,4 @@ export default function SmsSend() {
     </div>
   );
 }
+
