@@ -41,6 +41,12 @@ export function useEstimate() {
     [estRefetch]
   );
 
+  /** 텍스트 검색 (findtext만 전달, comcode는 useApi가 자동 병합) */
+  const fetchByText = useCallback(
+    (findtext) => estRefetch({ findtext }),
+    [estRefetch]
+  );
+
   // ── 청구보험 조회 (est_serial) ──
   const {
     data: claims,
@@ -85,6 +91,7 @@ export function useEstimate() {
     estLoading,
     estError,
     fetchEstimates,
+    fetchByText,
 
     // 청구보험
     claims: claims ?? [],

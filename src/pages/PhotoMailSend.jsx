@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { Mail, X } from "lucide-react";
 import IconBtn from "../components/IconBtn";
 import { useAlert } from "../alerts";
+import { useLoading } from "../loading/useLoading";
 import { useUrlContextSnapshot } from "../hooks/useUrlContextSnapshot";
 import { useEstimate } from "../hooks/useEstimate";
 import { useInsurerContacts } from "../hooks/useInsurerContacts";
@@ -44,6 +45,7 @@ function toEmail(row) {
 
 export default function PhotoMailSend() {
   const { info, warning } = useAlert();
+  const { withLoading } = useLoading();
   const { est_serial: estFromPath = "" } = useParams();
 
   const snap = useUrlContextSnapshot({
@@ -116,12 +118,13 @@ export default function PhotoMailSend() {
   const { photos, fetchPhotos, sendPhotoMail, sendingMail } = usePhoto();
 
   useEffect(() => {
-    if (estId) fetchPhotos(estId);
-  }, [estId, fetchPhotos]);
-
-  useEffect(() => {
-    if (estId) fetchClaims(estId);
-  }, [estId, fetchClaims]);
+    if (!estId) return;
+    withLoading(
+      () => Promise.all([fetchPhotos(estId), fetchClaims(estId)]),
+      '데이터 불러오는 중...'
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [estId]);
 
   const CATS = useMemo(() => {
     const cats = [{ key: "all", label: "전체사진" }];
@@ -254,7 +257,7 @@ export default function PhotoMailSend() {
             </div>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <IconBtn icon={Mail} label={sendingMail ? "발송중..." : "메일발송"} onClick={onSendMail} disabled={sendingMail} />
+            <IconBtn icon={Mail} label={sendingMail ? "발송중..." : "메일발송"} onClick={() => withLoading(onSendMail, '메일 발송 중...')} disabled={sendingMail} />
             <IconBtn icon={X} label="닫기" variant="primary" onClick={() => window.close()} />
           </div>
         </div>

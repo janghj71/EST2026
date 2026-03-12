@@ -3,6 +3,7 @@ import { useUrlContextSnapshot } from "../hooks/useUrlContextSnapshot";
 import { X } from "lucide-react";
 import IconBtn from "../components/IconBtn";
 import { useAlert } from "../alerts";
+import { useLoading } from "../loading/useLoading";
 import { useCompanyInfo } from "../hooks/useCompanyInfo";
 import { useAlimtalkTemplate } from "../hooks/useAlimtalkTemplate";
 import { useSms } from "../hooks/useSms";
@@ -27,6 +28,7 @@ function Row({ label, children }) {
 
 export default function SmsSend() {
   const { warning, success } = useAlert();
+  const { withLoading } = useLoading();
   const { form: companyForm, loading: companyLoading } = useCompanyInfo();
   const { fetchTemplate } = useAlimtalkTemplate();
   const { sendSms, sendAlimtalk, sendingSms } = useSms();
@@ -355,7 +357,7 @@ export default function SmsSend() {
         <div className="grid grid-cols-2 gap-4">
           <button
             type="button"
-            onClick={onSendSms}
+            onClick={() => withLoading(onSendSms, '문자 발송 중...')}
             disabled={sendingSms}
             className="rounded-md bg-zinc-700 px-4 py-3 text-sm font-semibold text-white hover:bg-zinc-800"
           >
@@ -363,7 +365,7 @@ export default function SmsSend() {
           </button>
           <button
             type="button"
-            onClick={onSendAlimtalk}
+            onClick={() => withLoading(onSendAlimtalk, '알림톡 발송 중...')}
             className="rounded-md bg-zinc-700 px-4 py-3 text-sm font-semibold text-white hover:bg-zinc-800"
           >
             알림톡

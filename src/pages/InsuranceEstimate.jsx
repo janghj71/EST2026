@@ -4,7 +4,9 @@ import FixedHeadTable from "../components/FixedHeadTable";
 import { openCenteredWindow } from "../utils/popup";
 import CheckBox from "../components/CheckBox";
 import { useAlert } from "../alerts";
+import { useLoading } from "../loading/useLoading";
 import { useEstimate } from "../hooks/useEstimate";
+import { useTbCode } from "../hooks/useTbCode";
 
 /**
  * 보험 견적일지 (UI 샘플)
@@ -35,11 +37,14 @@ function addMonths(baseDate, delta) {
 export default function InsuranceEstimate() {
   const navigate = useNavigate();
   const { error, info, warning } = useAlert();
+  const { withLoading } = useLoading();
   const {
-    estimates, estLoading, estError, fetchEstimates,
+    estimates, estLoading, estError, fetchEstimates, fetchByText,
     claims, claimLoading, claimError, fetchClaims,
     details, detailLoading, detailError, fetchDetails,
   } = useEstimate();
+
+  const { codes: sortCodes } = useTbCode('IDX01');
 
   const workBodyElRef = useRef(null);      // FixedHeadTable 바디 DOM
   const workScrollPosRef = useRef({ top: 0, left: 0 });      // 닫기 전 scrollTop 저장
@@ -89,7 +94,7 @@ export default function InsuranceEstimate() {
   const [chkEstimate, setChkEstimate] = useState(true);
   const [chkWork, setChkWork] = useState(true);
   const [chkClosed, setChkClosed] = useState(false);
-  const [sortKey, setSortKey] = useState("입고일자 역순");
+  const [sortKey, setSortKey] = useState("inday desc");
   const [monthAnchor, setMonthAnchor] = useState(() => new Date());
 
 
@@ -118,12 +123,20 @@ export default function InsuranceEstimate() {
     fetchEstimates(dateFrom, dateTo);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // sortCodes 로드 완료 후 현재 sortKey가 목록에 없으면 첫 번째 항목으로 폴백
+  useEffect(() => {
+    if (sortCodes.length > 0 && !sortCodes.some(c => c.def_value === sortKey)) {
+      setSortKey(sortCodes[0].def_value);
+    }
+  }, [sortCodes]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const estimateColumns = useMemo(
     () => [
-      { key: "seccodename", title: "구분", width: "6%", align: "left" },
+      { key: "seccodename", title: "구분", width: "7%", align: "left" },
       { key: "carno", title: "차량번호", width: "9%", align: "left" },
       { key: "carname", title: "차량명", width: "12%", align: "left" },
       { key: "custom_name", title: "고객명", width: "9%", align: "left" },
+      { key: "hp0", title: "연락처", width: "10%", align: "left", render: (_v, row) => [row.hp0, row.hp1, row.hp2].filter(Boolean).join('-') || "-" },
       { key: "bocomname", title: "보험사", width: "12%", align: "left" },
       { key: "saletotal", title: "견적금액", width: "9%", align: "right", render: (v) => fmt(v) },
       { key: "inday", title: "입고일자", width: "9%", align: "left" },
@@ -134,11 +147,50 @@ export default function InsuranceEstimate() {
     []
   );
 
-  // 보험견적일지: 보험건(seccode=12)만 표시
-  const insuranceEstimates = useMemo(
-    () => estimates.filter((row) => String(row?.seccode ?? "") === "12"),
-    [estimates]
-  );
+  // 보험견적일지: 보험건(seccode=12) + 체크박스 필터 + 정렬
+  // 견적/작업: OR 조건 / 종결: AND 조건
+  const insuranceEstimates = useMemo(() => {
+    const byInsurance = estimates.filter((row) => String(row?.seccode ?? "") === "12");
+
+    // 체크박스 필터
+    const filtered = (!chkEstimate && !chkWork && !chkClosed)
+      ? byInsurance
+      : byInsurance.filter((row) => {
+          const typeMatch =
+            (!chkEstimate && !chkWork) ||
+            (chkEstimate && row.seccodename === '견적_보험') ||
+            (chkWork     && row.seccodename === '작업_보험');
+          const closedMatch = !chkClosed || (row.workend != null && row.workend !== '');
+          return typeMatch && closedMatch;
+        });
+
+    // 정렬 — def_value 필드명 파싱
+    // 형식: "field desc" | "field" | "f1;f2;f3" (복합 필드)
+    const arr = [...filtered];
+    if (sortKey) {
+      if (sortKey.includes(';')) {
+        // 복합 필드 (예: "hp0;hp1;hp2") → 하이픈 결합 문자열 비교
+        const fields = sortKey.split(';').map(f => f.trim());
+        arr.sort((a, b) => {
+          const A = fields.map(f => String(a[f] ?? '')).join('-');
+          const B = fields.map(f => String(b[f] ?? '')).join('-');
+          return A.localeCompare(B, 'ko');
+        });
+      } else {
+        // "inday desc" 또는 단순 필드명
+        const parts = sortKey.trim().split(/\s+/);
+        const field = parts[0];
+        const desc = parts[1]?.toLowerCase() === 'desc';
+        arr.sort((a, b) => {
+          const aVal = String(a[field] ?? '');
+          const bVal = String(b[field] ?? '');
+          const cmp = aVal.localeCompare(bVal, 'ko');
+          return desc ? -cmp : cmp;
+        });
+      }
+    }
+    return arr;
+  }, [estimates, chkEstimate, chkWork, chkClosed, sortKey]);
 
   const claimColumns = useMemo(
     () => [
@@ -338,10 +390,17 @@ export default function InsuranceEstimate() {
     requireSelected() && alert(`인쇄(${kind}): ${selected.est_serial}`);
 
   // ====== 조회 버튼 ======
-  const onSearch = useCallback(() => {
+  const onSearch = useCallback(async () => {
     setSelected(null);
-    fetchEstimates(dateFrom, dateTo);
+    await fetchEstimates(dateFrom, dateTo);
   }, [dateFrom, dateTo, fetchEstimates]);
+
+  // ====== 텍스트 검색 버튼 ======
+  const onSearchByText = useCallback(async () => {
+    if (!searchText.trim()) return;
+    setSelected(null);
+    await withLoading(() => fetchByText(searchText.trim()), '검색 중...');
+  }, [searchText, fetchByText, withLoading, setSelected]);
 
   useEffect(() => {
     setMonthAnchor(new Date(dateTo));
@@ -719,21 +778,28 @@ export default function InsuranceEstimate() {
 
               <button
                 className="ml-2 rounded-md bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
-                onClick={onSearch}
+                onClick={() => withLoading(onSearch, '조회 중...')}
               >
                 조회
               </button>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <div className="relative">
+              <div className="flex items-center gap-1">
                 <input
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && onSearchByText()}
                   placeholder="검색내용"
-                  className="w-[280px] rounded-md border border-zinc-200 bg-white px-3 py-2 pr-10 text-sm outline-none focus:border-zinc-400"
+                  className="w-[280px] rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
                 />
-                
+                <button
+                  type="button"
+                  onClick={onSearchByText}
+                  className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
+                >
+                  검색
+                </button>
               </div>
 
               <CheckBox label="견적" checked={chkEstimate} onChange={setChkEstimate} />
@@ -742,15 +808,13 @@ export default function InsuranceEstimate() {
 
               <div className="ml-auto">
                 <select
-                  // className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-800 outline-none hover:bg-zinc-50"
                   className="select-base" 
                   value={sortKey}
                   onChange={(e) => setSortKey(e.target.value)}
                 >
-                  <option>입고일자 역순</option>
-                  <option>입고일자 정순</option>
-                  <option>출고예정일 순</option>
-                  <option>상태 순</option>
+                  {sortCodes.map(c => (
+                    <option key={c.value} value={c.def_value}>{c.label}</option>
+                  ))}
                 </select>
               </div>
             </div>

@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { Save, RotateCcw, Upload, Trash2, Search } from "lucide-react";
 import IconBtn from "../components/IconBtn";
 import { moveFocusOnEnter } from "../utils/focusUtils";
 import SealUploader from "../components/SealUploader";
 import { useAlert } from "../alerts";
+import { useLoading } from "../loading/useLoading";
 import { useCompanyInfo } from "../hooks/useCompanyInfo";
 import { useTbCode } from "../hooks/useTbCode";
 import { useSealImage } from "../hooks/useSealImage";
@@ -11,6 +12,7 @@ import { useSealImage } from "../hooks/useSealImage";
 
 export default function CompanyInfoPage() {
   const { confirm, info, warning } = useAlert();
+  const { showLoading, hideLoading } = useLoading();
   const { form, setForm, loading,  saving, error, refetch, save  } = useCompanyInfo();
   const { companySeal, managerSeal, saving: sealSaving, error: sealError, saveSeal, deleteSeal } = useSealImage();
   const { codes: shopKindList } = useTbCode("SKD01");
@@ -20,11 +22,16 @@ export default function CompanyInfoPage() {
   const onChange = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
 
   // 조회 에러 → 메시지 표시
-  React.useEffect(() => {
+  useEffect(() => {
     const msg = error?.message || sealError?.message;
     if (msg) warning(msg || "조회에 실패했습니다.");
   }, [error, sealError]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 로딩 상태 → 전역 스피너 연동
+  useEffect(() => {
+    if (loading) showLoading('업체 정보 불러오는 중...');
+    else hideLoading();
+  }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onSave = async () => {
     try {
@@ -35,7 +42,7 @@ export default function CompanyInfoPage() {
     }
   };
 
-  if (loading) return <div className="p-10 text-center text-gray-500">로딩중...</div>;
+  if (loading) return null;
   if (!form)   return <div className="p-10 text-center text-gray-400">데이터 없음</div>;
 
   return (

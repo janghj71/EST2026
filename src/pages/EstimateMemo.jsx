@@ -4,7 +4,7 @@ import { X, Trash2, GripVertical } from "lucide-react";
 import IconBtn from "../components/IconBtn";
 import FixedHeadTable from "../components/FixedHeadTable";
 import { useUrlContextSnapshot, setUrlContextSnapshot } from "../hooks/useUrlContextSnapshot";
-// import { useAlert } from "../alerts";
+import { useEstimateMemo } from "../hooks/useEstimateMemo";
 
 // 001 ~ 030
 function pad3(n) {
@@ -35,7 +35,19 @@ export default function EstimateMemo() {
 
   const [rows, setRows] = useState(initialRows);
   const [activeSeq, setActiveSeq] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const { loading, fetchRows, saveRows, saveRowsBeacon } = useEstimateMemo();
+
+  // stale closure 방지용 refs
+  const rowsRef = useRef(rows);
+  const estSerialRef = useRef(estSerial);
+  const prevEstSerialRef = useRef('');
+  const saveRowsRef = useRef(saveRows);
+  const saveRowsBeaconRef = useRef(saveRowsBeacon);
+
+  useEffect(() => { rowsRef.current = rows; }, [rows]);
+  useEffect(() => { estSerialRef.current = estSerial; }, [estSerial]);
+  useEffect(() => { saveRowsRef.current = saveRows; }, [saveRows]);
+  useEffect(() => { saveRowsBeaconRef.current = saveRowsBeacon; }, [saveRowsBeacon]);
 
   const resetRows = () => setRows(initialRows);
 
@@ -56,42 +68,39 @@ export default function EstimateMemo() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctx?.est_serial, ctx?.carno]);
 
-  // (자리) API로 1~30 메모 가져오기 — 나중에 useApi 훅으로 교체
-  const fetchRows = async (est_serial) => {
-    setLoading(true);
-    try {
-      // TODO: API 호출로 교체
-      // const data = await api...
-      const data = Array.from({ length: 30 }).map((_, i) => ({
-        seq: i + 1,
-        text: est_serial ? `(${est_serial}) 메모 ${pad3(i + 1)}` : "",
-      }));
-
-      setRows(() => {
-        const base = Array.from({ length: 30 }).map((_, i) => ({ seq: i + 1, text: "" }));
-        for (const item of data || []) {
-          const s = Number(item.seq);
-          if (s >= 1 && s <= 30) base[s - 1].text = item.text ?? "";
-        }
-        return base;
-      });
-
-      setActiveSeq(null);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // ✅ 부모 선택(estSerial) 변경 시 rows 재조회
+  // ✅ 부모 선택(estSerial) 변경 시 이전 데이터 저장 후 신규 조회
   useEffect(() => {
+    // 이전 est_serial 데이터 저장 (변경 시에만)
+    if (prevEstSerialRef.current && prevEstSerialRef.current !== estSerial) {
+      saveRowsRef.current(prevEstSerialRef.current, rowsRef.current);
+    }
+    prevEstSerialRef.current = estSerial;
+
     if (!estSerial) {
       resetRows();
       return;
     }
-    fetchRows(estSerial);
+    fetchRows(estSerial).then((result) => {
+      if (result) {
+        setRows(result);
+        setActiveSeq(null);
+      }
+    });
     inputRefs.current = {};
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [estSerial]);
+
+  // ✅ 창 닫힐 때 현재 데이터 저장 (keepalive fetch — 언로드 중 취소 방지)
+  useEffect(() => {
+    const onBeforeUnload = () => {
+      if (estSerialRef.current) {
+        saveRowsBeaconRef.current(estSerialRef.current, rowsRef.current);
+      }
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ✅ 부모에서 postMessage로 ctx 갱신
   useEffect(() => {
@@ -122,11 +131,24 @@ export default function EstimateMemo() {
   };
 
   const onDeleteRow = (seq) => {
-    setRows((prev) => prev.map((r) => (r.seq === seq ? { ...r, text: "" } : r)));
+    const current = rowsRef.current;
+    const idx = current.findIndex((r) => r.seq === seq);
+    if (idx < 0) return;
+
+    const updated = current.map((r, i) => {
+      if (i < idx) return r;                                                         // 삭제 전 행: 변경 없음
+      if (i < current.length - 1) return { ...r, text: current[i + 1].text ?? "" }; // 아래 행 당기기
+      return { ...r, text: "" };                                                     // 마지막 행: 빈값
+    });
+
+    setRows(updated);
+    if (estSerialRef.current) saveRowsRef.current(estSerialRef.current, updated);
   };
 
   const onDeleteAll = () => {
-    setRows((prev) => prev.map((r) => ({ ...r, text: "" })));
+    const updated = rowsRef.current.map((r) => ({ ...r, text: "" }));
+    setRows(updated);
+    if (estSerialRef.current) saveRowsRef.current(estSerialRef.current, updated);
   };
 
   // ===== 드래그 자리이동 =====
@@ -342,10 +364,10 @@ export default function EstimateMemo() {
             전체삭제
           </button>
 
-          <div className="ml-auto flex items-center gap-3">
+          {/* <div className="ml-auto flex items-center gap-3">
             {loading && <div className="text-xs text-zinc-400">불러오는 중...</div>}
             <div className="text-xs text-zinc-400">est_serial: {estSerial || "-"}</div>
-          </div>
+          </div> */}
         </div>
 
         {/* Table Card */}

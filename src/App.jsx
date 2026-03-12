@@ -1,6 +1,7 @@
 
 import { Routes, Route, Navigate } from "react-router-dom";
 import { AlertProvider } from "./alerts";
+import { LoadingProvider } from "./loading/LoadingProvider";
 
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
@@ -33,6 +34,7 @@ import PartLookupPopup from "./pages/estimate/PartLookupPopup";
 export default function App() {
   return (
     <AlertProvider>
+      <LoadingProvider>
 
       <Routes>
         <Route path="/" element={<Login />} />
@@ -78,7 +80,8 @@ export default function App() {
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-      
+
+      </LoadingProvider>
     </AlertProvider>
 
   );
