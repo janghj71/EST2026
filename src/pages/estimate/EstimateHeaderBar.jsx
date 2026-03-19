@@ -13,12 +13,13 @@ import {
   Save,
 } from "lucide-react";
 
-export default function EstimateHeaderBar({ 
+export default function EstimateHeaderBar({
   onSaveAndList,
+  saving = false,
   onOpenLaborItems,
   onOpenPaintItems,
   onOpenChemicalItems,
-  onOpenPartLookup, 
+  onOpenPartLookup,
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -33,7 +34,7 @@ export default function EstimateHeaderBar({
         <IconBtn icon={ImageIcon} label="차량사진" onClick={() => alert("TODO")} />
         <IconBtn icon={Printer} label="서식인쇄" onClick={() => alert("TODO")} />
         <IconBtn icon={Send} label="견적청구" onClick={() => alert("TODO")} />
-        <IconBtn icon={Save} label="저장" onClick={onSaveAndList} />
+        <IconBtn icon={Save} label="저장" onClick={onSaveAndList} disabled={saving} />
       </div>
     </div>
   );

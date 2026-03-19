@@ -9,6 +9,12 @@ function mapEstimates(json) {
   return json.dataset ?? [];
 }
 
+/** 마스터 단건 응답 → dataset[0] */
+function mapMasterOne(json) {
+  apiOk(json, "접수 조회");
+  return json.dataset?.[0] ?? null;
+}
+
 /** 청구보험 응답 → dataset 배열 */
 function mapClaims(json) {
   apiOk(json, "청구보험 조회");
@@ -45,6 +51,25 @@ export function useEstimate() {
   const fetchByText = useCallback(
     (findtext) => estRefetch({ findtext }),
     [estRefetch]
+  );
+
+  // ── 마스터 단건 조회 (est_serial) ──
+  const {
+    data: masterData,
+    loading: masterLoading,
+    error: masterError,
+    refetch: masterRefetch,
+  } = useApi({
+    path: "/est_masterestimate_s.aspx",
+    method: "POST",
+    bodyType: "form",
+    immediate: false,
+    onMap: mapMasterOne,
+  });
+
+  const fetchMasterById = useCallback(
+    (est_serial) => masterRefetch({ est_serial }),
+    [masterRefetch]
   );
 
   // ── 청구보험 조회 (est_serial) ──
@@ -92,6 +117,12 @@ export function useEstimate() {
     estError,
     fetchEstimates,
     fetchByText,
+
+    // 마스터 단건
+    masterData,
+    masterLoading,
+    masterError,
+    fetchMasterById,
 
     // 청구보험
     claims: claims ?? [],

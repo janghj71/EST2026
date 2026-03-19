@@ -1,10 +1,13 @@
 // EST2026/src/pages/estimate/EstimateReception.jsx
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Field from "../../components/Field";
 import { Info } from "lucide-react";
-import IconBtn from "../../components/IconBtn"; 
+import IconBtn from "../../components/IconBtn";
 import { moveFocusOnEnter } from "../../utils/focusUtils";
+import { formatNumber, unformatNumber } from "../../utils/numberFormat";
 import CarNameHelpModal from "./CarNameHelpModal";
+import { useTbCode } from "../../hooks/useTbCode";
+import { useLaborSettings } from "../../hooks/useLaborSettings";
 
 /**
  * 접수 요약 (첨부2/3 입력 순서 기준)
@@ -13,14 +16,57 @@ import CarNameHelpModal from "./CarNameHelpModal";
  */
 export default function EstimateReception({ master, setMaster }) {
   const [carHelpOpen, setCarHelpOpen] = useState(false);
+  const { form: laborForm } = useLaborSettings();
+
+  // 이메일 로컬 raw 상태 — 타이핑 중 '@' 가 사라지는 문제 방지
+  const [emailInput, setEmailInput] = useState("");
+  useEffect(() => {
+    const acc  = master?.email_acc  ?? "";
+    const smtp = master?.email_smtp ?? "";
+    const reconstructed = acc && smtp ? `${acc}@${smtp}` : acc;
+    // 현재 입력값에서 역산한 acc/smtp 와 master 값이 다를 때만 업데이트 (외부 변경 시만)
+    const atIdx  = emailInput.indexOf("@");
+    const curAcc  = atIdx >= 0 ? emailInput.slice(0, atIdx) : emailInput;
+    const curSmtp = atIdx >= 0 ? emailInput.slice(atIdx + 1) : "";
+    if (curAcc !== acc || curSmtp !== smtp) setEmailInput(reconstructed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [master?.email_acc, master?.email_smtp]);
+  const { codes: statusCodes } = useTbCode('UKND02');
 
   const applyCarHelpSelection = (sel) => {
     // sel: { maker, car, model, carkind, cargrades }
-    set("carCode")(sel?.car?.codecar ?? "");
-    set("carName")(sel?.car?.carname ?? "");
+    const car   = sel?.car   ?? {};
+    const model = sel?.model ?? {};
 
-    set("modelCode")(sel?.model?.modelcode ?? "");
-    set("modelName")(sel?.model?.modelname ?? "");
+    // 메이커코드 변경에 따른 공임 자동 변경 (국산↔외제 전환 감지, '05' 기준)
+    const prevMaker = master?.makercode ?? "";
+    const newMaker  = car.makercode ?? "";
+
+    let payUpdates = {};
+    if (prevMaker <= "05" && newMaker > "05") {
+      // 국산 → 외제
+      payUpdates = { xpay: laborForm.expay, bpay: laborForm.ebpay, ppay: laborForm.eppay };
+    } else if (prevMaker > "05" && newMaker <= "05") {
+      // 외제 → 국산
+      payUpdates = { xpay: laborForm.xpay, bpay: laborForm.bpay, ppay: laborForm.ppay };
+    }
+
+    setMaster((m) => ({
+      ...m,
+      codecar:     car.codecar    ?? "",
+      carname:     car.carname    ?? "",
+      makercode:   car.makercode  ?? "",
+      carkind:     car.carkind    ?? "",
+      cargrade:    car.cargrade   ?? "",
+      carcode:     car.carcode    ?? "",
+      modelcode:   model.modelcode ?? "",
+      modelname:   model.modelname ?? "",
+      // pntkind='3'이면 paint3, 아니면 paint
+      paint:       m.pntkind === "3" ? (car.paint3 ?? "") : (car.paint ?? ""),
+      est_codecar: car.est_codecar ?? "",
+      est_carname: car.est_carname ?? "",
+      ...payUpdates,               // 국산↔외제 전환 시에만 공임 덮어쓰기
+    }));
   };
 
   const set = (k) => (v) => setMaster((m) => ({ ...m, [k]: v }));
@@ -32,10 +78,14 @@ export default function EstimateReception({ master, setMaster }) {
   const codeInputCls  =
     "h-9 rounded-md border border-zinc-200 bg-white px-2 text-sm text-zinc-900 " +
     "placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-200";
+  // 빈 날짜 인풋은 브라우저 포맷 힌트(연도-월-일)를 숨김
+  // text-transparent는 Chrome의 ::-webkit-datetime-edit 내부 요소에 상속 안 됨
+  // → pseudo-element를 직접 opacity-0으로 처리
+  const dateCls = (val) => `${inputCls}${!val ? " [&::-webkit-datetime-edit]:opacity-0" : ""}`;
 
   return (
-    
-    <div 
+
+    <div
       className="rounded-md border border-zinc-200 bg-white shadow-xs"
       onKeyDown={(e) => {
         if (e.key === "Enter") moveFocusOnEnter(e);
@@ -48,8 +98,8 @@ export default function EstimateReception({ master, setMaster }) {
             <Field label="차량번호">
               <input
                 className={inputCls}
-                value={master?.carNo ?? ""}
-                onChange={(e) => set("carNo")(e.target.value)}
+                value={master?.carno ?? ""}
+                onChange={(e) => set("carno")(e.target.value)}
               />
             </Field>
 
@@ -58,17 +108,15 @@ export default function EstimateReception({ master, setMaster }) {
                 <div className="flex items-center">
                   <input
                     className={`${codeInputCls} w-[10ch] `}
-                    value={master?.carCode ?? ""}
-                    onChange={(e) => set("carCode")(e.target.value)}
+                    value={master?.codecar ?? ""}
+                    onChange={(e) => set("codecar")(e.target.value)}
                     placeholder="코드"
-                    // inputMode="numeric"
                   />
-                  
+
                   <IconBtn
                     icon={Info}
                     title="차량코드 선택"
-                    size="sm"          
-                    // variant="ghost"    
+                    size="sm"
                     className="h-9 rounded-md border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 ms-2"
                     onClick={() => setCarHelpOpen(true)}
                   />
@@ -76,8 +124,8 @@ export default function EstimateReception({ master, setMaster }) {
 
                 <input
                   className={inputCls}
-                  value={master?.carName ?? ""}
-                  onChange={(e) => set("carName")(e.target.value)}
+                  value={master?.carname ?? ""}
+                  onChange={(e) => set("carname")(e.target.value)}
                   placeholder="차량명"
                 />
               </div>
@@ -86,16 +134,16 @@ export default function EstimateReception({ master, setMaster }) {
             <Field label="모델명">
               <input
                 className={inputCls}
-                value={master?.modelName ?? ""}
-                onChange={(e) => set("modelName")(e.target.value)}
+                value={master?.modelname ?? ""}
+                onChange={(e) => set("modelname")(e.target.value)}
               />
             </Field>
 
             <Field label="주행거리">
               <input
                 className={inputCls}
-                value={master?.mileage ?? ""}
-                onChange={(e) => set("mileage")(e.target.value)}
+                value={formatNumber(master?.lastkm)}
+                onChange={(e) => set("lastkm")(unformatNumber(e.target.value))}
                 inputMode="numeric"
               />
             </Field>
@@ -103,8 +151,8 @@ export default function EstimateReception({ master, setMaster }) {
             <Field label="차대번호">
               <input
                 className={inputCls}
-                value={master?.vin ?? ""}
-                onChange={(e) => set("vin")(e.target.value)}
+                value={master?.vinno ?? ""}
+                onChange={(e) => set("vinno")(e.target.value)}
               />
             </Field>
           </div>
@@ -114,8 +162,8 @@ export default function EstimateReception({ master, setMaster }) {
             <Field label="고객명">
               <input
                 className={inputCls}
-                value={master?.customerName ?? ""}
-                onChange={(e) => set("customerName")(e.target.value)}
+                value={master?.custom_name ?? ""}
+                onChange={(e) => set("custom_name")(e.target.value)}
               />
             </Field>
 
@@ -145,21 +193,28 @@ export default function EstimateReception({ master, setMaster }) {
             <Field label="이메일">
               <input
                 className={inputCls}
-                value={master?.email ?? ""}
-                onChange={(e) => set("email")(e.target.value)}
+                value={emailInput}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setEmailInput(v);
+                  const atIdx = v.indexOf("@");
+                  const acc  = atIdx >= 0 ? v.slice(0, atIdx) : v;
+                  const smtp = atIdx >= 0 ? v.slice(atIdx + 1) : "";
+                  setMaster((m) => ({ ...m, email_acc: acc, email_smtp: smtp }));
+                }}
               />
             </Field>
 
             <Field label="상태">
               <select
                 className={'select-base w-full h-9 focus:ring-2 focus:ring-zinc-200'}
-                value={master?.status ?? ""}
-                onChange={(e) => set("status")(e.target.value)}
+                value={master?.state ?? ""}
+                onChange={(e) => set("state")(e.target.value)}
               >
                 <option value="">상태 선택</option>
-                <option value="01 작업준비중">01 작업준비중</option>
-                <option value="02 작업중">02 작업중</option>
-                <option value="03 완료">03 완료</option>
+                {statusCodes.map((c) => (
+                  <option key={c.value} value={c.value}>{c.label}</option>
+                ))}
               </select>
             </Field>
           </div>
@@ -168,26 +223,25 @@ export default function EstimateReception({ master, setMaster }) {
           <div className="flex flex-col gap-2">
             <Field label="입고일자">
               <input
-                className={inputCls}
+                className={dateCls(master?.inday)}
                 type="date"
-                value={master?.inDate ?? ""}
-                onChange={(e) => set("inDate")(e.target.value)}
+                value={master?.inday ?? ""}
+                onChange={(e) => set("inday")(e.target.value)}
               />
             </Field>
 
             <Field label="출고예정">
-              {/* <div className="grid grid-cols-[1fr_84px] gap-2"> */}
               <div className="grid grid-cols-[minmax(0,1fr)_minmax(64px,84px)] gap-2">
                 <input
-                  className={inputCls}
+                  className={dateCls(master?.preoutday)}
                   type="date"
-                  value={master?.outPlanDate ?? ""}
-                  onChange={(e) => set("outPlanDate")(e.target.value)}
+                  value={master?.preoutday ?? ""}
+                  onChange={(e) => set("preoutday")(e.target.value)}
                 />
                 <select
                   className={'select-base w-full h-9 focus:ring-2 focus:ring-zinc-200 min-w-0'}
-                  value={master?.outPlanHour ?? "10"}
-                  onChange={(e) => set("outPlanHour")(e.target.value)}
+                  value={master?.preouttime ?? "10"}
+                  onChange={(e) => set("preouttime")(e.target.value)}
                 >
                   {Array.from({ length: 24 }).map((_, i) => {
                     const v = String(i).padStart(2, "0");
@@ -203,39 +257,45 @@ export default function EstimateReception({ master, setMaster }) {
 
             <Field label="출고일자">
               <input
-                className={inputCls}
+                className={dateCls(master?.outday)}
                 type="date"
-                value={master?.outDate ?? ""}
-                onChange={(e) => set("outDate")(e.target.value)}
+                value={master?.outday ?? ""}
+                onChange={(e) => set("outday")(e.target.value)}
               />
             </Field>
 
             <Field label="청구일자">
               <input
-                className={inputCls}
+                className={dateCls(master?.reqday)}
                 type="date"
-                value={master?.billDate ?? ""}
-                onChange={(e) => set("billDate")(e.target.value)}
+                value={master?.reqday ?? ""}
+                onChange={(e) => set("reqday")(e.target.value)}
               />
             </Field>
 
             <Field label="차량등록일">
               <input
-                className={inputCls}
+                className={dateCls(master?.car_registday)}
                 type="date"
-                value={master?.regDate ?? ""}
-                onChange={(e) => set("regDate")(e.target.value)}
+                value={master?.car_registday ?? ""}
+                onChange={(e) => set("car_registday")(e.target.value)}
               />
             </Field>
           </div>
         </div>
       </div>
-    
+
       <CarNameHelpModal
         open={carHelpOpen}
         onClose={() => setCarHelpOpen(false)}
         onSelect={applyCarHelpSelection}
-      />    
+        initial={{
+          makercode: master?.makercode ?? "",
+          codecar:   master?.codecar   ?? "",
+          modelcode: master?.modelcode ?? "",
+          carkind:   master?.carkind   ?? 1,
+        }}
+      />
 
     </div>
   );

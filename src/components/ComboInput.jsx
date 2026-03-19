@@ -22,6 +22,7 @@ export default function ComboInput({
 }) {
   const rootRef = useRef(null);
   const inputRef = useRef(null);
+  const listRef = useRef(null);        // 드롭다운 컨테이너
   const lastValueRef = useRef(value ?? "");
 
   const [open, setOpen] = useState(false);
@@ -149,6 +150,13 @@ export default function ComboInput({
   useEffect(() => {
     setQ(value ?? "");
   }, [value]);
+
+  // hi 변경 시 하이라이트 항목이 드롭다운 뷰포트 안에 들어오도록 스크롤
+  useEffect(() => {
+    if (!listRef.current || hi < 0) return;
+    const items = listRef.current.querySelectorAll('button');
+    items[hi]?.scrollIntoView({ block: 'nearest' });
+  }, [hi]);
   
 
   return (
@@ -212,6 +220,7 @@ export default function ComboInput({
       {/* {open && filtered.length > 0 && ( */}
       {open && shownOptions.length > 0 && (
         <div
+          ref={listRef}
           className={[
             // SimplePopover 룩앤필 통일
             "absolute left-0 top-full mt-1 w-full z-50",

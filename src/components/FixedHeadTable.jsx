@@ -220,10 +220,21 @@ export default function FixedHeadTable({
     const el = bodyWrapRef.current;
     if (!el) return;
     if (!wheelSelect) return;
-  
+
     el.addEventListener("wheel", handleWheelSelect, { passive: false });
     return () => el.removeEventListener("wheel", handleWheelSelect);
   }, [wheelSelect, handleWheelSelect]);
+
+  // selectedKey 변경 시 해당 행이 뷰포트 밖이면 스크롤 이동
+  useEffect(() => {
+    if (selectedKey == null) return;
+    // rAF: 레이아웃 완료 후 실행 (rows 변경 직후 ref가 최신 상태임을 보장)
+    const raf = requestAnimationFrame(() => {
+      const tr = rowRefs.current.get(selectedKey);
+      if (tr) tr.scrollIntoView({ block: "nearest" });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [selectedKey]);
   
 
 

@@ -1,5 +1,5 @@
 // EST2026/src/pages/estimate/EstimateSidePanel.jsx
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useCallback } from "react";
 import { Info } from "lucide-react";
 
 import FormRow from "../../components/FormRow";
@@ -10,20 +10,22 @@ import { moveFocusOnEnter } from "../../utils/focusUtils";
 import ComboInput from "../../components/ComboInput";
 import EstimateClaimPanel from "./EstimateClaimPanel";
 import EstimateSettlePanel from "./EstimateSettlePanel";
+import CarNameHelpModal from "./CarNameHelpModal";
+import { useTbCode } from "../../hooks/useTbCode";
+import { usePntcot } from "../../hooks/usePntcot";
 
 
-export default function EstimateSidePanel({ master, setMaster }) {
+export default function EstimateSidePanel({ master, setMaster, active, onTabChange, onClaimLeave, onClaimDirty, onClaimClean }) {
   const [open, setOpen] = useState(false);
-  const [active, setActive] = useState("labor");  // labor | claim | settle
   const set = (k) => (vOrEvent) => {
     const v =
       vOrEvent && typeof vOrEvent === "object" && "target" in vOrEvent
         ? vOrEvent.target.value
         : vOrEvent;
-  
+
     setMaster((m) => ({ ...m, [k]: v }));
   };
-  
+
 
   const inputCls =
     "w-full h-9 rounded-md border border-zinc-200 bg-white px-2 text-sm text-zinc-900 " +
@@ -39,10 +41,14 @@ export default function EstimateSidePanel({ master, setMaster }) {
     "h-9 rounded-md border border-zinc-200 bg-white px-2 text-sm text-zinc-900 " +
     "placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-200";
 
-  const colorOptions = useMemo(
-    () => ["1W", "AH3", "AJ", "AJT", "AK", "ALM", "ANB", "ARG", "ASY"],
-    []
-  );
+  // 도장칼라: usePntcot 훅으로 전체 조회 → makercode 필터
+  const { pntcotList } = usePntcot();
+  const colorOptions = useMemo(() => {
+    const mk = master?.makercode ?? '';
+    return pntcotList
+      .filter(r => r.makercode === mk)
+      .map(r => r.pntcolor_code);
+  }, [pntcotList, master?.makercode]);
 
   const ReadonlyBox = ({ value }) => (
     <div className="h-9 flex items-center rounded-md border border-zinc-200 bg-zinc-50 px-2 text-sm text-zinc-700">
@@ -51,7 +57,7 @@ export default function EstimateSidePanel({ master, setMaster }) {
   );
 
   return (
-    <div 
+    <div
       className="flex items-stretch"
       onKeyDown={(e) => {
         if (e.key === "Enter") moveFocusOnEnter(e);
@@ -62,19 +68,23 @@ export default function EstimateSidePanel({ master, setMaster }) {
         <button
           type="button"
           className="rounded-md bg-zinc-800 text-white px-2 py-2 text-sm"
-          onClick={() => setOpen((v) => !v)}
+          onClick={async () => {
+            if (active === "claim" && open) await onClaimLeave?.();
+            setOpen((v) => !v);
+          }}
           title="열기/닫기"
         >
           {open ? "«" : "»"}
         </button>
-        
+
         <button
           type="button"
           className={`rounded-md px-2 py-3 text-sm text-white ${
             active === "labor" ? "bg-zinc-900" : "bg-zinc-700 hover:bg-zinc-800"
           }`}
-          onClick={() => {
-            setActive("labor");
+          onClick={async () => {
+            if (active === "claim") await onClaimLeave?.();
+            onTabChange("labor");
             setOpen(true);
           }}
           style={{ writingMode: "vertical-rl" }}
@@ -88,7 +98,7 @@ export default function EstimateSidePanel({ master, setMaster }) {
             active === "claim" ? "bg-zinc-900" : "bg-zinc-700 hover:bg-zinc-800"
           }`}
           onClick={() => {
-            setActive("claim");
+            onTabChange("claim");
             setOpen(true);
           }}
           style={{ writingMode: "vertical-rl" }}
@@ -101,8 +111,9 @@ export default function EstimateSidePanel({ master, setMaster }) {
           className={`rounded-md px-2 py-3 text-sm text-white ${
             active === "settle" ? "bg-zinc-900" : "bg-zinc-700 hover:bg-zinc-800"
           }`}
-          onClick={() => {
-            setActive("settle");
+          onClick={async () => {
+            if (active === "claim") await onClaimLeave?.();
+            onTabChange("settle");
             setOpen(true);
           }}
           style={{ writingMode: "vertical-rl" }}
@@ -117,6 +128,7 @@ export default function EstimateSidePanel({ master, setMaster }) {
             <LaborPanel
               master={master}
               set={set}
+              setMaster={setMaster}
               inputCls={inputCls}
               selectCls={selectCls}
               estKindSelectCls={estKindSelectCls}
@@ -131,6 +143,8 @@ export default function EstimateSidePanel({ master, setMaster }) {
               setMaster={setMaster}
               inputCls={inputCls}
               selectCls={selectCls}
+              onClaimDirty={onClaimDirty}
+              onClaimClean={onClaimClean}
             />
           )}
           {active === "settle" && (
@@ -151,6 +165,7 @@ export default function EstimateSidePanel({ master, setMaster }) {
 function LaborPanel({
   master,
   set,
+  setMaster,
   inputCls,
   selectCls,
   estKindSelectCls,
@@ -158,6 +173,46 @@ function LaborPanel({
   colorOptions,
   ReadonlyBox,
 }) {
+  // ── 공통코드 로딩 ──────────────────────────────────────────
+  const { codes: pgr31Codes } = useTbCode('PGR31');  // 도장종류
+  const { codes: _pyk01Codes } = useTbCode('PYK01');  // 탈부착작업 (disabled)
+  const { codes: _pnk01Codes } = useTbCode('PNK01');  // 도장작업
+
+  // ── 대체차종 모달 ──────────────────────────────────────────
+  const [altCarHelpOpen, setAltCarHelpOpen] = useState(false);
+
+  const applyAltCarSelection = useCallback((sel) => {
+    const car = sel?.car ?? {};
+    setMaster((m) => ({
+      ...m,
+      est_codecar: car.est_codecar ?? "",
+      est_carname: car.est_carname ?? "",
+      est_paint:   m.pntkind === "3" ? (car.paint3 ?? "") : (car.paint ?? ""),
+    }));
+  }, [setMaster]);
+  // state='1' 활성 항목만 필터
+  const pyk01Codes = useMemo(() => _pyk01Codes.filter(c => c.state === '1'), [_pyk01Codes]);
+  const pnk01Codes = useMemo(() => _pnk01Codes.filter(c => c.state === '1'), [_pnk01Codes]);
+  const estCodeCar = master?.est_codecar ?? "";
+  const estCarName = master?.est_carname ?? "";
+
+  // 도장종류 옵션: PGR31 목록 + est_codecar/est_carname 추가 항목
+  const paintTypeOptions = useMemo(() => {
+    const base = pgr31Codes.map(c => ({
+      value: c.value,
+      label: `${c.value} ${c.label}`,
+    }));
+    if (estCodeCar && !base.some((o) => o.value === estCodeCar)) {
+      base.push({
+        value: estCodeCar,
+        label: estCodeCar,
+      });
+    }
+    return base;
+  }, [pgr31Codes, estCodeCar]);
+
+  // pntkind='3'일 때만 도장종류 콤보 활성화
+  const isPnt3 = master?.pntkind === '3';
 
   const normalizePaintColor = (v) =>
     (v ?? "")
@@ -167,50 +222,59 @@ function LaborPanel({
 
   return (
     <div className="flex flex-col gap-2 p-1 ms-2 me-2">
+      {/* 대체차종 */}
       <FormRow label="대체차종">
         <div className="grid grid-cols-[auto_1fr] gap-2">
           <div className="flex items-center">
             <input
               className={`${codeInputCls} w-[10ch]`}
-              value={master?.altCarCode ?? ""}
-              onChange={(e) => set("altCarCode")(e.target.value)}
-              placeholder="0315014"
+              value={master?.est_codecar ?? ""}
+              onChange={(e) => set("est_codecar")(e.target.value)}
+              // placeholder="0315014"
             />
             <IconBtn
               icon={Info}
               title="대체차종 선택"
-              onClick={() => alert("대체차종 선택(TODO)")}
+              onClick={() => setAltCarHelpOpen(true)}
               className="h-9 rounded-md border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 ms-2"
             />
           </div>
 
           <input
             className={inputCls}
-            value={master?.altCarName ?? ""}
-            onChange={(e) => set("altCarName")(e.target.value)}
-            placeholder="제네시스 DH"
+            value={master?.est_carname ?? ""}
+            onChange={(e) => set("est_carname")(e.target.value)}
+            // placeholder="제네시스 DH"
           />
         </div>
       </FormRow>
 
+      {/* 도장종류: pntkind='3'일 때 활성, PGR31 + est_codecar/est_carname → paint 필드에 저장 */}
       <FormRow label="도장종류">
         <select
           className={selectCls}
-          value={master?.paintType ?? ""}
-          onChange={(e) => set("paintType")(e.target.value)}
+          value={master?.paint ?? ""}
+          onChange={(e) => set("paint")(e.target.value)}
+          disabled={!isPnt3}
         >
           <option value="">선택</option>
-          <option value="0315014 승용-고급형">0315014 승용-고급형</option>
-          <option value="0315014 승용-일반형">0315014 승용-일반형</option>
+          {paintTypeOptions.map(o => {
+            const label =
+              estCodeCar && o.value === estCodeCar
+                ? `${estCodeCar} ${estCarName}`.trim()
+                : o.label;
+            return <option key={o.value} value={o.value}>{label}</option>;
+          })}
         </select>
       </FormRow>
 
+      {/* 견적구분 + 견적서(readonly) */}
       <FormRow label="견적구분">
         <div className="flex items-center gap-3">
           <select
             className={estKindSelectCls}
-            value={master?.estKind ?? "12"}
-            onChange={(e) => set("estKind")(e.target.value)}
+            value={master?.seccode ?? "12"}
+            onChange={(e) => set("seccode")(e.target.value)}
           >
             <option value="11">11 일반</option>
             <option value="12">12 보험</option>
@@ -218,43 +282,47 @@ function LaborPanel({
 
           <div className="whitespace-nowrap mt-1">
             <CheckBox
-              checked={!!master?.printEstimate}
-              onChange={(v) => set("printEstimate")(v)}
+              checked={master?.isest === '1'}
+              onChange={() => {}} // readonly — no-op
               label="견적서"
             />
           </div>
         </div>
       </FormRow>
 
+      {/* 작성자 */}
       <FormRow label="작성자">
         <input
           className={inputCls}
-          value={master?.writer ?? ""}
-          onChange={(e) => set("writer")(e.target.value)}
+          value={master?.w_manname ?? ""}
+          onChange={(e) => set("w_manname")(e.target.value)}
           placeholder="이명기"
         />
       </FormRow>
 
+      {/* 정비책임자 */}
       <FormRow label="정비책임자">
         <input
           className={inputCls}
-          value={master?.manager ?? ""}
-          onChange={(e) => set("manager")(e.target.value)}
+          value={master?.supman ?? ""}
+          onChange={(e) => set("supman")(e.target.value)}
           placeholder="책임자"
         />
       </FormRow>
 
+      {/* 추가정비 동의함 */}
       <div className="grid grid-cols-[90px_1fr] items-start">
         <div />
         <div className="flex flex-col gap-2 pl-2">
           <CheckBox
-            checked={!!master?.extraAgree}
-            onChange={(v) => set("extraAgree")(v)}
+            checked={master?.add_repair === '1'}
+            onChange={(v) => set("add_repair")(v ? '1' : '0')}
             label="추가정비 동의함"
           />
         </div>
       </div>
 
+      {/* 도장코트 */}
       <FormRow label="도장코트">
         <select
           className={selectCls}
@@ -268,6 +336,7 @@ function LaborPanel({
         </select>
       </FormRow>
 
+      {/* 도장도료 */}
       <FormRow label="도장도료">
         <select
           className={selectCls}
@@ -279,11 +348,11 @@ function LaborPanel({
         </select>
       </FormRow>
 
+      {/* 도장칼라 */}
       <FormRow label="도장칼라">
         <ComboInput
-          value={master?.paintColor ?? ""}
-          // onChange={set("paintColor")}
-          onChange={(v) => set("paintColor")(v)} 
+          value={master?.pntcolor_code ?? ""}
+          onChange={(v) => set("pntcolor_code")(v)}
           normalize={normalizePaintColor}
           options={colorOptions}
           placeholder="예: 1W / AH3"
@@ -292,37 +361,77 @@ function LaborPanel({
         />
       </FormRow>
 
+      {/* 가열건조비 + 청구함 */}
       <FormRow label="가열건조비">
         <div className="flex items-center gap-3">
           <div className="w-[200px]">
-            <MoneyInput value={master?.bakeAmt ?? 15869} onChange={set("bakeAmt")} />
+            <MoneyInput
+              value={Number(master?.pnt_drypay ?? 15869)}
+              onChange={set("pnt_drypay")}
+            />
           </div>
           <div className="whitespace-nowrap mt-1">
             <CheckBox
-              checked={!!master?.bakeClaim}
-              onChange={(v) => set("bakeClaim")(v)}
+              checked={master?.req_pnt_drypay === '1'}
+              onChange={(v) => set("req_pnt_drypay")(v ? '1' : '0')}
               label="가열건조비 청구함"
             />
           </div>
         </div>
       </FormRow>
 
+      {/* M/H 단가 */}
       <FormRow label="탈착M/H">
-        <MoneyInput value={master?.mhR ?? 40000} onChange={set("mhR")} />
+        <MoneyInput value={Number(master?.xpay ?? 40000)} onChange={set("xpay")} />
       </FormRow>
       <FormRow label="판금M/H">
-        <MoneyInput value={master?.mhB ?? 40000} onChange={set("mhB")} />
+        <MoneyInput value={Number(master?.bpay ?? 40000)} onChange={set("bpay")} />
       </FormRow>
       <FormRow label="도장M/H">
-        <MoneyInput value={master?.mhP ?? 40000} onChange={set("mhP")} />
+        <MoneyInput value={Number(master?.ppay ?? 40000)} onChange={set("ppay")} />
       </FormRow>
 
+      {/* 탈부착작업: paykind, PYK01, 항상 disabled */}
       <FormRow label="탈부착작업">
-        <ReadonlyBox value={master?.detachWork ?? ""} />
+        <select
+          className={selectCls}
+          value={master?.paykind ?? ""}
+          disabled
+        >
+          {pyk01Codes.map(c => (
+            <option key={c.value} value={c.value}>{c.value} {c.label}</option>
+          ))}
+        </select>
       </FormRow>
+
+      {/* 도장작업: pntkind, PNK01, 편집 가능 */}
       <FormRow label="도장작업">
-        <ReadonlyBox value={master?.paintWork ?? ""} />
+        <select
+          className={selectCls}
+          value={master?.pntkind ?? ""}
+          // onChange={(e) => set("pntkind")(e.target.value)}
+          disabled
+        >
+          {pnk01Codes.map(c => (
+            <option key={c.value} value={c.value}>{c.value} {c.label}</option>
+          ))}
+        </select>
       </FormRow>
+
+      {/* 대체차종 선택 모달 */}
+      <CarNameHelpModal
+        open={altCarHelpOpen}
+        onClose={() => setAltCarHelpOpen(false)}
+        onSelect={applyAltCarSelection}
+        disableNew={true}
+        estCodecarOnly={true}
+        initial={{
+          makercode: master?.est_codecar?.slice(0, 2) ?? "",
+          codecar:   master?.est_codecar ?? "",
+          modelcode: "",
+          carkind:   Number(master?.est_codecar?.charAt(2)) || 1,
+        }}
+      />
     </div>
   );
 }

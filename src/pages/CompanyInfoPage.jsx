@@ -27,10 +27,11 @@ export default function CompanyInfoPage() {
     if (msg) warning(msg || "조회에 실패했습니다.");
   }, [error, sealError]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 로딩 상태 → 전역 스피너 연동
+  // 로딩 상태 → 전역 스피너 연동 (cleanup으로 카운터 균형 보장)
   useEffect(() => {
-    if (loading) showLoading('업체 정보 불러오는 중...');
-    else hideLoading();
+    if (!loading) return;
+    showLoading('업체 정보 불러오는 중...');
+    return () => hideLoading();
   }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onSave = async () => {

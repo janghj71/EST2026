@@ -1,6 +1,7 @@
 // src/pages/estimate/EstimateEditPage.jsx
 import React, { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useAlert } from "../../alerts";
 
 import EstimateHeaderBar from "./EstimateHeaderBar";
 import EstimateReception from "./EstimateReception";
@@ -10,48 +11,9 @@ import EstimateItemsTable from "./EstimateItemsTable";
 import AlertModal from "../../components/AlertModal";
 import { openCenteredWindow } from "../../utils/popup";
 import { formatNumber } from "../../utils/numberFormat";
-
-// 화면만 코딩: 더미 데이터
-const seedMaster = {
-  carNo: "11가1234",
-  carName: "더 뉴 K9",
-  modelName: "3.3 GDI",
-  mileage: 50000,
-  vin: "KMHEU41BP5A046004",
-
-  customerName: "고객명",
-  hp0: "010",
-  hp1: "3793",
-  hp2: "2209",
-  email: "format2000@hanmail.net",
-  status: "01 작업준비중",
-
-  inDate: "2025-01-09",
-  outPlanDate: "2025-06-04",
-  outPlanHour: "10",
-  outDate: "2025-06-04",
-  billDate: "",
-  regDate: "2020-07-29",
-
-  // 우측 패널(차량접수/공임설정)
-  altCar: "0315014 제네시스 DH",
-  paintType: "0315014 승용-고급형",
-  estKind: "12 보험",
-  writer: "이명기",
-  extraAgree: false,
-
-  mhR: 40000,
-  mhB: 40000,
-  mhP: 40000,
-  bakeAmt: 15869,
-  pntcot_name: "2코트",
-  pntcot_code: "2",
-  pnt_m: "2",
-  detachWork: "3 연합회",
-  paintWork: "3 연합회",
-  manager: "책임자",
-  bakeClaim: true,
-};
+import { useEstimate } from "../../hooks/useEstimate";
+import { useMasterEstimateSave } from "../../hooks/useMasterEstimateSave";
+import { useEstimateClaimSave } from "../../hooks/useEstimateClaimSave";
 
 function seedRows() {
   return [
@@ -67,10 +29,33 @@ export default function EstimateEditPage() {
   const navigate = useNavigate();
   const { est_serial } = useParams();
 
-  const [master, setMaster] = useState(seedMaster);
+  const { fetchMasterById } = useEstimate();
+  const { save, saving } = useMasterEstimateSave();
+  const { saveClaim } = useEstimateClaimSave();
+  const { error: alertError } = useAlert();
+
+  const [master, setMaster] = useState({});
   const [rows, setRows] = useState(seedRows());
 
-  const [sortMode, setSortMode] = useState("block"); 
+  // est_serial 변경 시 접수 데이터 조회
+  // refetch는 raw JSON 반환 → dataset[0] 직접 추출
+  useEffect(() => {
+    if (!est_serial) return;
+    fetchMasterById(est_serial)
+      .then((json) => {
+        const row = json?.dataset?.[0];
+        if (!row) return;
+        setMaster((prev) => ({ ...prev, ...row }));
+      })
+      .catch(() => {});
+  }, [est_serial]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // EstimateSidePanel 탭 상태 (claim 여부 판단용)
+  const [sideActive, setSideActive] = useState("labor");
+  // 청구처 변경 여부 (변경 시에만 저장)
+  const claimDirtyRef = useRef(false);
+
+  const [sortMode, setSortMode] = useState("block");
   const [laborOpen, setLaborOpen] = useState(false);
 
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -97,12 +82,13 @@ export default function EstimateEditPage() {
     childWinsRef.current.clear();
   };
   
-  const openLaborItemsPopup = () => {
+  const openLaborItemsPopup = async () => {
+    await saveClaimIfActive();
     const estSerial = est_serial || "";
-    const carno = master?.carNo || "";
+    const carno = master?.carno || "";
     const codecar = master?.codecar || "";
     const est_codecar = master?.est_codecar || "";
-    const carname = master?.carName || "";
+    const carname = master?.carname || "";
   
     const url =
       `/labor-items?est_serial=${encodeURIComponent(estSerial)}` +
@@ -151,9 +137,10 @@ export default function EstimateEditPage() {
     }, 700);
   };
   
-  const openPaintItemsPopup = () => {
+  const openPaintItemsPopup = async () => {
+    await saveClaimIfActive();
     const estSerial = est_serial || "";
-    const carno = master?.carNo || "";
+    const carno = master?.carno || "";
     const pntcot_code = master?.pntcot_code || "";
     const pnt_m = master?.pnt_m || "";
 
@@ -210,9 +197,10 @@ export default function EstimateEditPage() {
     }, 700);
   };
 
-  const openChemicalItemsPopup = () => {
+  const openChemicalItemsPopup = async () => {
+    await saveClaimIfActive();
     const estSerial = est_serial || "";
-    const carno = master?.carNo || "";
+    const carno = master?.carno || "";
 
     // ChemicalItemsPage(기존)를 팝업 라우트로 분리했다는 전제
     const url =
@@ -266,9 +254,10 @@ export default function EstimateEditPage() {
     }, 700);
   };
 
-  const openPartLookupPopup = () => {
+  const openPartLookupPopup = async () => {
+    await saveClaimIfActive();
     const estSerial = est_serial || "";
-    const carno = master?.carNo || "";
+    const carno = master?.carno || "";
   
     const url =
       `/part-lookup?est_serial=${encodeURIComponent(estSerial)}` +
@@ -372,15 +361,40 @@ export default function EstimateEditPage() {
     setRows([...others, ...paint].map((r, i) => ({ ...r, estb_seqno: i + 1 })));
   }, [rows]);
 
-  const handleSaveAndList = useCallback(() => {
+  // 청구처 탭 이탈 시 호출 (EstimateEditPage 레벨 → useApi abort 없이 정상 동작)
+  const handleClaimSave = useCallback(async () => {
+    if (!claimDirtyRef.current) return;  // 변경 없으면 스킵
+    try {
+      await save(est_serial, master);
+      const claims = Array.isArray(master.claims) ? master.claims : [];
+      // 순차 저장 (Promise.all 사용 시 단일 useApi 인스턴스 abort 발생)
+      for (const claim of claims) {
+        await saveClaim(est_serial, claim);
+      }
+      claimDirtyRef.current = false;  // 저장 완료 → clean
+    } catch (err) {
+      alertError(err?.message ?? "청구처 저장 실패");
+    }
+  }, [est_serial, master, save, saveClaim, alertError]);
+
+  // 팝업 오픈 전: claim 탭이 활성화 상태이면 먼저 저장
+  const saveClaimIfActive = useCallback(async () => {
+    if (sideActive === "claim") await handleClaimSave();
+  }, [sideActive, handleClaimSave]);
+
+  const handleSaveAndList = useCallback(async () => {
     // 저장 시 오더 재부여(델파이 방식)
     const seqReNumbered = rows.map((r, i) => ({ ...r, estb_seqno: i + 1 }));
     setRows(seqReNumbered);
 
-    // TODO: master 저장 -> detail 저장 -> 목록 이동
-    alert("저장/목록 (화면만)");
-    // navigate("/estimate/insurance"); // 실제 목록 라우트에 맞춰서 나중에
-  }, [rows]);
+    try {
+      await save(est_serial, master);
+    } catch (err) {
+      alertError(err?.message ?? "저장 실패");
+      return;
+    }
+    
+  }, [rows, master, est_serial, save,alertError]);
 
   return (
     <div className="h-screen bg-zinc-50 flex flex-col overflow-hidden">
@@ -389,7 +403,7 @@ export default function EstimateEditPage() {
           <div className="flex items-center gap-3">
             <div>
               <div className="text-lg font-semibold text-zinc-900">견적내역</div>
-              <div className="text-xs text-zinc-500">견적번호 {est_serial}</div>
+              <div className="text-xs text-zinc-500">견적번호 {est_serial} {master?.seccodename}</div>
             </div>
             <div className="ml-auto">
               <button
@@ -403,12 +417,13 @@ export default function EstimateEditPage() {
           </div>
 
           <div className="mt-2">
-            <EstimateHeaderBar 
-              onSaveAndList={handleSaveAndList} 
+            <EstimateHeaderBar
+              onSaveAndList={handleSaveAndList}
+              saving={saving}
               onOpenLaborItems={openLaborItemsPopup}
               onOpenPaintItems={openPaintItemsPopup}
               onOpenChemicalItems={openChemicalItemsPopup}
-              onOpenPartLookup={openPartLookupPopup} 
+              onOpenPartLookup={openPartLookupPopup}
             />
           </div>
         </div>
@@ -440,7 +455,15 @@ export default function EstimateEditPage() {
           </div>
 
           {/* 우: 슬라이드 패널 */}
-          <EstimateSidePanel master={master} setMaster={setMaster} />
+          <EstimateSidePanel
+            master={master}
+            setMaster={setMaster}
+            active={sideActive}
+            onTabChange={setSideActive}
+            onClaimLeave={handleClaimSave}
+            onClaimDirty={() => { claimDirtyRef.current = true; }}
+            onClaimClean={() => { claimDirtyRef.current = false; }}
+          />
         </div>
       </div>
 

@@ -1,6 +1,9 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { X, CarFront, Plus } from "lucide-react";
 import FixedHeadTable from "../../components/FixedHeadTable";
+import { useTbCode } from "../../hooks/useTbCode";
+import { useCarcode } from "../../hooks/useCarcode";
+import { useModelcode } from "../../hooks/useModelcode";
 
 /**
  * CarNameHelpModal.jsx (single file)
@@ -161,58 +164,26 @@ function InlineActions({ onEdit, onDelete }) {
   );
 }
 
-// 데모데이터(유지): UI 확인용
-function useDemoData() {
+
+export default function CarNameHelpModal({
+  open,
+  onClose,
+  onSelect,
+  initial = null,
+  disableNew = false,      // 차량/모델 신규 버튼 비활성화
+  estCodecarOnly = false,  // est_codecar === codecar 인 차량만 표시
+}) {
+  // ── API 데이터 로딩 ──────────────────────────────────────────
+  // 제작사: useTbCode CMA01 (subcode=makercode, codename=제작사명)
+  const { codes: makerCodes } = useTbCode('CMA01');
   const makers = useMemo(
-    () => [
-      { subcode: "01", codename: "기아" },
-      { subcode: "02", codename: "한국GM" },
-      { subcode: "03", codename: "현대" },
-      { subcode: "04", codename: "쌍용" },
-      { subcode: "05", codename: "르노코리아" },
-    ],
-    []
+    () => makerCodes.map((c) => ({ subcode: c.value, codename: c.label })),
+    [makerCodes]
   );
-
-  const cars = useMemo(
-    () => [
-      { codecar: "0115012", carname: "더 뉴 K9", subcode: "01", carkind: 1, cargrade: 4 },
-      { codecar: "0115011", carname: "K9", subcode: "01", carkind: 1, cargrade: 4 },
-      { codecar: "0115010", carname: "K7", subcode: "01", carkind: 1, cargrade: 3 },
-
-      // U 포함 예시(수정/삭제 노출 확인용)
-      { codecar: "0111U01", carname: "K9(사용자)", subcode: "01", carkind: 1, cargrade: 4 },
-
-      { codecar: "0312345", carname: "쏘나타", subcode: "03", carkind: 1, cargrade: 3 },
-      { codecar: "0211111", carname: "트랙스", subcode: "02", carkind: 2, cargrade: 1 },
-      { codecar: "0411111", carname: "렉스턴", subcode: "04", carkind: 2, cargrade: 2 },
-      { codecar: "0511111", carname: "QM6", subcode: "05", carkind: 5, cargrade: 3 },
-      { codecar: "0511112", carname: "SM6", subcode: "05", carkind: 1, cargrade: 3 },
-    ],
-    []
-  );
-
-  const models = useMemo(
-    () => [
-      { modelcode: "01", modelname: "3.3 GDI", codecar: "0115012" },
-      { modelcode: "02", modelname: "3.8 GDI", codecar: "0115012" },
-      { modelcode: "03", modelname: "5.0 GDI", codecar: "0115012" },
-
-      { modelcode: "01", modelname: "3.3 GDI(사용자)", codecar: "0111U01" },
-      { modelcode: "02", modelname: "3.8 GDI(사용자)", codecar: "0111U01" },
-
-      { modelcode: "01", modelname: "2.0", codecar: "0312345" },
-      { modelcode: "02", modelname: "1.6T", codecar: "0312345" },
-      { modelcode: "01", modelname: "2.0", codecar: "0511112" },
-    ],
-    []
-  );
-
-  return { makers, cars, models };
-}
-
-export default function CarNameHelpModal({ open, onClose, onSelect }) {
-  const { makers, cars, models } = useDemoData();
+  // 차량: est_carcode_s.aspx 전체 → 제작사/차종/등급 필터는 클라이언트
+  const { cars } = useCarcode();
+  // 모델: est_modelcode_s.aspx 전체 → codecar 기준 클라이언트 필터
+  const { models } = useModelcode();
   const [carkind, setCarkind] = useState(1);
   
   // 신규 모달 오픈 상태
@@ -237,6 +208,10 @@ export default function CarNameHelpModal({ open, onClose, onSelect }) {
   const [selectedCar, setSelectedCar] = useState(null);
   const [selectedModel, setSelectedModel] = useState(null);
 
+  // 초기값 포커스 이동용 refs
+  const initialRef        = useRef(null);  // cascade 효과에서 참조할 초기값
+  const initialAppliedRef = useRef(false); // 1회만 적용 방지
+
   // deps 안정화를 위한 원시값
   const selectedMakerSubcode = selectedMaker?.subcode ?? null;
   const selectedCarCodecar = selectedCar?.codecar ?? null;
@@ -254,27 +229,54 @@ export default function CarNameHelpModal({ open, onClose, onSelect }) {
     setSelectedModel(null);
   }, [selectedMakerSubcode]);
 
-  // 차량 변경 시: 모델 선택 정리
-  useEffect(() => {
-    setSelectedModel(null);
-  }, [selectedCarCodecar]);
 
-  // (옵션) 모달 오픈 시 제작사 기본 선택(첫행)
+  // 모달 닫힐 때 초기값 적용 플래그 리셋 / initial 없으면 첫 제작사 선택
   useEffect(() => {
-    if (!open) return;
-    if (!selectedMaker && makers.length > 0) setSelectedMaker(makers[0]);
+    if (!open) { initialAppliedRef.current = false; return; }
+    if (!initial && !selectedMaker && makers.length > 0) setSelectedMaker(makers[0]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  // initial 있을 때: makers 로드 후 1회만 제작사·차종 설정
+  useEffect(() => {
+    if (!open || !initial || initialAppliedRef.current || makers.length === 0) return;
+    initialAppliedRef.current = true;
+    initialRef.current = initial;
+
+    // 차종 먼저 설정 (carkind 필터가 맞아야 차량이 carRows에 포함됨)
+    if (initial.carkind) setCarkind(Number(initial.carkind));
+
+    // maker/carkind가 이전 세션과 같아도 cascade가 다시 돌도록 강제 초기화
+    setSelectedCar(null);
+    setSelectedModel(null);
+
+    // 제작사 찾아서 선택 (없으면 첫 번째)
+    const maker = initial.makercode
+      ? makers.find((m) => m.subcode === initial.makercode)
+      : null;
+    setSelectedMaker(maker ?? makers[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, makers, initial]);
+
   const makerRows = useMemo(() => {
-    const ft = findText.trim();
-    if (!ft) return makers;
-    return makers.filter((m) => (m.codename || "").includes(ft));
-  }, [makers, findText]);
+    // 차량명 검색 중에는 제작사 필터 없이 전체 표시
+    return makers;
+  }, [makers]);
 
   const carRows = useMemo(() => {
-    let list = cars;
+    const ft = findText.trim();
 
+    // 대체차종 모드: est_codecar === codecar 인 차량만 (모든 필터에 AND)
+    let list = estCodecarOnly
+      ? cars.filter((c) => c.est_codecar && c.est_codecar === c.codecar)
+      : cars;
+
+    // 검색어가 있으면 검색어 필터만 (제작사·차종·등급 제외)
+    if (ft) {
+      return list.filter((c) => (c.carname || "").includes(ft));
+    }
+
+    // 검색어 없으면 기존 제작사·차종·등급 필터 적용
     if (selectedMakerSubcode) list = list.filter((c) => c.subcode === selectedMakerSubcode);
 
     // 차종
@@ -282,16 +284,12 @@ export default function CarNameHelpModal({ open, onClose, onSelect }) {
 
     // 등급(멀티) - 기본 전부 체크라서 항상 필터로 작동
     if (cargrades.length > 0) {
-      const set = new Set(cargrades.map(Number));
-      list = list.filter((c) => set.has(Number(c.cargrade)));
+      const gs = new Set(cargrades.map(Number));
+      list = list.filter((c) => gs.has(Number(c.cargrade)));
     }
 
-    // 검색(차량명)
-    const ft = findText.trim();
-    if (ft) list = list.filter((c) => (c.carname || "").includes(ft));
-
     return list;
-  }, [cars, selectedMakerSubcode, carkind, cargrades, findText]);
+  }, [cars, selectedMakerSubcode, carkind, cargrades, findText, estCodecarOnly]);
 
   const modelRows = useMemo(() => {
     if (!selectedCarCodecar) return [];
@@ -305,20 +303,26 @@ export default function CarNameHelpModal({ open, onClose, onSelect }) {
       return;
     }
     const exists = selectedCarCodecar && carRows.some((r) => r.codecar === selectedCarCodecar);
-    if (!exists) setSelectedCar(carRows[0]);
+    if (!exists) {
+      const initCodecar = initialRef.current?.codecar;
+      const target = initCodecar ? carRows.find((r) => r.codecar === initCodecar) : null;
+      setSelectedCar(target ?? carRows[0]);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedMakerSubcode, carRows]);
+  }, [selectedMakerSubcode, carRows, selectedCarCodecar]);
 
-  // 차량 선택 -> 모델 첫행 자동선택
+  // 차량 선택 -> 모델 자동선택 (차량이 바뀌면 항상 모델 재설정)
   useEffect(() => {
     if (modelRows.length === 0) {
-      if (selectedModel) setSelectedModel(null);
+      setSelectedModel(null);
       return;
     }
-    const selKey = selectedModel ? `${selectedCarCodecar}-${selectedModel.modelcode}` : null;
-    const exists = selKey && modelRows.some((r) => `${r.codecar}-${r.modelcode}` === selKey);
-    if (!exists) setSelectedModel(modelRows[0]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const initModelCode = initialRef.current?.modelcode;
+    const target = initModelCode
+      ? modelRows.find((r) => r.modelcode === initModelCode)
+      : null;
+    setSelectedModel(target ?? modelRows[0]);
+    if (initModelCode) initialRef.current = null; // 초기값 소비 완료
   }, [selectedCarCodecar, modelRows]);
 
   useEffect(() => {
@@ -350,6 +354,14 @@ export default function CarNameHelpModal({ open, onClose, onSelect }) {
     setSelectedModel(null);
   };
 
+  /** [선택] 버튼 / 더블클릭 공통 핸들러 */
+  const doSelect = useCallback((car, model) => {
+    if (!selectedMaker || !car) return;
+    if (!estCodecarOnly && !model) return;
+    onSelect?.({ maker: selectedMaker, car, model, carkind, cargrades });
+    onClose?.();
+  }, [selectedMaker, estCodecarOnly, onSelect, onClose, carkind, cargrades]);
+
   // FixedHeadTable columns (프로젝트 스펙: { key, title, width, align, render })
   const makerCols = useMemo(
     () => [
@@ -362,7 +374,7 @@ export default function CarNameHelpModal({ open, onClose, onSelect }) {
   const carCols = useMemo(
     () => [
       { key: "codecar", title: "코드", width: "30%", align: "center" },
-      { key: "carname", title: "차량명", width: "55%" },
+      { key: "carname", title: "차량명", width: "55%", className: "!whitespace-normal" },
       {
         key: "_act",
         title: "",
@@ -380,7 +392,7 @@ export default function CarNameHelpModal({ open, onClose, onSelect }) {
   const modelCols = useMemo(
     () => [
       { key: "modelcode", title: "코드", width: "25%", align: "center" },
-      { key: "modelname", title: "모델명", width: "55%" },
+      { key: "modelname", title: "모델명", width: "55%", className: "!whitespace-normal" },
       {
         key: "_act",
         title: "",
@@ -506,7 +518,13 @@ export default function CarNameHelpModal({ open, onClose, onSelect }) {
               <div className="ml-auto flex items-center gap-2">
                 <button
                   type="button"
-                  className="inline-flex items-center gap-1 rounded-md border border-zinc-200 bg-white px-3 py-1 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+                  disabled={disableNew}
+                  className={[
+                    "inline-flex items-center gap-1 rounded-md border px-3 py-1 text-sm font-medium",
+                    disableNew
+                      ? "border-zinc-200 bg-white text-zinc-300 cursor-not-allowed"
+                      : "border-zinc-200 bg-white text-zinc-800 hover:bg-zinc-50",
+                  ].join(" ")}
                   onClick={() => {
                     setNewCarName("");
                     const first = gradeOptionsByKind(carkind)[0]?.value ?? "";
@@ -527,6 +545,15 @@ export default function CarNameHelpModal({ open, onClose, onSelect }) {
                 rowKey={(r) => r.codecar}
                 selectedKey={selectedCarCodecar}
                 onRowClick={(row) => setSelectedCar(row)}
+                onRowDoubleClick={(row) => {
+                  setSelectedCar(row);
+                  // 현재 선택 모델이 같은 차량 소속이면 유지, 아니면 첫 모델 사용
+                  const carModels = models.filter((m) => m.codecar === row.codecar);
+                  const keepModel = (selectedModel && carModels.some((m) => m.modelcode === selectedModel.modelcode))
+                    ? selectedModel
+                    : (carModels[0] ?? null);
+                  doSelect(row, keepModel);
+                }}
                 rowHoverClass="hover:!bg-gray-50"
                 rowSelectedClass="!bg-blue-100 hover:!bg-blue-100"
                 gutterSelectedClass="!bg-blue-100"
@@ -544,20 +571,17 @@ export default function CarNameHelpModal({ open, onClose, onSelect }) {
               <div className="ml-auto flex items-center gap-2">
                 <button
                   type="button"
-                  disabled={!selectedCar}
+                  disabled={disableNew || !selectedCar}
                   className={[
                     "inline-flex items-center gap-1 rounded-md border px-3 py-1 text-sm font-medium",
-                    !selectedCar
-                      ? "border-zinc-200 bg-white text-zinc-300"
+                    disableNew || !selectedCar
+                      ? "border-zinc-200 bg-white text-zinc-300 cursor-not-allowed"
                       : "border-zinc-200 bg-white text-zinc-800 hover:bg-zinc-50",
                   ].join(" ")}
                   onClick={() => {
                     setNewModelName("");
                     setOpenModelNew(true);
                   }}
-
-                  // className="inline-flex items-center gap-1 rounded-md border border-zinc-200 bg-white px-3 py-1 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
-
                 >
                   <Plus className="h-4 w-4" />
                   신규
@@ -572,6 +596,10 @@ export default function CarNameHelpModal({ open, onClose, onSelect }) {
                 rowKey={(r) => `${r.codecar}-${r.modelcode}`}                // 안정 키
                 selectedKey={selectedModel ? `${selectedCarCodecar}-${selectedModel.modelcode}` : null} 
                 onRowClick={(row) => setSelectedModel(row)}
+                onRowDoubleClick={(row) => {
+                  setSelectedModel(row);
+                  doSelect(selectedCar, row);
+                }}
                 rowHoverClass="hover:!bg-gray-50"
                 rowSelectedClass="!bg-blue-100 hover:!bg-blue-100"           // 모델 선택바 표시
                 gutterSelectedClass="!bg-blue-100"
@@ -598,18 +626,8 @@ export default function CarNameHelpModal({ open, onClose, onSelect }) {
             <button
               type="button"
               className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-50"
-              disabled={!selectedMaker || !selectedCar || !selectedModel}
-              onClick={() => {
-                const payload = {
-                  maker: selectedMaker,
-                  car: selectedCar,
-                  model: selectedModel,
-                  carkind,
-                  cargrades,
-                };
-                onSelect?.(payload);
-                onClose?.();
-              }}
+              disabled={!selectedMaker || !selectedCar || (!estCodecarOnly && !selectedModel)}
+              onClick={() => doSelect(selectedCar, selectedModel)}
             >
               선택
             </button>

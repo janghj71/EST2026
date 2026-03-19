@@ -34,6 +34,15 @@ function addMonths(baseDate, delta) {
 }
 
 
+const SS_KEY = "insurance_estimate_state";
+
+function loadSavedState() {
+  try { return JSON.parse(sessionStorage.getItem(SS_KEY)); } catch { return null; }
+}
+function clearSavedState() {
+  try { sessionStorage.removeItem(SS_KEY); } catch { /* empty */ }
+}
+
 export default function InsuranceEstimate() {
   const navigate = useNavigate();
   const { error, info, warning } = useAlert();
@@ -76,6 +85,14 @@ export default function InsuranceEstimate() {
 
   const openEstimateEdit = (row, mode = "edit") => {
     const est_serial = row?.est_serial || "0000000000";
+    // 수정 화면 이동 전 현재 상태를 sessionStorage에 저장 → 돌아올 때 복원
+    try {
+      sessionStorage.setItem(SS_KEY, JSON.stringify({
+        dateFrom, dateTo, searchText,
+        chkEstimate, chkWork, chkClosed, sortKey,
+        selectedSerial: row?.est_serial ?? null,
+      }));
+    } catch { /* empty */ }
     navigate(`/estimate-edit/${encodeURIComponent(est_serial)}`, {
       state: {
         mode, // "new" | "edit"
@@ -88,15 +105,19 @@ export default function InsuranceEstimate() {
   };
 
   // ====== 검색/조회 ======
-  const [dateFrom, setDateFrom] = useState(() => monthRange(new Date()).from);
-  const [dateTo, setDateTo] = useState(() => monthRange(new Date()).to);
-  const [searchText, setSearchText] = useState("");
-  const [chkEstimate, setChkEstimate] = useState(true);
-  const [chkWork, setChkWork] = useState(true);
-  const [chkClosed, setChkClosed] = useState(false);
-  const [sortKey, setSortKey] = useState("inday desc");
-  const [monthAnchor, setMonthAnchor] = useState(() => new Date());
-
+  // 수정 화면에서 돌아올 때 sessionStorage 복원
+  const _saved = loadSavedState();
+  const [dateFrom, setDateFrom] = useState(() => _saved?.dateFrom ?? monthRange(new Date()).from);
+  const [dateTo, setDateTo] = useState(() => _saved?.dateTo ?? monthRange(new Date()).to);
+  const [searchText, setSearchText] = useState(() => _saved?.searchText ?? "");
+  const [chkEstimate, setChkEstimate] = useState(() => _saved?.chkEstimate ?? true);
+  const [chkWork, setChkWork] = useState(() => _saved?.chkWork ?? true);
+  const [chkClosed, setChkClosed] = useState(() => _saved?.chkClosed ?? false);
+  const [sortKey, setSortKey] = useState(() => _saved?.sortKey ?? "inday desc");
+  const [monthAnchor, setMonthAnchor] = useState(() => new Date(_saved?.dateFrom ?? Date.now()));
+  // 복원 후 바로 삭제 (새 조회 시엔 저장 안 된 상태)
+  const _restoredSerial = _saved?.selectedSerial ?? null;
+  clearSavedState();
 
   // ====== 선택/상세 ======
   const [selected, setSelected] = useState(null);
@@ -118,10 +139,22 @@ export default function InsuranceEstimate() {
     if (msg) warning(msg);
   }, [estError, claimError, detailError]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ====== 초기 조회 (금월) ======
+  // ====== 초기 조회 (금월 or 복원된 날짜) ======
   useEffect(() => {
     fetchEstimates(dateFrom, dateTo);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ====== 수정 화면에서 복귀 시 선택 행 자동 복원 ======
+  const restoredSerialRef = useRef(_restoredSerial);
+  useEffect(() => {
+    const serial = restoredSerialRef.current;
+    if (!serial || !estimates.length) return;
+    const found = estimates.find((r) => r.est_serial === serial);
+    if (found) {
+      setSelected(found);
+      restoredSerialRef.current = null; // 복원 1회만
+    }
+  }, [estimates]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // sortCodes 로드 완료 후 현재 sortKey가 목록에 없으면 첫 번째 항목으로 폴백
   useEffect(() => {
