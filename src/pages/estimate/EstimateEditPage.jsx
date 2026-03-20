@@ -15,6 +15,7 @@ import { useEstimate } from "../../hooks/useEstimate";
 import { useMasterEstimateSave } from "../../hooks/useMasterEstimateSave";
 import { useEstimateClaimSave } from "../../hooks/useEstimateClaimSave";
 import { useEstimateDetailSave } from "../../hooks/useEstimateDetailSave";
+import { useEstimateClaims } from "../../hooks/useEstimateClaims";
 import { useLoading } from "../../loading/useLoading";
 
 export default function EstimateEditPage() {
@@ -24,13 +25,14 @@ export default function EstimateEditPage() {
   const { fetchMasterById, fetchDetails } = useEstimate();
   const { save, saving } = useMasterEstimateSave();
   const { saveClaim } = useEstimateClaimSave();
+  const { fetchClaims } = useEstimateClaims();
   const { error: alertError } = useAlert();
   const { withLoading } = useLoading();
 
   const [master, setMaster] = useState({});
   const [rows, setRows] = useState([]);
 
-  const { saveDetail } = useEstimateDetailSave(setRows);
+  const { saveDetail, saveAllDetails } = useEstimateDetailSave(setRows);
 
   // est_serial 변경 시 접수 데이터 조회
   // refetch는 raw JSON 반환 → dataset[0] 직접 추출
@@ -52,6 +54,15 @@ export default function EstimateEditPage() {
       const json = await fetchDetails(est_serial);
       setRows(json?.dataset ?? []);
     });
+  }, [est_serial]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // est_serial 변경 시 청구처(claims) 미리 로드 → calcPaysum 에서 사용
+  useEffect(() => {
+    if (!est_serial) return;
+    fetchClaims(est_serial).then((json) => {
+      const rows = json?.dataset ?? [];
+      setMaster((m) => ({ ...m, claims: rows }));
+    }).catch(() => {});
   }, [est_serial]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // EstimateSidePanel 탭 상태 (claim 여부 판단용)
@@ -386,6 +397,18 @@ export default function EstimateEditPage() {
     if (sideActive === "claim") await handleClaimSave();
   }, [sideActive, handleClaimSave]);
 
+  // [목록] 버튼: 전체 저장 후 이동
+  const handleClose = useCallback(async () => {
+    try {
+      await withLoading(async () => {
+        await saveAllDetails(rows);
+      });
+      navigate(-1);
+    } catch (err) {
+      alertError(err?.message ?? "저장 실패");
+    }
+  }, [rows, saveAllDetails, withLoading, navigate, alertError]);
+
   const handleSaveAndList = useCallback(async () => {
     // 저장 시 오더 재부여(델파이 방식)
     const seqReNumbered = rows.map((r, i) => ({ ...r, estb_seqno: i + 1 }));
@@ -413,7 +436,7 @@ export default function EstimateEditPage() {
               <button
                 type="button"
                 className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-50"
-                onClick={() => navigate(-1)}
+                onClick={handleClose}
               >
                 목록
               </button>

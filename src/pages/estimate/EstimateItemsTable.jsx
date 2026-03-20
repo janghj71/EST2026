@@ -1,5 +1,5 @@
 // src/pages/estimate/EstimateItemsTable.jsx
-import React, { useMemo, useCallback, useState } from "react";
+import React, { useMemo, useCallback, useState, useRef } from "react";
 
 import FixedHeadTable from "../../components/FixedHeadTable";
 import IconBtn from "../../components/IconBtn";
@@ -138,6 +138,29 @@ export default function EstimateItemsTable({
 
   const [popover, setPopover] = useState(null);
   // popover: { type: "workcodename"|"ts_payno"|"statename", anchorRect, rowOrgSeq }
+
+  // qty 변동 감지용 — focus 시점의 값을 기록
+  const qtyBeforeEditRef = useRef(null);
+
+  // ── 시간(qty) 입력 후 paysum 자동 계산 ──────────────────────────
+  // workcode 그룹별 M/H 단가: 첫 번째 청구처 기준
+  //   S,B  → bpay (판금)
+  //   P    → ppay (도장)
+  //   R,X,O,A → xpay (탈착)
+  const calcPaysum = useCallback((workcode, qty) => {
+    const claim = master?.claims?.[0];
+    if (!claim || !workcode || qty === "" || qty == null) return null;
+    const qtyNum = parseFloat(qty);
+    if (isNaN(qtyNum)) return null;
+
+    let rate = null;
+    if ("SB".includes(workcode))    rate = parseFloat(claim.bpay);
+    else if (workcode === "P")      rate = parseFloat(claim.ppay);
+    else if ("RXOACMW".includes(workcode)) rate = parseFloat(claim.xpay);
+
+    if (rate == null || isNaN(rate)) return null;
+    return String(Math.round(rate * qtyNum));
+  }, [master]);
 
   const setCell = useCallback((orgSeq, key, value) => {
     setRows((prev) =>
@@ -403,8 +426,8 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                 id={`cell-${row.estb_orgseqno}-payname`}
                 value={row.payname || ""}
                 onChange={(e) => setCell(row.estb_orgseqno, "payname", e.target.value)}
-                
-                className={CELL_INPUT_BASE.replace("px-2", "px-0")  + " text-left focus:px-1"}
+                autoComplete="off"
+                className={CELL_INPUT_BASE.replace("px-2", "px-0") + " text-left focus:px-1 [&:-webkit-autofill]:![background-color:transparent] [&:-webkit-autofill]:![box-shadow:0_0_0_1000px_white_inset]"}
                 onKeyDown={(e) => {
                   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                     e.preventDefault();
@@ -463,19 +486,31 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                 id={`cell-${row.estb_orgseqno}-qty`}
                 value={row.qty ?? ""}
                 onChange={(e) => setCell(row.estb_orgseqno, "qty", e.target.value)}
-                className={CELL_INPUT_BASE + " text-right tabular-nums pr-1 -mr-1"}
+                autoComplete="off"
+                className={CELL_INPUT_BASE + " text-right tabular-nums pr-1 -mr-1 [&:-webkit-autofill]:![background-color:transparent] [&:-webkit-autofill]:![box-shadow:0_0_0_1000px_white_inset]"}
+                onFocus={(e) => { qtyBeforeEditRef.current = row.qty ?? ""; e.target.select(); }}
                 onKeyDown={(e) => {
+                  // 변동 시 paysum 갱신 (Enter / ArrowDown / ArrowUp 공통)
+                  const flushPaysum = () => {
+                    const curQty = row.qty ?? "";
+                    if (curQty !== qtyBeforeEditRef.current) {
+                      const ps = calcPaysum(row.workcode, curQty);
+                      if (ps !== null) setCell(row.estb_orgseqno, "paysum", ps);
+                      qtyBeforeEditRef.current = curQty;
+                    }
+                  };
                   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                     e.preventDefault();
+                    flushPaysum();
                     moveFocusUpDown(row, "qty", e.key === "ArrowDown" ? +1 : -1);
                     return;
                   }
                   if (e.key === "Enter") {
                     e.preventDefault();
+                    flushPaysum();
                     if (e.shiftKey) focusPrevAcrossRows(row, "qty");
                     else focusNextAcrossRows(row, "qty");
                   }
-
                 }}
               />
             </div>
@@ -634,7 +669,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
         ),
       },
     ];
-  }, [openPopover, setCell, moveFocusUpDown, focusPrevAcrossRows, focusNextAcrossRows]);
+  }, [openPopover, setCell, moveFocusUpDown, focusPrevAcrossRows, focusNextAcrossRows, calcPaysum]);
 
   // rowRenderer(드래그): FixedHeadTable 패치의 rowRenderer를 사용
   const rowRenderer = useCallback(({ row, idx, key, trProps, cells }) => {
@@ -844,15 +879,23 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                   type="button"
                   className="rounded-md border border-zinc-200 bg-white px-2 py-2 text-sm hover:bg-zinc-50"
                   onClick={() => {
-                    // workcode(코드값) + workcodename(표시명) 동시 업데이트
+                    const orgSeq = popover.rowOrgSeq; // closePopover() 전에 캡처
+                    // workcode + workcodename + paysum 동시 업데이트
                     setRows((prev) =>
-                      prev.map((r) =>
-                        r.estb_orgseqno === popover.rowOrgSeq
-                          ? { ...r, workcode: opt.code, workcodename: opt.label }
-                          : r
-                      )
+                      prev.map((r) => {
+                        if (r.estb_orgseqno !== orgSeq) return r;
+                        const ps = calcPaysum(opt.code, r.qty);
+                        return {
+                          ...r,
+                          workcode: opt.code,
+                          workcodename: opt.label,
+                          ...(ps !== null ? { paysum: ps } : {}),
+                        };
+                      })
                     );
                     closePopover();
+                    // 시간(qty) 컬럼으로 포커스 이동
+                    focusById(`cell-${orgSeq}-qty`);
                   }}
                 >
                   <span className="text-xs text-zinc-500 mr-1">({opt.code})</span>

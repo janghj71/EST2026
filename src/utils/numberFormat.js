@@ -36,3 +36,27 @@ export function toInt(v) {
 export function toDecimal(v) {
   return v === "" || v == null ? 0 : parseFloat(v) || 0;
 }
+
+// ── API body 변환 헬퍼 ──────────────────────────────────────────
+// 규칙: '' → '',  null/undefined → null,  그 외 → 변환값
+
+/** '' → '',  null/undefined → null,  그 외 → parseInt 정수 */
+export function toIntOrNull(v) {
+  if (v === "")  return "0";
+  if (v == null) return "0";
+  return String(parseInt(v, 10) || 0);
+}
+
+/** '' → '',  null/undefined → null,  그 외 → parseFloat 실수 문자열 */
+export function toDecStr(v) {
+  if (v === "")  return "0";
+  if (v == null) return "0";
+  return String(parseFloat(v) || 0);
+}
+
+/** '' → '',  null/undefined → null,  그 외 → String */
+export function toStrOrNull(v) {
+  if (v === "")  return "";
+  if (v == null) return null;
+  return String(v);
+}
