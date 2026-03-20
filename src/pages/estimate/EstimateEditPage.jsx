@@ -14,28 +14,23 @@ import { formatNumber } from "../../utils/numberFormat";
 import { useEstimate } from "../../hooks/useEstimate";
 import { useMasterEstimateSave } from "../../hooks/useMasterEstimateSave";
 import { useEstimateClaimSave } from "../../hooks/useEstimateClaimSave";
-
-function seedRows() {
-  return [
-    { estb_orgseqno: 1001, estb_seqno: 1, payno: "A01", paykind: "1", payname: "프런트범퍼 커버", workcode: "X", workcodename: "교환", qty: 3.94, paysum: 157600, partsum: 0, partCode: "", molit: "B03", state: "" },
-    { estb_orgseqno: 1002, estb_seqno: 2, payno: "A01", paykind: "3", payname: "카바 전범퍼", workcode: "", workcodename: "", qty: 1, paysum: 0, partsum: 121000, partCode: "865403T000", molit: "", state: "신품" },
-    { estb_orgseqno: 1003, estb_seqno: 3, payno: "A01", paykind: "6", payname: "프런트범퍼 커버", workcode: "P", workcodename: "도장", qty: 2.93, paysum: 117200, partsum: 72300, partCode: "", molit: "B03", state: "외측판금도장" },
-    { estb_orgseqno: 1101, estb_seqno: 4, payno: "A02", paykind: "1", payname: "프런트범퍼 레일", workcode: "R", workcodename: "탈착", qty: 0.58, paysum: 23200, partsum: 0, partCode: "", molit: "B03", state: "" },
-    { estb_orgseqno: 1102, estb_seqno: 5, payno: "A02", paykind: "4", payname: "스티프너", workcode: "B", workcodename: "판금", qty: 1, paysum: 40000, partsum: 0, partCode: "", molit: "", state: "" },
-  ];
-}
+import { useEstimateDetailSave } from "../../hooks/useEstimateDetailSave";
+import { useLoading } from "../../loading/useLoading";
 
 export default function EstimateEditPage() {
   const navigate = useNavigate();
   const { est_serial } = useParams();
 
-  const { fetchMasterById } = useEstimate();
+  const { fetchMasterById, fetchDetails } = useEstimate();
   const { save, saving } = useMasterEstimateSave();
   const { saveClaim } = useEstimateClaimSave();
   const { error: alertError } = useAlert();
+  const { withLoading } = useLoading();
 
   const [master, setMaster] = useState({});
-  const [rows, setRows] = useState(seedRows());
+  const [rows, setRows] = useState([]);
+
+  const { saveDetail } = useEstimateDetailSave(setRows);
 
   // est_serial 변경 시 접수 데이터 조회
   // refetch는 raw JSON 반환 → dataset[0] 직접 추출
@@ -48,6 +43,15 @@ export default function EstimateEditPage() {
         setMaster((prev) => ({ ...prev, ...row }));
       })
       .catch(() => {});
+  }, [est_serial]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // est_serial 변경 시 견적상세 조회
+  useEffect(() => {
+    if (!est_serial) return;
+    withLoading(async () => {
+      const json = await fetchDetails(est_serial);
+      setRows(json?.dataset ?? []);
+    });
   }, [est_serial]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // EstimateSidePanel 탭 상태 (claim 여부 판단용)
@@ -448,6 +452,8 @@ export default function EstimateEditPage() {
                 // onAddPart={() => addRowBelow("5")}
                 onDelete={() => setDeleteOpen(true)}
                 onMovePaintToBottom={movePaintToBottom}
+                master={master}
+                onInsertDetail={saveDetail}
               />
               
             </div>

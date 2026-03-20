@@ -6,7 +6,8 @@ import IconBtn from "../../components/IconBtn";
 import Field from "../../components/Field";
 import MoneyInput from "../../components/MoneyInput";
 import { formatNumber } from "../../utils/numberFormat";
-import { focusById } from "../../utils/focusUtils"; 
+import { focusById } from "../../utils/focusUtils";
+import { getUserid } from "../../api/config";
 
 import {
   DndContext,
@@ -93,6 +94,11 @@ function canEditPartCode(row) {
   return pk(row) === "3" || pk(row) === "5";
 }
 
+function canEditWorkcode(row) {
+  // paykind '3'(부품), '5'(#부품)는 작업 코드 선택 불필요
+  return pk(row) !== "3" && pk(row) !== "5";
+}
+
 function canEditPayName(row) {
   // 기존 유지(공임/부품 추가행만 작업내용 수정 가능)
   const k = pk(row);
@@ -123,13 +129,15 @@ export default function EstimateItemsTable({
   // onAddPart,
   onDelete,
   onMovePaintToBottom,
+  master,
+  onInsertDetail,
 }) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } })
   );
 
   const [popover, setPopover] = useState(null);
-  // popover: { type: "work"|"molit"|"state", anchorRect, rowOrgSeq }
+  // popover: { type: "workcodename"|"ts_payno"|"statename", anchorRect, rowOrgSeq }
 
   const setCell = useCallback((orgSeq, key, value) => {
     setRows((prev) =>
@@ -152,8 +160,8 @@ export default function EstimateItemsTable({
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    const activeOrg = Number(active.id);
-    const overOrg = Number(over.id);
+    const activeOrg = active.id;
+    const overOrg = over.id;
 
     const fromIndex = rows.findIndex((r) => r.estb_orgseqno === activeOrg);
     const toIndex = rows.findIndex((r) => r.estb_orgseqno === overOrg);
@@ -190,7 +198,7 @@ export default function EstimateItemsTable({
         ...rest.slice(0, insertAt),
         ...block,
         ...rest.slice(insertAt),
-      ].map((r, i) => ({ ...r, estb_seqno: i + 1 }));
+      ].map((r, i) => ({ ...r, estb_seqno: String(i + 1).padStart(3, "0") }));
 
       setRows(next);
       return;
@@ -209,7 +217,7 @@ export default function EstimateItemsTable({
     { k: "qty", can: canEditQty },
     { k: "paysum", can: canEditLaborAmt },
     { k: "partsum", can: canEditPartAmt },
-    { k: "partCode", can: canEditPartCode },
+    { k: "part_makercode", can: canEditPartCode },
   ]), []);
 
   const nextEditableId = useCallback(
@@ -369,7 +377,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
         className: "px-2  py-0 text-zinc-700",
         render: (_val, row) => (
           <div className="h-8 flex items-center text-zinc-700">
-            {paykindLabel(row?.paykind)}
+            {row?.paykindname || paykindLabel(row?.paykind)}
           </div>
         ),
         
@@ -420,18 +428,24 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
         title: "작업",
         width: "80px",
         className: "px-2 py-0",
-        render: (_val, row) => (
-          <div className="h-8 flex items-center">
-            <button
-              type="button"
-              className="w-full text-left hover:underline"
-              onClick={(e) => openPopover(e, "workcodename", row)}
-            >
-              {row.workcodename || ""}
-            </button>
-          </div>
-
-        ),
+        render: (_val, row) => {
+          const editable = canEditWorkcode(row);
+          return (
+            <div className="h-8 flex items-stretch">
+              {editable ? (
+                <button
+                  type="button"
+                  className="w-full text-left hover:underline"
+                  onClick={(e) => openPopover(e, "workcodename", row)}
+                >
+                  {row.workcodename || "선택"}
+                </button>
+              ) : (
+                <span className="flex items-center px-2 text-zinc-700">{row.workcodename || ""}</span>
+              )}
+            </div>
+          );
+        },
       },
       {
         key: "qty",
@@ -545,40 +559,39 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
         },
       },
       {
-        key: "partCode",
+        key: "part_makercode",
         title: "부품코드",
         width: "140px",
         className: "px-2 py-0",
         render: (_val, row) => {
           const editable = canEditPartCode(row);
-          const id = `cell-${row.estb_orgseqno}-partCode`;
-          // if (!editable) return <div className="truncate">{row.partCode || ""}</div>;
+          const id = `cell-${row.estb_orgseqno}-part_makercode`;
           if (!editable)
             return (
               <div className="h-8 flex items-center truncate">
-                {row.partCode || ""}
+                {row.part_makercode || ""}
               </div>
             );
-          
+
           return (
             <div className={CELL_WRAP}>
               <input
                 id={id}
-                value={row.partCode || ""}
-                onChange={(e) => setCell(row.estb_orgseqno, "partCode", e.target.value)}
+                value={row.part_makercode || ""}
+                onChange={(e) => setCell(row.estb_orgseqno, "part_makercode", e.target.value)}
                 className={CELL_INPUT_BASE + " text-left font-mono"}
                 onKeyDown={(e) => {
                   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                     e.preventDefault();
-                    moveFocusUpDown(row, "partCode", e.key === "ArrowDown" ? +1 : -1);
+                    moveFocusUpDown(row, "part_makercode", e.key === "ArrowDown" ? +1 : -1);
                     return;
                   }
                   if (e.key === "Enter") {
                     e.preventDefault();
-                    if (e.shiftKey) focusPrevAcrossRows(row, "partCode");
-                    else focusNextAcrossRows(row, "partCode");
+                    if (e.shiftKey) focusPrevAcrossRows(row, "part_makercode");
+                    else focusNextAcrossRows(row, "part_makercode");
                   }
-                  
+
                 }}
               />
             </div>
@@ -587,7 +600,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
       },
 
       {
-        key: "molit",
+        key: "ts_payno",
         title: "국토부",
         width: "90px",
         className: "px-2 py-0",
@@ -596,16 +609,15 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
             <button
               type="button"
               className="w-full text-left hover:underline"
-              onClick={(e) => openPopover(e, "molit", row)}
+              onClick={(e) => openPopover(e, "ts_payno", row)}
             >
-              {row.molit || ""}
+              {row.ts_payno || ""}
             </button>
           </div>
-
         ),
       },
       {
-        key: "state",
+        key: "statename",
         title: "상태",
         width: "140px",
         className: "px-2 py-0",
@@ -614,9 +626,9 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
             <button
               type="button"
               className="w-full text-left hover:underline"
-              onClick={(e) => openPopover(e, "state", row)}
+              onClick={(e) => openPopover(e, "statename", row)}
             >
-              {row.state || ""}
+              {row.statename || ""}
             </button>
           </div>
         ),
@@ -659,51 +671,80 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
 
   const insertAfterSelected = useCallback(
     (paykind) => {
+      let savedRow = null; // setRows 콜백 외부에서 newRow 캡처
+
       setRows((prev) => {
         const idx = prev.findIndex((r) => r.estb_orgseqno === selectedOrgSeq);
         const insertAt = idx >= 0 ? idx + 1 : prev.length;
-  
+
         const base = idx >= 0 ? prev[idx] : prev[prev.length - 1];
-  
+
+        // 현재 선택된 기존 row의 payname이 비어있으면 삽입하지 않음
+        if (!base?.payname) return prev;
+
+        const pkStr = String(paykind);
+
+        // payno: paykind별 고정값
+        const paynoMap = { "4": "99994", "5": "99995" };
+        const payno = paynoMap[pkStr] ?? "";
+
+        // state: paykind='5'(부품)일때만 makercode 조건 적용, paykind='4'(공임)은 ''
+        const state =
+          pkStr === "5"
+            ? (master?.makercode ?? "") > "06" ? "F" : "A"
+            : "";
+
         const newRow = {
-          // 유니크 키
-          estb_orgseqno: Number(`${Date.now()}${Math.floor(Math.random() * 1000)}`),
-  
-          // 시퀀스는 아래에서 재계산
-          estb_seqno: 0,
-  
-          // 같은 블록에 들어가도록 payno는 선택행 기준으로
-          payno: base?.payno ?? "",
-  
-          paykind: String(paykind), // "4" 공임추가, "5" 부품추가
-  
-          // 편집 필드 초기값
-          payname: "",
-          qty: "",
-          paysum: "",
-          partsum: "",
-          partCode: "",
-  
-          // 기타 컬럼(필요한 것만 기본값)
-          workcode: "",
-          workcodename: "",
-          molit: "",
-          state: "",
+          comcode:        base?.comcode        ?? "",
+          est_serial:     base?.est_serial     ?? "",
+          estb_orgseqno:  "",                           // 서버 할당 → 비워둠
+          estb_seqno:     String(insertAt + 1).padStart(3, "0"), // 삽입 위치 순번 (이후 전체 재계산)
+          paykind:        pkStr,
+          payno,
+          subpayno:       "",
+          payname:        "",
+          workcode:       "",
+          price:          "",
+          qty:            "0",
+          partsum:        "0",
+          paysum:         "0",
+          part_makercode: "",
+          state,
+          statename:      "",
+          oqty:           "",
+          pnt_extr:       "",
+          pnt_hour:       "",
+          pnt_part:       "0",
+          pnt_m:          "",
+          pntcot:         "",
+          ts_payno:       "",
+          update_id:      getUserid(),
+          paykindname:    paykindLabel(pkStr),
+          workcodename:   "",
+          b_level:        "0.00",
+          b_area:         "0",
+          pnt_reduce:     "0",
+          body_panel:     "",
         };
-  
+
+        savedRow = newRow; // 캡처
+
         const next = [
           ...prev.slice(0, insertAt),
           newRow,
           ...prev.slice(insertAt),
-        ].map((r, i) => ({ ...r, estb_seqno: i + 1 }));
-  
+        ].map((r, i) => ({ ...r, estb_seqno: String(i + 1).padStart(3, "0") }));
+
         // 새로 삽입된 row 선택
         setSelectedOrgSeq?.(newRow.estb_orgseqno);
-  
+
         return next;
       });
+
+      // payname이 있는 base row였을 때만 savedRow가 채워짐 → API 저장
+      if (savedRow) onInsertDetail?.(savedRow);
     },
-    [setRows, selectedOrgSeq, setSelectedOrgSeq]
+    [setRows, selectedOrgSeq, setSelectedOrgSeq, master, onInsertDetail]
   );
   
 
@@ -792,7 +833,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
           onClose={closePopover}
           title={
             popover.type === "workcodename" ? "작업 선택" :
-            popover.type === "molit" ? "국토부" : "상태"
+            popover.type === "ts_payno" ? "국토부" : "상태"
           }
         >
           {popover.type === "workcodename" ? (
@@ -803,7 +844,14 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                   type="button"
                   className="rounded-md border border-zinc-200 bg-white px-2 py-2 text-sm hover:bg-zinc-50"
                   onClick={() => {
-                    setCell(popover.rowOrgSeq, "workcodename", opt.label);
+                    // workcode(코드값) + workcodename(표시명) 동시 업데이트
+                    setRows((prev) =>
+                      prev.map((r) =>
+                        r.estb_orgseqno === popover.rowOrgSeq
+                          ? { ...r, workcode: opt.code, workcodename: opt.label }
+                          : r
+                      )
+                    );
                     closePopover();
                   }}
                 >
