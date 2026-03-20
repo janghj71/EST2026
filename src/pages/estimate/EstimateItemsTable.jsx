@@ -46,7 +46,23 @@ const WORK_OPTIONS = [
   { code: "T", label: "견인" },
   { code: "G", label: "구난" },
   { code: "W", label: "세차" },
+  { code: "P", label: "도장" },
 ];
+
+/** 도장(P) 소분류 — master.pntkind 별, state 포함 */
+const PAINT_OPTIONS = {
+  "3": [
+    { label: "교환도장",     state: "1" },
+    { label: "외측판금도장", state: "3" },
+    { label: "표면도장",     state: "2" },
+    { label: "전면판금도장", state: "5" },
+  ],
+  default: [
+    { label: "교환도장",     state: "1" },
+    { label: "판금도장",     state: "3" },
+    { label: "부분판금도장", state: "2" },
+  ],
+};
 
 function paykindLabel(paykind) {
   switch (String(paykind)) {
@@ -138,6 +154,7 @@ export default function EstimateItemsTable({
 
   const [popover, setPopover] = useState(null);
   // popover: { type: "workcodename"|"ts_payno"|"statename", anchorRect, rowOrgSeq }
+  const [paintSubRect, setPaintSubRect] = useState(null); // 도장 서브패널 앵커
 
   // qty 변동 감지용 — focus 시점의 값을 기록
   const qtyBeforeEditRef = useRef(null);
@@ -170,6 +187,7 @@ export default function EstimateItemsTable({
 
   const openPopover = useCallback((e, type, row) => {
     const rect = e.currentTarget.getBoundingClientRect();
+    setPaintSubRect(null);
     setPopover({
       type,
       anchorRect: rect,
@@ -177,7 +195,10 @@ export default function EstimateItemsTable({
     });
   }, []);
 
-  const closePopover = useCallback(() => setPopover(null), []);
+  const closePopover = useCallback(() => {
+    setPopover(null);
+    setPaintSubRect(null);
+  }, []);
 
   const onDragEnd = useCallback((event) => {
     const { active, over } = event;
@@ -880,35 +901,46 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
         >
           {popover.type === "workcodename" ? (
             <div className="grid grid-cols-3 gap-2">
-              {WORK_OPTIONS.map((opt) => (
-                <button
-                  key={opt.code}
-                  type="button"
-                  className="rounded-md border border-zinc-200 bg-white px-2 py-2 text-sm hover:bg-zinc-50"
-                  onClick={() => {
-                    const orgSeq = popover.rowOrgSeq; // closePopover() 전에 캡처
-                    // workcode + workcodename + paysum 동시 업데이트
-                    setRows((prev) =>
-                      prev.map((r) => {
-                        if (r.estb_orgseqno !== orgSeq) return r;
-                        const ps = calcPaysum(opt.code, r.qty);
-                        return {
-                          ...r,
-                          workcode: opt.code,
-                          workcodename: opt.label,
-                          ...(ps !== null ? { paysum: ps } : {}),
-                        };
-                      })
-                    );
-                    closePopover();
-                    // 시간(qty) 컬럼으로 포커스 이동
-                    focusById(`cell-${orgSeq}-qty`);
-                  }}
-                >
-                  <span className="text-xs text-zinc-500 mr-1">({opt.code})</span>
-                  {opt.label}
-                </button>
-              ))}
+              {WORK_OPTIONS.map((opt) =>
+                opt.code === "P" ? (
+                  /* 도장(P) — 플라이아웃 서브메뉴 진입 */
+                  <button
+                    key="P"
+                    type="button"
+                    className="rounded-md border border-zinc-200 bg-white px-2 py-2 text-sm hover:bg-zinc-50"
+                    onClick={(e) => setPaintSubRect(e.currentTarget.getBoundingClientRect())}
+                  >
+                    <span className="text-xs text-zinc-500 mr-1">(P)</span>
+                    도장 ▶
+                  </button>
+                ) : (
+                  <button
+                    key={opt.code}
+                    type="button"
+                    className="rounded-md border border-zinc-200 bg-white px-2 py-2 text-sm hover:bg-zinc-50"
+                    onClick={() => {
+                      const orgSeq = popover.rowOrgSeq;
+                      setRows((prev) =>
+                        prev.map((r) => {
+                          if (r.estb_orgseqno !== orgSeq) return r;
+                          const ps = calcPaysum(opt.code, r.qty);
+                          return {
+                            ...r,
+                            workcode: opt.code,
+                            workcodename: opt.label,
+                            ...(ps !== null ? { paysum: ps } : {}),
+                          };
+                        })
+                      );
+                      closePopover();
+                      focusById(`cell-${orgSeq}-qty`);
+                    }}
+                  >
+                    <span className="text-xs text-zinc-500 mr-1">({opt.code})</span>
+                    {opt.label}
+                  </button>
+                )
+              )}
             </div>
           ) : (
             <div className="text-sm text-zinc-600">
@@ -925,6 +957,49 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
             </div>
           )}
         </SimplePopover>
+      )}
+
+      {/* 도장(P) 소분류 플라이아웃 — SimplePopover의 z-50 overlay 위(z-51)에 렌더 */}
+      {paintSubRect && popover?.type === "workcodename" && (
+        <div
+          className="fixed rounded-md border border-zinc-200 bg-white shadow-lg z-[51] w-[200px]"
+          style={{ top: paintSubRect.top, left: paintSubRect.right + 6 }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="px-3 py-2 border-b border-zinc-200 text-sm font-semibold text-zinc-800">
+            도장 소분류
+          </div>
+          <div className="p-2 flex flex-col gap-1">
+            {(PAINT_OPTIONS[master?.pntkind] ?? PAINT_OPTIONS.default).map((opt) => (
+              <button
+                key={opt.label}
+                type="button"
+                className="w-full text-left rounded px-2 py-1.5 text-sm hover:bg-zinc-50"
+                onClick={() => {
+                  const orgSeq = popover.rowOrgSeq;
+                  setRows((prev) =>
+                    prev.map((r) => {
+                      if (r.estb_orgseqno !== orgSeq) return r;
+                      const ps = calcPaysum("P", r.qty);
+                      return {
+                        ...r,
+                        workcode:     "P",
+                        workcodename: "도장",
+                        state:        opt.state,
+                        statename:    opt.label,
+                        ...(ps !== null ? { paysum: ps } : {}),
+                      };
+                    })
+                  );
+                  closePopover();
+                  focusById(`cell-${orgSeq}-qty`);
+                }}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );
