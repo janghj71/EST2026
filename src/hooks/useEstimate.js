@@ -106,7 +106,11 @@ export function useEstimate() {
   });
 
   const fetchDetails = useCallback(
-    (est_serial, estbo_seqno) => detailRefetch({ est_serial, estbo_seqno }),
+    (est_serial, estbo_seqno) => {
+      const body = { est_serial };
+      if (estbo_seqno != null) body.estbo_seqno = estbo_seqno;
+      return detailRefetch(body);
+    },
     [detailRefetch]
   );
 

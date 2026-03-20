@@ -382,6 +382,13 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
 }, [rows, prevEditableId, lastEditableKey, focusRowKey]);
 
 
+  // 시간(qty) 표시 포맷 — 후행 0 제거: "2.940"→"2.94", "1.000"→"1"
+  const fmtQty = (v) => {
+    if (v == null || v === "") return "";
+    const n = parseFloat(v);
+    return isNaN(n) ? String(v) : String(n);
+  };
+
   // FixedHeadTable render 시그니처에 맞춰: render(val, row, idx)
   const columns = useMemo(() => {
     return [
@@ -479,12 +486,12 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
         render: (_val, row) => {
           const editable = canEditQty(row);
           const id = `cell-${row.estb_orgseqno}-qty`;
-          if (!editable) return <div className="h-8 flex items-center justify-end">{row.qty ?? ""}</div>;
+          if (!editable) return <div className="h-8 flex items-center justify-end">{fmtQty(row.qty)}</div>;
           return (
             <div className={CELL_WRAP}>
               <input
                 id={`cell-${row.estb_orgseqno}-qty`}
-                value={row.qty ?? ""}
+                value={fmtQty(row.qty)}
                 onChange={(e) => setCell(row.estb_orgseqno, "qty", e.target.value)}
                 autoComplete="off"
                 className={CELL_INPUT_BASE + " text-right tabular-nums pr-1 -mr-1 [&:-webkit-autofill]:![background-color:transparent] [&:-webkit-autofill]:![box-shadow:0_0_0_1000px_white_inset]"}
