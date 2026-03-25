@@ -1,9 +1,10 @@
 import { formatNumber, unformatNumber } from "../utils/numberFormat";
 // import { moveFocusOnEnter } from "../utils/focusUtils";
 
-export default function MoneyInput({ 
-  value, 
-  onChange, 
+export default function MoneyInput({
+  value,
+  onChange,
+  onFocus,
   className = "",
   suffix = "원",
   mode = "form",
@@ -35,7 +36,7 @@ export default function MoneyInput({
         className={inputClass + " " + className}
         value={display}
         inputMode="numeric"
-        onFocus={(e) => e.target.select()}
+        onFocus={(e) => { onFocus?.(e); e.target.select(); }}
         // onKeyDown={moveFocusOnEnter}
         onChange={(e) => {
           const raw = unformatNumber(e.target.value);

@@ -147,6 +147,7 @@ export default function EstimateItemsTable({
   onMovePaintToBottom,
   master,
   onInsertDetail,
+  onValueCommit,
 }) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } })
@@ -158,6 +159,11 @@ export default function EstimateItemsTable({
 
   // qty 변동 감지용 — focus 시점의 값을 기록
   const qtyBeforeEditRef = useRef(null);
+  // 소숫점 입력 허용: 편집 중인 셀 orgSeqno 추적 (편집 중에는 fmtQty 미적용)
+  const [qtyEditingOrgSeq, setQtyEditingOrgSeq] = useState(null);
+  // 부품액(partsum) 편집 중 draft — blur/Enter/Nav 시에만 rows 반영
+  const [partsumEditingOrgSeq, setPartsumEditingOrgSeq] = useState(null);
+  const [partsumDraft, setPartsumDraft] = useState(null);
 
   // ── 시간(qty) 입력 후 paysum 자동 계산 ──────────────────────────
   // workcode 그룹별 M/H 단가: 첫 번째 청구처 기준
@@ -512,19 +518,46 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
             <div className={CELL_WRAP}>
               <input
                 id={`cell-${row.estb_orgseqno}-qty`}
-                value={fmtQty(row.qty)}
-                onChange={(e) => setCell(row.estb_orgseqno, "qty", e.target.value)}
+                value={qtyEditingOrgSeq === row.estb_orgseqno ? (row.qty ?? "") : fmtQty(row.qty)}
+                onChange={(e) => {
+                  const intOnly = row.paykind === "3" || row.paykind === "5";
+                  const v = intOnly ? e.target.value.replace(/[^0-9]/g, "") : e.target.value;
+                  setCell(row.estb_orgseqno, "qty", v);
+                }}
                 autoComplete="off"
                 className={CELL_INPUT_BASE + " text-right tabular-nums pr-1 -mr-1 [&:-webkit-autofill]:![background-color:transparent] [&:-webkit-autofill]:![box-shadow:0_0_0_1000px_white_inset]"}
-                onFocus={(e) => { qtyBeforeEditRef.current = row.qty ?? ""; e.target.select(); }}
+                onFocus={(e) => {
+                  qtyBeforeEditRef.current = row.qty ?? "";
+                  setQtyEditingOrgSeq(row.estb_orgseqno);
+                  e.target.select();
+                }}
+                onBlur={() => {
+                  setQtyEditingOrgSeq(null);
+                  // blur 시에도 paysum 확정 (Enter/Nav 없이 포커스 이동한 경우)
+                  const curQty = row.qty ?? "";
+                  if (curQty !== qtyBeforeEditRef.current) {
+                    const ps = calcPaysum(row.workcode, curQty);
+                    if (ps !== null) setCell(row.estb_orgseqno, "paysum", ps);
+                    qtyBeforeEditRef.current = curQty;
+                    onValueCommit?.({ ...row, qty: curQty, ...(ps !== null ? { paysum: ps } : {}) });
+                  } else {
+                    onValueCommit?.({ ...row });
+                  }
+                }}
                 onKeyDown={(e) => {
-                  // 변동 시 paysum 갱신 (Enter / ArrowDown / ArrowUp 공통)
+                  // paykind '3','5' — 소숫점 키 차단
+                  if ((row.paykind === "3" || row.paykind === "5") && e.key === ".") {
+                    e.preventDefault();
+                    return;
+                  }
+                  // 변동 시 paysum 갱신 + onValueCommit (Enter / ArrowDown / ArrowUp 공통)
                   const flushPaysum = () => {
                     const curQty = row.qty ?? "";
                     if (curQty !== qtyBeforeEditRef.current) {
                       const ps = calcPaysum(row.workcode, curQty);
                       if (ps !== null) setCell(row.estb_orgseqno, "paysum", ps);
                       qtyBeforeEditRef.current = curQty;
+                      onValueCommit?.({ ...row, qty: curQty, ...(ps !== null ? { paysum: ps } : {}) });
                     }
                   };
                   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -562,22 +595,24 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                 value={row.paysum}
                 onChange={(v) => setCell(row.estb_orgseqno, "paysum", v)}
                 className={CELL_INPUT_BASE + " text-right tabular-nums"}
+                onBlur={() => onValueCommit?.({ ...row })}
                 onKeyDown={(e) => {
                   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                     e.preventDefault();
+                    onValueCommit?.({ ...row });
                     moveFocusUpDown(row, "paysum", e.key === "ArrowDown" ? +1 : -1);
                     return;
                   }
                   if (e.key === "Enter") {
                     e.preventDefault();
+                    onValueCommit?.({ ...row });
                     if (e.shiftKey) focusPrevAcrossRows(row, "paysum");
                     else focusNextAcrossRows(row, "paysum");
                   }
-
                 }}
                 suffix={null}
                 mode="cell"
-                rightPad="pr-1 -mr-1" 
+                rightPad="pr-1 -mr-1"
               />
             </div>
           );
@@ -597,25 +632,46 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
             <div className={CELL_WRAP}>
               <MoneyInput
                 id={id}
-                value={row.partsum}
-                onChange={(v) => setCell(row.estb_orgseqno, "partsum", v)}
+                value={partsumEditingOrgSeq === row.estb_orgseqno ? partsumDraft : row.partsum}
+                onChange={(v) => {
+                  if (partsumEditingOrgSeq === row.estb_orgseqno) setPartsumDraft(v);
+                }}
                 className={CELL_INPUT_BASE + " text-right tabular-nums"}
+                onFocus={() => {
+                  setPartsumEditingOrgSeq(row.estb_orgseqno);
+                  setPartsumDraft(row.partsum);
+                }}
+                onBlur={() => {
+                  const final = partsumDraft ?? row.partsum;
+                  setCell(row.estb_orgseqno, "partsum", final);
+                  setPartsumEditingOrgSeq(null);
+                  setPartsumDraft(null);
+                  onValueCommit?.({ ...row, partsum: final });
+                }}
                 onKeyDown={(e) => {
+                  const commitPartsum = () => {
+                    const final = partsumDraft ?? row.partsum;
+                    setCell(row.estb_orgseqno, "partsum", final);
+                    setPartsumEditingOrgSeq(null);
+                    setPartsumDraft(null);
+                    onValueCommit?.({ ...row, partsum: final });
+                  };
                   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                     e.preventDefault();
+                    commitPartsum();
                     moveFocusUpDown(row, "partsum", e.key === "ArrowDown" ? +1 : -1);
                     return;
                   }
                   if (e.key === "Enter") {
                     e.preventDefault();
+                    commitPartsum();
                     if (e.shiftKey) focusPrevAcrossRows(row, "partsum");
                     else focusNextAcrossRows(row, "partsum");
                   }
-                  
                 }}
                 suffix={null}
                 mode="cell"
-                rightPad="pr-1 -mr-1" 
+                rightPad="pr-1 -mr-1"
               />
             </div>
           );
@@ -642,7 +698,8 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                 id={id}
                 value={row.part_makercode || ""}
                 onChange={(e) => setCell(row.estb_orgseqno, "part_makercode", e.target.value)}
-                className={CELL_INPUT_BASE + " text-left font-mono"}
+                autoComplete="off"
+                className={CELL_INPUT_BASE + " text-left font-mono [&:-webkit-autofill]:![background-color:transparent] [&:-webkit-autofill]:![box-shadow:0_0_0_1000px_white_inset]"}
                 onKeyDown={(e) => {
                   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                     e.preventDefault();
@@ -697,7 +754,8 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
         ),
       },
     ];
-  }, [openPopover, setCell, moveFocusUpDown, focusPrevAcrossRows, focusNextAcrossRows, calcPaysum]);
+  }, [openPopover, setCell, moveFocusUpDown, focusPrevAcrossRows, focusNextAcrossRows, calcPaysum,
+      partsumEditingOrgSeq, partsumDraft]);
 
   // rowRenderer(드래그): FixedHeadTable 패치의 rowRenderer를 사용
   const rowRenderer = useCallback(({ row, idx, key, trProps, cells }) => {
@@ -721,13 +779,13 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
     );
   }, [sortMode]);
 
+  // summary는 확정된 paysum/partsum 기준 (타이핑 중 갱신 없음)
   const { sumLabor, sumPart, sumSupply, sumVat, sumTotal } = useMemo(() => {
-    const labor = rows.reduce((a, r) => a + (Number(r.paysum) || 0), 0);
-    const part  = rows.reduce((a, r) => a + (Number(r.partsum) || 0), 0);
+    const labor  = rows.reduce((a, r) => a + (Number(r.paysum)  || 0), 0);
+    const part   = rows.reduce((a, r) => a + (Number(r.partsum) || 0), 0);
     const supply = labor + part;
-    const vat = Math.floor(supply * 0.1); // 정책 확정 전 임시
-    const total = supply + vat;
-    return { sumLabor: labor, sumPart: part, sumSupply: supply, sumVat: vat, sumTotal: total };
+    const vat    = Math.floor(supply * 0.1);
+    return { sumLabor: labor, sumPart: part, sumSupply: supply, sumVat: vat, sumTotal: supply + vat };
   }, [rows]);
 
   const masterSendState = ""; // TODO (지금은 화면만)
@@ -920,20 +978,31 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                     className="rounded-md border border-zinc-200 bg-white px-2 py-2 text-sm hover:bg-zinc-50"
                     onClick={() => {
                       const orgSeq = popover.rowOrgSeq;
+                      let committed = null;
                       setRows((prev) =>
                         prev.map((r) => {
                           if (r.estb_orgseqno !== orgSeq) return r;
                           const ps = calcPaysum(opt.code, r.qty);
-                          return {
+                          committed = {
                             ...r,
-                            workcode: opt.code,
+                            workcode:     opt.code,
                             workcodename: opt.label,
+                            // P → 다른 작업 변경 시 도장 관련 필드 초기화
+                            ...(r.workcode === "P" ? {
+                              state:     "",
+                              statename: "",
+                              pnt_extr:  "",
+                              pnt_hour:  "0",
+                              pnt_part:  "0",
+                            } : {}),
                             ...(ps !== null ? { paysum: ps } : {}),
                           };
+                          return committed;
                         })
                       );
                       closePopover();
                       focusById(`cell-${orgSeq}-qty`);
+                      if (committed) onValueCommit?.(committed);
                     }}
                   >
                     <span className="text-xs text-zinc-500 mr-1">({opt.code})</span>
@@ -977,11 +1046,12 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                 className="w-full text-left rounded px-2 py-1.5 text-sm hover:bg-zinc-50"
                 onClick={() => {
                   const orgSeq = popover.rowOrgSeq;
+                  let committed = null;
                   setRows((prev) =>
                     prev.map((r) => {
                       if (r.estb_orgseqno !== orgSeq) return r;
                       const ps = calcPaysum("P", r.qty);
-                      return {
+                      committed = {
                         ...r,
                         workcode:     "P",
                         workcodename: "도장",
@@ -989,10 +1059,12 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                         statename:    opt.label,
                         ...(ps !== null ? { paysum: ps } : {}),
                       };
+                      return committed;
                     })
                   );
                   closePopover();
                   focusById(`cell-${orgSeq}-qty`);
+                  if (committed) onValueCommit?.(committed);
                 }}
               >
                 {opt.label}

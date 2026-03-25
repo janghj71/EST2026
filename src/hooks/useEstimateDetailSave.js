@@ -110,5 +110,16 @@ export function useEstimateDetailSave(setRows) {
     [saveReq, setRows]
   );
 
-  return { saveDetail, saveAllDetails };
+  /** 단일 행 조용한 저장 — 로딩/알럿 없음 (settle 자동갱신용) */
+  const saveSingleDetail = useCallback(
+    async (row) => {
+      try {
+        const json = await saveReq({ masterestimateb: [toApiRow(row)] });
+        apiOk(json, "견적항목 저장");
+      } catch (_) { /* 조용히 무시 */ }
+    },
+    [saveReq]
+  );
+
+  return { saveDetail, saveAllDetails, saveSingleDetail };
 }

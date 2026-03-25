@@ -15,8 +15,9 @@ import { useTbCode } from "../../hooks/useTbCode";
 import { usePntcot } from "../../hooks/usePntcot";
 
 
-export default function EstimateSidePanel({ master, setMaster, active, onTabChange, onClaimLeave, onClaimDirty, onClaimClean }) {
+export default function EstimateSidePanel({ master, setMaster, active, onTabChange, onClaimLeave, onClaimDirty, onClaimClean, onRateChange, onOpenChange, onSettleEnter, settleRefreshKey }) {
   const [open, setOpen] = useState(false);
+  const changeOpen = (next) => { setOpen(next); onOpenChange?.(next); };
   const set = (k) => (vOrEvent) => {
     const v =
       vOrEvent && typeof vOrEvent === "object" && "target" in vOrEvent
@@ -70,7 +71,7 @@ export default function EstimateSidePanel({ master, setMaster, active, onTabChan
           className="rounded-md bg-zinc-800 text-white px-2 py-2 text-sm"
           onClick={async () => {
             if (active === "claim" && open) await onClaimLeave?.();
-            setOpen((v) => !v);
+            changeOpen(!open);
           }}
           title="열기/닫기"
         >
@@ -85,7 +86,7 @@ export default function EstimateSidePanel({ master, setMaster, active, onTabChan
           onClick={async () => {
             if (active === "claim") await onClaimLeave?.();
             onTabChange("labor");
-            setOpen(true);
+            changeOpen(true);
           }}
           style={{ writingMode: "vertical-rl" }}
         >
@@ -99,7 +100,7 @@ export default function EstimateSidePanel({ master, setMaster, active, onTabChan
           }`}
           onClick={() => {
             onTabChange("claim");
-            setOpen(true);
+            changeOpen(true);
           }}
           style={{ writingMode: "vertical-rl" }}
         >
@@ -113,8 +114,9 @@ export default function EstimateSidePanel({ master, setMaster, active, onTabChan
           }`}
           onClick={async () => {
             if (active === "claim") await onClaimLeave?.();
+            await onSettleEnter?.();          // 저장 선행
             onTabChange("settle");
-            setOpen(true);
+            changeOpen(true);
           }}
           style={{ writingMode: "vertical-rl" }}
         >
@@ -145,6 +147,7 @@ export default function EstimateSidePanel({ master, setMaster, active, onTabChan
               selectCls={selectCls}
               onClaimDirty={onClaimDirty}
               onClaimClean={onClaimClean}
+              onRateChange={onRateChange}
             />
           )}
           {active === "settle" && (
@@ -153,6 +156,7 @@ export default function EstimateSidePanel({ master, setMaster, active, onTabChan
               setMaster={setMaster}
               inputCls={inputCls}
               selectCls={selectCls}
+              refreshKey={settleRefreshKey}
             />
           )}
         </div>
@@ -380,16 +384,39 @@ function LaborPanel({
         </div>
       </FormRow>
 
-      {/* M/H 단가 */}
-      <FormRow label="탈착M/H">
-        <MoneyInput value={Number(master?.xpay ?? 40000)} onChange={set("xpay")} />
-      </FormRow>
-      <FormRow label="판금M/H">
-        <MoneyInput value={Number(master?.bpay ?? 40000)} onChange={set("bpay")} />
-      </FormRow>
-      <FormRow label="도장M/H">
-        <MoneyInput value={Number(master?.ppay ?? 40000)} onChange={set("ppay")} />
-      </FormRow>
+      {/* M/H 단가 — seccode='12'(보험): 청구처 첫 레코드 값 표시(수정불가) / '11'(일반): master 값 표시(수정가능) */}
+      {(() => {
+        const isInsurance = master?.seccode === "12";
+        const claim0 = master?.claims?.[0];
+        const xpay = isInsurance ? (claim0?.xpay ?? 0) : (master?.xpay ?? 40000);
+        const bpay = isInsurance ? (claim0?.bpay ?? 0) : (master?.bpay ?? 40000);
+        const ppay = isInsurance ? (claim0?.ppay ?? 0) : (master?.ppay ?? 40000);
+        const mhCls = isInsurance ? "bg-zinc-100" : "";
+        return (
+          <>
+            <FormRow label="탈착M/H">
+              <MoneyInput value={Number(xpay)} onChange={set("xpay")} readOnly={isInsurance} className={mhCls} />
+            </FormRow>
+            <FormRow label="판금M/H">
+              <MoneyInput value={Number(bpay)} onChange={set("bpay")} readOnly={isInsurance} className={mhCls} />
+            </FormRow>
+            <FormRow label="도장M/H">
+              <MoneyInput value={Number(ppay)} onChange={set("ppay")} readOnly={isInsurance} className={mhCls} />
+            </FormRow>
+          </>
+        );
+      })()}
+      {master?.paykind === "1" && (
+        <FormRow label="부분판금율">
+          <input
+            className={inputCls}
+            value={master?.pntrate_sec ?? ""}
+            onChange={(e) => set("pntrate_sec")(e)}
+            readOnly={master?.seccode === "12"}
+            style={master?.seccode === "12" ? { backgroundColor: "#f4f4f5" } : undefined}
+          />
+        </FormRow>
+      )}
 
       {/* 탈부착작업: paykind, PYK01, 항상 disabled */}
       <FormRow label="탈부착작업">

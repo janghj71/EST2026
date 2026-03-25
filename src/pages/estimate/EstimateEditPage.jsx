@@ -32,7 +32,7 @@ export default function EstimateEditPage() {
   const [master, setMaster] = useState({});
   const [rows, setRows] = useState([]);
 
-  const { saveDetail, saveAllDetails } = useEstimateDetailSave(setRows);
+  const { saveDetail, saveAllDetails, saveSingleDetail } = useEstimateDetailSave(setRows);
 
   // est_serial 변경 시 접수 데이터 조회
   // refetch는 raw JSON 반환 → dataset[0] 직접 추출
@@ -65,10 +65,35 @@ export default function EstimateEditPage() {
     }).catch(() => {});
   }, [est_serial]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // EstimateSidePanel 탭 상태 (claim 여부 판단용)
+  // EstimateSidePanel 탭/열림 상태
   const [sideActive, setSideActive] = useState("labor");
+  const [sidePanelOpen, setSidePanelOpen] = useState(false);
+  const [settleRefreshKey, setSettleRefreshKey] = useState(0);
   // 청구처 변경 여부 (변경 시에만 저장)
   const claimDirtyRef = useRef(false);
+
+  // 최신 master를 stale closure 없이 접근하기 위한 ref
+  const masterRef = useRef(master);
+  masterRef.current = master;
+
+  // 청구처 M/H 단가 변경(blur) 시 견적내역 paysum 일괄 재계산
+  const recalcPaysum = useCallback(() => {
+    const claim0 = masterRef.current?.claims?.[0];
+    if (!claim0) return;
+    setRows((prev) =>
+      prev.map((r) => {
+        if (!r.workcode || !r.qty) return r;
+        const qty = parseFloat(r.qty);
+        if (isNaN(qty)) return r;
+        let rate = null;
+        if ("SB".includes(r.workcode))          rate = parseFloat(claim0.bpay);
+        else if (r.workcode === "P")            rate = parseFloat(claim0.ppay);
+        else if ("RXOA".includes(r.workcode))   rate = parseFloat(claim0.xpay);
+        if (rate == null || isNaN(rate)) return r;
+        return { ...r, paysum: String(Math.round(rate * qty)) };
+      })
+    );
+  }, [setRows]);
 
   const [sortMode, setSortMode] = useState("block");
   const [laborOpen, setLaborOpen] = useState(false);
@@ -397,17 +422,47 @@ export default function EstimateEditPage() {
     if (sideActive === "claim") await handleClaimSave();
   }, [sideActive, handleClaimSave]);
 
+  // 셀 값 확정 시(blur/Enter/Nav/작업선택) — settle 탭이 열린 경우 단일 행 저장 + 재조회
+  const handleValueCommit = useCallback((row) => {
+    if (sideActive !== "settle") return;
+    saveSingleDetail(row)
+      .then(() => setSettleRefreshKey((k) => k + 1))
+      .catch(() => {});
+  }, [sideActive, saveSingleDetail]);
+
+  // 견적정산 탭 진입 시: 먼저 저장 후 SettlePanel 재조회 트리거
+  const handleSettleEnter = useCallback(async () => {
+    try {
+      await saveAllDetails(rows);
+      setSettleRefreshKey((k) => k + 1);
+    } catch (err) {
+      alertError(err?.message ?? "저장 실패");
+    }
+  }, [rows, saveAllDetails, alertError]);
+
   // [목록] 버튼: 전체 저장 후 이동
   const handleClose = useCallback(async () => {
     try {
       await withLoading(async () => {
+        // 1. 접수(마스터) 저장 — 항상
+        await save(est_serial, master);
+        // 2. 청구처 저장 — 사이드패널 open + claim 탭 활성 시에만
+        if (sidePanelOpen && sideActive === "claim") {
+          const claims = Array.isArray(master?.claims) ? master.claims : [];
+          for (const claim of claims) {
+            await saveClaim(est_serial, claim);
+          }
+          claimDirtyRef.current = false;
+        }
+        // 3. 견적내역 저장 — 항상
         await saveAllDetails(rows);
       });
       navigate(-1);
     } catch (err) {
       alertError(err?.message ?? "저장 실패");
     }
-  }, [rows, saveAllDetails, withLoading, navigate, alertError]);
+  }, [est_serial, master, rows, sidePanelOpen, sideActive,
+      save, saveClaim, saveAllDetails, withLoading, navigate, alertError]);
 
   const handleSaveAndList = useCallback(async () => {
     // 저장 시 오더 재부여(델파이 방식)
@@ -477,6 +532,7 @@ export default function EstimateEditPage() {
                 onMovePaintToBottom={movePaintToBottom}
                 master={master}
                 onInsertDetail={saveDetail}
+                onValueCommit={handleValueCommit}
               />
               
             </div>
@@ -492,6 +548,10 @@ export default function EstimateEditPage() {
             onClaimLeave={handleClaimSave}
             onClaimDirty={() => { claimDirtyRef.current = true; }}
             onClaimClean={() => { claimDirtyRef.current = false; }}
+            onRateChange={recalcPaysum}
+            onOpenChange={setSidePanelOpen}
+            onSettleEnter={handleSettleEnter}
+            settleRefreshKey={settleRefreshKey}
           />
         </div>
       </div>

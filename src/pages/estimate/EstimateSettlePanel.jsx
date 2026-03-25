@@ -43,7 +43,7 @@ function SettleStat({ label, valueText, emphasize = false, red = false, labelRed
   );
 }
 
-export default function EstimateSettlePanel({ master, inputCls }) {
+export default function EstimateSettlePanel({ master, inputCls, refreshKey }) {
   const claims = Array.isArray(master?.claims) ? master.claims : [];
   const [selectedIdx, setSelectedIdx] = useState(() => (claims.length ? 0 : -1));
 
@@ -70,7 +70,7 @@ export default function EstimateSettlePanel({ master, inputCls }) {
       setSettleMap(map);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [master?.est_serial]);
+  }, [master?.est_serial, refreshKey]);
 
   // 현재 선택된 정산 row (계산 결과)
   const settle = settleMap[current?.estbo_seqno] ?? {};

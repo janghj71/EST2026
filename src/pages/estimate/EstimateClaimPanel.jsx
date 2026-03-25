@@ -19,7 +19,7 @@ import { toInt } from "../../utils/numberFormat";
  *   bocomname, boman_nm, regno, misrate, dambo, accday, driver_nm,
  *   insura_exemp, insura_person, insura_carno, carsale_amt, xpay, bpay, ppay
  */
-export default function EstimateClaimPanel({ master, setMaster, inputCls, selectCls, onClaimDirty, onClaimClean }) {
+export default function EstimateClaimPanel({ master, setMaster, inputCls, selectCls, onClaimDirty, onClaimClean, onRateChange }) {
   const claims = Array.isArray(master?.claims) ? master.claims : [];
 
   const [selectedIdx, setSelectedIdx] = useState(() => (claims.length ? 0 : -1));
@@ -177,6 +177,7 @@ return (
           <div className="grid grid-cols-1 gap-x-4 gap-y-2">
             <FormRow label="보험사명">
               <select
+                id="claim-panel-first"
                 className={selectCls}
                 value={current?.bocomcode ?? ""}
                 onChange={(e) => {
@@ -314,6 +315,16 @@ return (
                 onChange={(v) => setMaster((m) => ({ ...m, carsale_amt: v }))}
               />
             </FormRow>
+
+            {master?.paykind === "1" && (
+              <FormRow label="부분판금율">
+                <input
+                  className={inputCls}
+                  value={current?.pntratesec ?? ""}
+                  onChange={(e) => setClaim(safeSelectedIdx, "pntratesec", e.target.value)}
+                />
+              </FormRow>
+            )}
           </div>
         </div>
 
@@ -324,6 +335,7 @@ return (
                 <MoneyInput
                   value={current?.xpay ?? ""}
                   onChange={(v) => setClaim(safeSelectedIdx, "xpay", v)}
+                  {...(safeSelectedIdx === 0 ? { onBlur: onRateChange } : {})}
                 />
               </div>
             </FormRow>
@@ -333,6 +345,7 @@ return (
                 <MoneyInput
                   value={current?.bpay ?? ""}
                   onChange={(v) => setClaim(safeSelectedIdx, "bpay", v)}
+                  {...(safeSelectedIdx === 0 ? { onBlur: onRateChange } : {})}
                 />
               </div>
             </FormRow>
@@ -344,6 +357,13 @@ return (
                 <MoneyInput
                   value={current?.ppay ?? ""}
                   onChange={(v) => setClaim(safeSelectedIdx, "ppay", v)}
+                  {...(safeSelectedIdx === 0 ? { onBlur: onRateChange } : {})}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      document.getElementById("claim-panel-first")?.focus();
+                    }
+                  }}
                 />
               </div>
             </FormRow>
