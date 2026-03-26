@@ -161,9 +161,10 @@ export default function EstimateItemsTable({
   const qtyBeforeEditRef = useRef(null);
   // 소숫점 입력 허용: 편집 중인 셀 orgSeqno 추적 (편집 중에는 fmtQty 미적용)
   const [qtyEditingOrgSeq, setQtyEditingOrgSeq] = useState(null);
-  // 부품액(partsum) 편집 중 draft — blur/Enter/Nav 시에만 rows 반영
-  const [partsumEditingOrgSeq, setPartsumEditingOrgSeq] = useState(null);
-  const [partsumDraft, setPartsumDraft] = useState(null);
+  // 부품액(partsum) — focus 시 re-render 없이 ref로 관리, blur 시에만 summary 갱신
+  const partsumEditingOrgSeqRef = useRef(null); // 현재 편집 중인 행 orgSeqno
+  const partsumBeforeEditRef    = useRef(null); // focus 시점 partsum 원본값
+  const [partsumCommitKey, setPartsumCommitKey] = useState(0); // blur 시 summary 강제 갱신 트리거
 
   // ── 시간(qty) 입력 후 paysum 자동 계산 ──────────────────────────
   // workcode 그룹별 M/H 단가: 첫 번째 청구처 기준
@@ -581,20 +582,22 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
       {
         key: "paysum",
         title: "공임액",
-        width: "110px",
+        width: "145px",
         align: "right",
+        noTruncate: true,
         className: "px-2 py-0",
         render: (_val, row) => {
           const editable = canEditLaborAmt(row);
           const id = `cell-${row.estb_orgseqno}-paysum`;
-          if (!editable) return <div className="h-8 flex items-center justify-end">{formatNumber(row.paysum || 0)}</div>;
+          if (!editable) return <div className="h-8 flex items-center justify-end pr-1">{formatNumber(row.paysum || 0)}</div>;
           return (
             <div className={CELL_WRAP}>
               <MoneyInput
                 id={id}
                 value={row.paysum}
                 onChange={(v) => setCell(row.estb_orgseqno, "paysum", v)}
-                className={CELL_INPUT_BASE + " text-right tabular-nums"}
+                autoComplete="off"
+                className={CELL_INPUT_BASE + " text-right tabular-nums border border-transparent"}
                 onBlur={() => onValueCommit?.({ ...row })}
                 onKeyDown={(e) => {
                   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -612,7 +615,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                 }}
                 suffix={null}
                 mode="cell"
-                rightPad="pr-1 -mr-1"
+                rightPad="pr-1"
               />
             </div>
           );
@@ -623,38 +626,37 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
         title: "부품액",
         width: "110px",
         align: "right",
+        noTruncate: true,
         className: "px-2 py-0",
         render: (_val, row) => {
           const editable = canEditPartAmt(row);
           const id = `cell-${row.estb_orgseqno}-partsum`;
-          if (!editable) return <div className="h-8 flex items-center justify-end">{formatNumber(row.partsum || 0)}</div>;
+          if (!editable) return <div className="h-8 flex items-center justify-end pr-1">{formatNumber(row.partsum || 0)}</div>;
           return (
             <div className={CELL_WRAP}>
               <MoneyInput
                 id={id}
-                value={partsumEditingOrgSeq === row.estb_orgseqno ? partsumDraft : row.partsum}
-                onChange={(v) => {
-                  if (partsumEditingOrgSeq === row.estb_orgseqno) setPartsumDraft(v);
-                }}
-                className={CELL_INPUT_BASE + " text-right tabular-nums"}
-                onFocus={() => {
-                  setPartsumEditingOrgSeq(row.estb_orgseqno);
-                  setPartsumDraft(row.partsum);
+                value={row.partsum}
+                onChange={(v) => setCell(row.estb_orgseqno, "partsum", v)}
+                autoComplete="off"
+                className="text-right tabular-nums border border-transparent !select-text"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+                onFocus={(e) => {
+                  // ref만 업데이트 — state 변경 없으므로 re-render 없음 → 시각적 깨짐 없음
+                  partsumEditingOrgSeqRef.current = row.estb_orgseqno;
+                  partsumBeforeEditRef.current    = row.partsum;
                 }}
                 onBlur={() => {
-                  const final = partsumDraft ?? row.partsum;
-                  setCell(row.estb_orgseqno, "partsum", final);
-                  setPartsumEditingOrgSeq(null);
-                  setPartsumDraft(null);
-                  onValueCommit?.({ ...row, partsum: final });
+                  partsumEditingOrgSeqRef.current = null;
+                  setPartsumCommitKey((k) => k + 1); // summary 갱신 트리거
+                  onValueCommit?.({ ...row });
                 }}
                 onKeyDown={(e) => {
                   const commitPartsum = () => {
-                    const final = partsumDraft ?? row.partsum;
-                    setCell(row.estb_orgseqno, "partsum", final);
-                    setPartsumEditingOrgSeq(null);
-                    setPartsumDraft(null);
-                    onValueCommit?.({ ...row, partsum: final });
+                    partsumEditingOrgSeqRef.current = null;
+                    setPartsumCommitKey((k) => k + 1);
+                    onValueCommit?.({ ...row });
                   };
                   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                     e.preventDefault();
@@ -671,7 +673,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                 }}
                 suffix={null}
                 mode="cell"
-                rightPad="pr-1 -mr-1"
+                rightPad="pr-1"
               />
             </div>
           );
@@ -754,8 +756,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
         ),
       },
     ];
-  }, [openPopover, setCell, moveFocusUpDown, focusPrevAcrossRows, focusNextAcrossRows, calcPaysum,
-      partsumEditingOrgSeq, partsumDraft]);
+  }, [openPopover, setCell, moveFocusUpDown, focusPrevAcrossRows, focusNextAcrossRows, calcPaysum]);
 
   // rowRenderer(드래그): FixedHeadTable 패치의 rowRenderer를 사용
   const rowRenderer = useCallback(({ row, idx, key, trProps, cells }) => {
@@ -779,14 +780,19 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
     );
   }, [sortMode]);
 
-  // summary는 확정된 paysum/partsum 기준 (타이핑 중 갱신 없음)
+  // summary — paysum은 rows 그대로, partsum은 편집 중이면 pre-edit 값 사용 (타이핑 중 불변)
   const { sumLabor, sumPart, sumSupply, sumVat, sumTotal } = useMemo(() => {
-    const labor  = rows.reduce((a, r) => a + (Number(r.paysum)  || 0), 0);
-    const part   = rows.reduce((a, r) => a + (Number(r.partsum) || 0), 0);
+    const labor = rows.reduce((a, r) => a + (Number(r.paysum) || 0), 0);
+    const part  = rows.reduce((a, r) => {
+      if (r.estb_orgseqno === partsumEditingOrgSeqRef.current) {
+        return a + (Number(partsumBeforeEditRef.current) || 0); // 편집 중: focus 시점 원본값
+      }
+      return a + (Number(r.partsum) || 0);
+    }, 0);
     const supply = labor + part;
     const vat    = Math.floor(supply * 0.1);
     return { sumLabor: labor, sumPart: part, sumSupply: supply, sumVat: vat, sumTotal: supply + vat };
-  }, [rows]);
+  }, [rows, partsumCommitKey]);
 
   const masterSendState = ""; // TODO (지금은 화면만)
 
@@ -920,6 +926,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
               rows={rows}
               rowKey={(r) => r.estb_orgseqno}
               rowSize="sm"
+              enableHorizontalScroll
               selectedKey={selectedOrgSeq}
               onRowClick={(row) => setSelectedOrgSeq(row.estb_orgseqno)}
               rowRenderer={rowRenderer}

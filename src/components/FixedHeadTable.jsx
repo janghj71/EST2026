@@ -39,6 +39,7 @@ export default function FixedHeadTable({
   wheelSelect = true,         // 휠로 선택이동 사용 여부
   wheelSelectStep = 1,   
   rowRenderer,
+  enableHorizontalScroll = false,
 }) {
   const headWrapRef = useRef(null);
   const bodyWrapRef = useRef(null);
@@ -58,6 +59,19 @@ export default function FixedHeadTable({
       </colgroup>
     );
   }, [columns]);
+
+  const minTableWidth = useMemo(() => {
+    if (!enableHorizontalScroll) return undefined;
+    let total = 0;
+    for (const c of columns) {
+      const w = String(c?.width ?? "").trim();
+      if (!w.endsWith("px")) return undefined;
+      const n = parseFloat(w);
+      if (!Number.isFinite(n)) return undefined;
+      total += n;
+    }
+    return total > 0 ? `${total}px` : undefined;
+  }, [columns, enableHorizontalScroll]);
 
   const tdBase =
     rowSize === "sm"
@@ -263,7 +277,7 @@ export default function FixedHeadTable({
         }
         style={{ paddingRight: gutterW }}
       >
-        <table className="w-full table-fixed text-sm">
+        <table className="w-full table-fixed text-sm" style={{ minWidth: minTableWidth }}>
         {/* <table className={"w-full table-fixed " + tableTextClass}> */}
           {colgroup}
           <thead className="text-zinc-600">
@@ -302,14 +316,18 @@ export default function FixedHeadTable({
         }}
         onScroll={onBodyScroll}
         onWheel={handleWheelSelect}
-        className={"overflow-y-auto overflow-x-hidden min-h-0 flex-1 relative " + bodyClassName}
+        className={
+          "overflow-y-auto min-h-0 flex-1 relative " +
+          (enableHorizontalScroll ? "overflow-x-auto " : "overflow-x-hidden ") +
+          bodyClassName
+        }
         style={{
           height: height ?? undefined,
           scrollbarGutter: "stable",
         }}
       >
         {/* <table className="w-full table-fixed text-sm"> */}
-        <table className={"w-full table-fixed " + tableTextClass}>
+        <table className={"w-full table-fixed " + tableTextClass} style={{ minWidth: minTableWidth }}>
           {colgroup}
           <tbody className="text-zinc-800">
             {rows.length === 0 ? (
@@ -369,12 +387,13 @@ export default function FixedHeadTable({
                 const cells = columns.map((c) => {
                   const val = row[c.key];
                   const content = c.render ? c.render(val, row, idx) : val;
+                  const tdOverflowClass = c.noTruncate ? "whitespace-nowrap" : "whitespace-nowrap truncate";
                   return (
                     <td
                       key={c.key}
                       className={[
                         // "px-3 py-2 whitespace-nowrap truncate",
-                        `${tdBase} whitespace-nowrap truncate`,
+                        `${tdBase} ${tdOverflowClass}`,
                         tdAlign(c.align),
                         c.className || "",
                       ].join(" ")}
