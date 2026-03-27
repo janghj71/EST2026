@@ -211,6 +211,17 @@ export default function EstimateItemsTable({
   // 마지막 row 마지막 컬럼 Enter → 공임추가 (순환 의존 방지용 ref)
   const insertAfterSelectedRef = useRef(null);
 
+  // Insert 키 → 공임추가
+  useEffect(() => {
+    const handle = (e) => {
+      if (e.key !== "Insert") return;
+      e.preventDefault();
+      insertAfterSelectedRef.current?.("4");
+    };
+    document.addEventListener("keydown", handle);
+    return () => document.removeEventListener("keydown", handle);
+  }, []);
+
   // qty 변동 감지용 — focus 시점의 값을 기록
   const qtyBeforeEditRef = useRef(null);
   // 소숫점 입력 허용: 편집 중인 셀 orgSeqno 추적 (편집 중에는 fmtQty 미적용)
@@ -477,6 +488,17 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
     return isNaN(n) ? String(v) : String(n);
   };
 
+  // 시간(qty) 입력값 정규화 — ".3"→"0.3", "1."→"1", "2.50"→"2.5"
+  const normalizeQty = (v) => {
+    if (v == null || v === "") return v;
+    let s = String(v);
+    if (s.startsWith(".")) s = "0" + s;       // .3  → 0.3
+    if (s.endsWith("."))   s = s.slice(0, -1); // 1.  → 1
+    const n = parseFloat(s);
+    if (!isNaN(n)) s = String(n);             // 2.50 → 2.5
+    return s;
+  };
+
   // FixedHeadTable render 시그니처에 맞춰: render(val, row, idx)
   const columns = useMemo(() => {
     return [
@@ -599,7 +621,10 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                 onBlur={() => {
                   setQtyEditingOrgSeq(null);
                   // blur 시에도 paysum 확정 (Enter/Nav 없이 포커스 이동한 경우)
-                  const curQty = row.qty ?? "";
+                  const rawQty  = row.qty ?? "";
+                  const curQty  = normalizeQty(rawQty);
+                  // 정규화 값이 다르면 state 반영 (.3→0.3, 1.→1)
+                  if (curQty !== rawQty) setCell(row.estb_orgseqno, "qty", curQty);
                   if (curQty !== qtyBeforeEditRef.current) {
                     const ps = calcPaysum(row.workcode, curQty);
                     if (ps !== null) setCell(row.estb_orgseqno, "paysum", ps);
@@ -617,7 +642,9 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                   }
                   // 변동 시 paysum 갱신 + onValueCommit (Enter / ArrowDown / ArrowUp 공통)
                   const flushPaysum = () => {
-                    const curQty = row.qty ?? "";
+                    const rawQty = row.qty ?? "";
+                    const curQty = normalizeQty(rawQty);
+                    if (curQty !== rawQty) setCell(row.estb_orgseqno, "qty", curQty);
                     if (curQty !== qtyBeforeEditRef.current) {
                       const ps = calcPaysum(row.workcode, curQty);
                       if (ps !== null) setCell(row.estb_orgseqno, "paysum", ps);
