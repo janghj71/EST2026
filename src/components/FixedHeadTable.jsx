@@ -27,6 +27,7 @@ export default function FixedHeadTable({
   onRowDoubleClick,
   getRowProps,               //  row별 이벤트/속성 주입
   selectedKey,
+  selectedKeys,              // Set<any> — 멀티선택 키 집합
   getRowClassName,
   expandedKey,
   expandedRowRender,
@@ -341,6 +342,7 @@ export default function FixedHeadTable({
                 const key = rowKey(row, idx);
                 const rowProps = getRowProps ? (getRowProps(row, idx) || {}) : {};
                 const isSel = selectedKey != null && key === selectedKey;
+                const isMultiSel = !isSel && selectedKeys != null && selectedKeys.has(key);
                 const isExpanded = expandedKey != null && key === expandedKey;
 
                 const rawCustom = getRowClassName ? getRowClassName(row, idx) : "";
@@ -365,7 +367,7 @@ export default function FixedHeadTable({
                 const trProps = {
                   ...rowProps,
                   ref: rowRef,
-                  onClick: () => onRowClick?.(row, idx),
+                  onClick: (e) => onRowClick?.(row, idx, e),
                   onDoubleClick: (e) => {
                     // 더블클릭 시 브라우저 기본 동작(텍스트 블록 선택) 방지
                     e.preventDefault();
@@ -452,6 +454,7 @@ export default function FixedHeadTable({
           >
             {rowBoxes.map(({ key, top, height }) => {
               const isSel = selectedKey != null && key === selectedKey;
+              const isMultiSel = !isSel && selectedKeys != null && selectedKeys.has(key);
               const isHover = hoverKey != null && key === hoverKey;
 
               return (

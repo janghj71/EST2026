@@ -26,6 +26,7 @@ import { CSS } from "@dnd-kit/utilities";
 
 import {
   CheckSquare,
+  Check,
   Trash2,
   Plus,
   ListPlus,
@@ -153,6 +154,8 @@ export default function EstimateItemsTable({
   master,
   onInsertDetail,
   onValueCommit,
+  selectedOrgSeqs = new Set(),
+  setSelectedOrgSeqs,
 }) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } })
@@ -191,6 +194,19 @@ export default function EstimateItemsTable({
     document.addEventListener("mousedown", handle);
     return () => document.removeEventListener("mousedown", handle);
   }, [deleteMenuOpen]);
+
+  // ── 선택 드롭다운 ───────────────────────────────────────────────
+  const [selectMenuOpen, setSelectMenuOpen] = useState(false);
+  const selectMenuRef = useRef(null);
+
+  useEffect(() => {
+    if (!selectMenuOpen) return;
+    const handle = (e) => {
+      if (!selectMenuRef.current?.contains(e.target)) setSelectMenuOpen(false);
+    };
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [selectMenuOpen]);
 
   // 마지막 row 마지막 컬럼 Enter → 공임추가 (순환 의존 방지용 ref)
   const insertAfterSelectedRef = useRef(null);
@@ -838,10 +854,11 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
         id={row.estb_orgseqno}
         trProps={trProps}
         dragEnabled={dragEnabled}
+        isMultiSel={selectedOrgSeqs.has(row.estb_orgseqno)}
         cells={cells}
       />
     );
-  }, [sortMode]);
+  }, [sortMode, selectedOrgSeqs]);
 
   // summary — paysum/partsum 편집 중이면 focus 시점 원본값 사용 (타이핑 중 불변)
   const { sumLabor, sumPart, sumSupply, sumVat, sumTotal } = useMemo(() => {
@@ -941,12 +958,53 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
 
   // ref 항상 최신 함수로 동기화
   insertAfterSelectedRef.current = insertAfterSelected;
-  
+
+  // ── 멀티선택 핸들러 ─────────────────────────────────────────────
+  const handleSelectParts = useCallback(() => {
+    const seqs = new Set(
+      rows
+        .filter((r) => String(r.paykind) === "3" || String(r.paykind) === "5")
+        .map((r) => r.estb_orgseqno)
+    );
+    setSelectedOrgSeqs?.(seqs);
+    setSelectMenuOpen(false);
+  }, [rows, setSelectedOrgSeqs]);
+
+  const handleDeselect = useCallback(() => {
+    setSelectedOrgSeqs?.(new Set());
+    setSelectMenuOpen(false);
+  }, [setSelectedOrgSeqs]);
+
 
   return (
     <div className="min-h-0 flex-1 flex flex-col rounded-md border border-zinc-200 bg-white overflow-hidden">
       <div className="px-2 py-2 flex flex-wrap items-center gap-2 border-b border-zinc-200">
-        <IconBtn icon={CheckSquare} label="선택" onClick={() => {}} />
+        {/* 선택 드롭다운 */}
+        <div className="relative" ref={selectMenuRef}>
+          <IconBtn
+            icon={CheckSquare}
+            label="선택"
+            onClick={() => setSelectMenuOpen((v) => !v)}
+          />
+          {selectMenuOpen && (
+            <div className="absolute left-0 top-full mt-1 z-50 min-w-[120px] rounded-md border border-zinc-200 bg-white shadow-lg py-1 text-sm">
+              <button
+                type="button"
+                className="w-full px-3 py-2 text-left hover:bg-zinc-100 active:bg-zinc-200"
+                onClick={handleSelectParts}
+              >
+                부품일괄선택
+              </button>
+              <button
+                type="button"
+                className="w-full px-3 py-2 text-left hover:bg-zinc-100 active:bg-zinc-200"
+                onClick={handleDeselect}
+              >
+                선택해제
+              </button>
+            </div>
+          )}
+        </div>
         {/* 삭제 드롭다운 */}
         <div className="relative" ref={deleteMenuRef}>
           <IconBtn
@@ -958,16 +1016,23 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
             <div className="absolute left-0 top-full mt-1 z-50 min-w-[110px] rounded-md border border-zinc-200 bg-white shadow-lg py-1 text-sm">
               <button
                 type="button"
-                className="w-full px-3 py-2 text-left hover:bg-zinc-50"
+                className="w-full px-3 py-2 text-left hover:bg-zinc-100 active:bg-zinc-200"
                 onClick={() => { setDeleteMenuOpen(false); onDeleteAll?.(); }}
               >
                 전체삭제
               </button>
               <button
                 type="button"
-                disabled={selectedOrgSeq == null}
-                className="w-full px-3 py-2 text-left hover:bg-zinc-50 disabled:text-zinc-300 disabled:cursor-not-allowed"
-                onClick={() => { setDeleteMenuOpen(false); onDeleteSelected?.(selectedOrgSeq); }}
+                disabled={selectedOrgSeqs.size === 0 && selectedOrgSeq == null}
+                className="w-full px-3 py-2 text-left hover:bg-zinc-100 active:bg-zinc-200 disabled:text-zinc-300 disabled:cursor-not-allowed"
+                onClick={() => {
+                  setDeleteMenuOpen(false);
+                  // 멀티선택 우선, 없으면 단일선택
+                  const targets = selectedOrgSeqs.size > 0
+                    ? [...selectedOrgSeqs]
+                    : selectedOrgSeq != null ? [selectedOrgSeq] : [];
+                  if (targets.length > 0) onDeleteSelected?.(targets);
+                }}
               >
                 선택삭제
               </button>
@@ -1022,7 +1087,20 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
               rowSize="sm"
               enableHorizontalScroll
               selectedKey={selectedOrgSeq}
-              onRowClick={(row) => setSelectedOrgSeq(row.estb_orgseqno)}
+              selectedKeys={selectedOrgSeqs}
+              onRowClick={(row, _idx, e) => {
+                if (e?.ctrlKey || e?.metaKey) {
+                  // Ctrl+클릭(Mac: Cmd+클릭): 멀티선택 토글
+                  setSelectedOrgSeqs?.((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(row.estb_orgseqno)) next.delete(row.estb_orgseqno);
+                    else next.add(row.estb_orgseqno);
+                    return next;
+                  });
+                } else {
+                  setSelectedOrgSeq(row.estb_orgseqno);
+                }
+              }}
               rowRenderer={rowRenderer}
             />
           </SortableContext>
@@ -1183,7 +1261,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
   );
 }
 
-function SortableTr({ id, trProps, dragEnabled, cells }) {
+function SortableTr({ id, trProps, dragEnabled, isMultiSel, cells }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id, disabled: !dragEnabled });
 
@@ -1194,11 +1272,16 @@ function SortableTr({ id, trProps, dragEnabled, cells }) {
   };
 
   // 첫 번째 td(드래그 컬럼) 내용만 핸들로 교체
+  // 우선순위: 멀티선택 체크 > 드래그 핸들 > 빈 칸
   const patchedCells = cells.map((td, i) => {
     if (i !== 0) return td;
     return React.cloneElement(td, {}, (
       <div className="h-8 flex items-center justify-center">
-        {dragEnabled ? (
+        {isMultiSel ? (
+          <div className="w-6 flex items-center justify-center text-emerald-600">
+            <Check size={14} strokeWidth={2.5} />
+          </div>
+        ) : dragEnabled ? (
           <div
             className="w-6 cursor-grab active:cursor-grabbing text-zinc-400 hover:text-zinc-700 select-none"
             {...listeners}

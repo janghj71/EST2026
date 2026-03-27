@@ -101,8 +101,9 @@ export default function EstimateEditPage() {
 
   const { deleteBySeqs, deleteAll } = useEstimateDetailDelete();
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [pendingDelete, setPendingDelete] = useState(null); // null | { type:"all" } | { type:"selected", orgSeq }
+  const [pendingDelete, setPendingDelete] = useState(null); // null | { type:"all" } | { type:"selected", orgSeqs:string[] }
   const [selectedOrgSeq, setSelectedOrgSeq] = useState(null);
+  const [selectedOrgSeqs, setSelectedOrgSeqs] = useState(new Set());
 
   const laborWinRef = useRef(null);
   const paintWinRef = useRef(null);
@@ -398,9 +399,10 @@ export default function EstimateEditPage() {
     setSelectedOrgSeq(null);
   }, [rows, selectedRow]);
 
-  const handleDeleteSelected = useCallback((orgSeq) => {
-    if (!orgSeq) return;
-    setPendingDelete({ type: "selected", orgSeq });
+  const handleDeleteSelected = useCallback((orgSeqs) => {
+    // orgSeqs: string[] (멀티선택 또는 단일선택 배열)
+    if (!orgSeqs?.length) return;
+    setPendingDelete({ type: "selected", orgSeqs });
     setDeleteOpen(true);
   }, []);
 
@@ -548,6 +550,8 @@ export default function EstimateEditPage() {
                 master={master}
                 onInsertDetail={saveDetail}
                 onValueCommit={handleValueCommit}
+                selectedOrgSeqs={selectedOrgSeqs}
+                setSelectedOrgSeqs={setSelectedOrgSeqs}
               />
               
             </div>
@@ -576,8 +580,14 @@ export default function EstimateEditPage() {
         open={deleteOpen}
         type="delete"
         title="삭제"
-        message={pendingDelete?.type === "all" ? "전체 항목을 삭제할까요?" : "선택한 항목을 삭제할까요?"}
+        message={
+          pendingDelete?.type === "all"
+            ? "전체 항목을 삭제할까요?"
+            : `선택한 ${pendingDelete?.orgSeqs?.length ?? 1}개 항목을 삭제할까요?`
+        }
         confirmText="삭제"
+        showCancel
+        onCancel={() => setDeleteOpen(false)}
         onClose={() => setDeleteOpen(false)}
         onConfirm={async () => {
           setDeleteOpen(false);
@@ -586,15 +596,18 @@ export default function EstimateEditPage() {
               await deleteAll(est_serial);
               setRows([]);
               setSelectedOrgSeq(null);
+              setSelectedOrgSeqs(new Set());
             } else if (pendingDelete?.type === "selected") {
-              const { orgSeq } = pendingDelete;
-              await deleteBySeqs(est_serial, [orgSeq]);
+              const { orgSeqs } = pendingDelete;
+              const seqSet = new Set(orgSeqs);
+              await deleteBySeqs(est_serial, orgSeqs);
               setRows((prev) =>
                 prev
-                  .filter((r) => r.estb_orgseqno !== orgSeq)
+                  .filter((r) => !seqSet.has(r.estb_orgseqno))
                   .map((r, i) => ({ ...r, estb_seqno: i + 1 }))
               );
               setSelectedOrgSeq(null);
+              setSelectedOrgSeqs(new Set());
             }
           } catch {
             // apiOk 내부에서 alert 처리
