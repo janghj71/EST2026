@@ -388,9 +388,9 @@ function LaborPanel({
       {(() => {
         const isInsurance = master?.seccode === "12";
         const claim0 = master?.claims?.[0];
-        const xpay = isInsurance ? (claim0?.xpay ?? 0) : (master?.xpay ?? 40000);
-        const bpay = isInsurance ? (claim0?.bpay ?? 0) : (master?.bpay ?? 40000);
-        const ppay = isInsurance ? (claim0?.ppay ?? 0) : (master?.ppay ?? 40000);
+        const xpay = isInsurance ? (claim0?.xpay ?? 0) : (master?.xpay ?? 0);
+        const bpay = isInsurance ? (claim0?.bpay ?? 0) : (master?.bpay ?? 0);
+        const ppay = isInsurance ? (claim0?.ppay ?? 0) : (master?.ppay ?? 0);
         const mhCls = isInsurance ? "bg-zinc-100" : "";
         return (
           <>
@@ -406,17 +406,23 @@ function LaborPanel({
           </>
         );
       })()}
-      {master?.paykind === "1" && (
-        <FormRow label="부분판금율">
-          <input
-            className={inputCls}
-            value={master?.pntrate_sec ?? ""}
-            onChange={(e) => set("pntrate_sec")(e)}
-            readOnly={master?.seccode === "12"}
-            style={master?.seccode === "12" ? { backgroundColor: "#f4f4f5" } : undefined}
-          />
-        </FormRow>
-      )}
+      {master?.paykind === "1" && (() => {
+        const isInsurance = master?.seccode === "12";
+        const claim0 = master?.claims?.[0];
+        const pntrate_sec = isInsurance
+          ? (claim0?.pntrate_sec ?? "")
+          : (master?.pntrate_sec ?? "");
+        return (
+          <FormRow label="부분판금율">
+            <input
+              className={inputCls + (isInsurance ? " bg-zinc-100" : "")}
+              value={pntrate_sec}
+              onChange={(e) => set("pntrate_sec")(e.target.value)}
+              readOnly={isInsurance}
+            />
+          </FormRow>
+        );
+      })()}
 
       {/* 탈부착작업: paykind, PYK01, 항상 disabled */}
       <FormRow label="탈부착작업">

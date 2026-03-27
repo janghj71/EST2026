@@ -1,5 +1,5 @@
 // src/pages/estimate/EstimateItemsTable.jsx
-import React, { useMemo, useCallback, useState, useRef } from "react";
+import React, { useMemo, useCallback, useState, useRef, useEffect } from "react";
 
 import FixedHeadTable from "../../components/FixedHeadTable";
 import IconBtn from "../../components/IconBtn";
@@ -7,7 +7,7 @@ import Field from "../../components/Field";
 import MoneyInput from "../../components/MoneyInput";
 import { formatNumber } from "../../utils/numberFormat";
 import { focusById } from "../../utils/focusUtils";
-import { getUserid } from "../../api/config";
+import { getUserid, getComcode } from "../../api/config";
 
 import {
   DndContext,
@@ -85,13 +85,17 @@ const wc = (row) => String(row?.workcode ?? "");
 
 function canEditQty(row) {
   // 1,2,3,4,5,6 모두 시간 가능
-  return ["1", "2", "3", "4", "5", "6"].includes(pk(row));
+  if (!["1", "2", "3", "4", "5", "6"].includes(pk(row))) return false;
+  // workcode T,G,W: 시간 입력 불가 (인풋 미표시)
+  if (pk(row) === "4" && ["T", "G", "W"].includes(wc(row))) return false;
+  return true;
 }
 
 function canEditLaborAmt(row) {
   if (pk(row) !== "4") return false;
   const w = wc(row);
-  return w === "P" || w === "G" || w === "T";
+  // P 제외, W 추가 → T,G,W만 공임액 수정 가능
+  return w === "T" || w === "G" || w === "W";
 }
 
 function canEditPartAmt(row) {
@@ -143,7 +147,8 @@ export default function EstimateItemsTable({
   setSortMode,
   // onAddLabor,
   // onAddPart,
-  onDelete,
+  onDeleteSelected,
+  onDeleteAll,
   onMovePaintToBottom,
   master,
   onInsertDetail,
@@ -157,14 +162,46 @@ export default function EstimateItemsTable({
   // popover: { type: "workcodename"|"ts_payno"|"statename", anchorRect, rowOrgSeq }
   const [paintSubRect, setPaintSubRect] = useState(null); // 도장 서브패널 앵커
 
+  // 신규 row 삽입 후 payname 포커스 대기용 ref
+  // saveDetail이 newserial로 estb_orgseqno를 확정하면 포커스 실행
+  const pendingFocusSeqRef = useRef(null); // 삽입된 행의 estb_seqno
+
+  useEffect(() => {
+    if (!pendingFocusSeqRef.current) return;
+    const seq = pendingFocusSeqRef.current;
+    const found = rows.find(
+      (r) => String(r.estb_seqno) === String(seq) && r.estb_orgseqno
+    );
+    if (found) {
+      pendingFocusSeqRef.current = null;
+      setSelectedOrgSeq?.(found.estb_orgseqno);   // 선택 Row 하이라이트
+      focusById(`cell-${found.estb_orgseqno}-payname`);
+    }
+  }, [rows]);
+
+  // ── 삭제 드롭다운 ───────────────────────────────────────────────
+  const [deleteMenuOpen, setDeleteMenuOpen] = useState(false);
+  const deleteMenuRef = useRef(null);
+
+  useEffect(() => {
+    if (!deleteMenuOpen) return;
+    const handle = (e) => {
+      if (!deleteMenuRef.current?.contains(e.target)) setDeleteMenuOpen(false);
+    };
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [deleteMenuOpen]);
+
+  // 마지막 row 마지막 컬럼 Enter → 공임추가 (순환 의존 방지용 ref)
+  const insertAfterSelectedRef = useRef(null);
+
   // qty 변동 감지용 — focus 시점의 값을 기록
   const qtyBeforeEditRef = useRef(null);
   // 소숫점 입력 허용: 편집 중인 셀 orgSeqno 추적 (편집 중에는 fmtQty 미적용)
   const [qtyEditingOrgSeq, setQtyEditingOrgSeq] = useState(null);
-  // 부품액(partsum) — focus 시 re-render 없이 ref로 관리, blur 시에만 summary 갱신
-  const partsumEditingOrgSeqRef = useRef(null); // 현재 편집 중인 행 orgSeqno
-  const partsumBeforeEditRef    = useRef(null); // focus 시점 partsum 원본값
-  const [partsumCommitKey, setPartsumCommitKey] = useState(0); // blur 시 summary 강제 갱신 트리거
+  // 부품액(partsum) 편집 중 summary 보정값 (렌더 계산에 사용하므로 state로 관리)
+  const [partsumEditingOrgSeq, setPartsumEditingOrgSeq] = useState(null);
+  const [partsumBeforeEdit, setPartsumBeforeEdit] = useState(null);
 
   // ── 시간(qty) 입력 후 paysum 자동 계산 ──────────────────────────
   // workcode 그룹별 M/H 단가: 첫 번째 청구처 기준
@@ -180,7 +217,7 @@ export default function EstimateItemsTable({
     let rate = null;
     if ("SB".includes(workcode))    rate = parseFloat(claim.bpay);
     else if (workcode === "P")      rate = parseFloat(claim.ppay);
-    else if ("RXOACMW".includes(workcode)) rate = parseFloat(claim.xpay);
+    else if ("RXOA".includes(workcode)) rate = parseFloat(claim.xpay);
 
     if (rate == null || isNaN(rate)) return null;
     return String(Math.round(rate * qtyNum));
@@ -388,7 +425,11 @@ export default function EstimateItemsTable({
 
   // 2) 없으면 다음 row의 첫 editable
   const idx = rows.findIndex((r) => r.estb_orgseqno === row.estb_orgseqno);
-  if (idx < 0 || idx + 1 >= rows.length) return false;
+  if (idx < 0 || idx + 1 >= rows.length) {
+    // 마지막 row의 마지막 컬럼 → 신규 공임추가
+    insertAfterSelectedRef.current?.("4");
+    return false;
+  }
 
   const nextRow = rows[idx + 1];
   const k2 = firstEditableKey(nextRow);
@@ -460,6 +501,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
               <input
                 id={`cell-${row.estb_orgseqno}-payname`}
                 value={row.payname || ""}
+                onMouseDown={() => setSelectedOrgSeq?.(row.estb_orgseqno)}
                 onChange={(e) => setCell(row.estb_orgseqno, "payname", e.target.value)}
                 autoComplete="off"
                 className={CELL_INPUT_BASE.replace("px-2", "px-0") + " text-left focus:px-1 [&:-webkit-autofill]:![background-color:transparent] [&:-webkit-autofill]:![box-shadow:0_0_0_1000px_white_inset]"}
@@ -520,6 +562,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
               <input
                 id={`cell-${row.estb_orgseqno}-qty`}
                 value={qtyEditingOrgSeq === row.estb_orgseqno ? (row.qty ?? "") : fmtQty(row.qty)}
+                onMouseDown={() => setSelectedOrgSeq?.(row.estb_orgseqno)}
                 onChange={(e) => {
                   const intOnly = row.paykind === "3" || row.paykind === "5";
                   const v = intOnly ? e.target.value.replace(/[^0-9]/g, "") : e.target.value;
@@ -528,6 +571,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                 autoComplete="off"
                 className={CELL_INPUT_BASE + " text-right tabular-nums pr-1 -mr-1 [&:-webkit-autofill]:![background-color:transparent] [&:-webkit-autofill]:![box-shadow:0_0_0_1000px_white_inset]"}
                 onFocus={(e) => {
+                  setSelectedOrgSeq?.(row.estb_orgseqno);
                   qtyBeforeEditRef.current = row.qty ?? "";
                   setQtyEditingOrgSeq(row.estb_orgseqno);
                   e.target.select();
@@ -595,6 +639,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
               <MoneyInput
                 id={id}
                 value={row.paysum}
+                onMouseDown={() => setSelectedOrgSeq?.(row.estb_orgseqno)}
                 onChange={(v) => setCell(row.estb_orgseqno, "paysum", v)}
                 autoComplete="off"
                 className={CELL_INPUT_BASE + " text-right tabular-nums border border-transparent"}
@@ -637,25 +682,24 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
               <MoneyInput
                 id={id}
                 value={row.partsum}
+                onMouseDown={() => setSelectedOrgSeq?.(row.estb_orgseqno)}
                 onChange={(v) => setCell(row.estb_orgseqno, "partsum", v)}
                 autoComplete="off"
                 className="text-right tabular-nums border border-transparent !select-text"
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={(e) => e.stopPropagation()}
-                onFocus={(e) => {
-                  // ref만 업데이트 — state 변경 없으므로 re-render 없음 → 시각적 깨짐 없음
-                  partsumEditingOrgSeqRef.current = row.estb_orgseqno;
-                  partsumBeforeEditRef.current    = row.partsum;
+                onFocus={() => {
+                  setSelectedOrgSeq?.(row.estb_orgseqno);
+                  setPartsumEditingOrgSeq(row.estb_orgseqno);
+                  setPartsumBeforeEdit(row.partsum);
                 }}
                 onBlur={() => {
-                  partsumEditingOrgSeqRef.current = null;
-                  setPartsumCommitKey((k) => k + 1); // summary 갱신 트리거
+                  setPartsumEditingOrgSeq(null);
+                  setPartsumBeforeEdit(null);
                   onValueCommit?.({ ...row });
                 }}
                 onKeyDown={(e) => {
                   const commitPartsum = () => {
-                    partsumEditingOrgSeqRef.current = null;
-                    setPartsumCommitKey((k) => k + 1);
+                    setPartsumEditingOrgSeq(null);
+                    setPartsumBeforeEdit(null);
                     onValueCommit?.({ ...row });
                   };
                   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -699,6 +743,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
               <input
                 id={id}
                 value={row.part_makercode || ""}
+                onMouseDown={() => setSelectedOrgSeq?.(row.estb_orgseqno)}
                 onChange={(e) => setCell(row.estb_orgseqno, "part_makercode", e.target.value)}
                 autoComplete="off"
                 className={CELL_INPUT_BASE + " text-left font-mono [&:-webkit-autofill]:![background-color:transparent] [&:-webkit-autofill]:![box-shadow:0_0_0_1000px_white_inset]"}
@@ -784,15 +829,15 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
   const { sumLabor, sumPart, sumSupply, sumVat, sumTotal } = useMemo(() => {
     const labor = rows.reduce((a, r) => a + (Number(r.paysum) || 0), 0);
     const part  = rows.reduce((a, r) => {
-      if (r.estb_orgseqno === partsumEditingOrgSeqRef.current) {
-        return a + (Number(partsumBeforeEditRef.current) || 0); // 편집 중: focus 시점 원본값
+      if (r.estb_orgseqno === partsumEditingOrgSeq) {
+        return a + (Number(partsumBeforeEdit) || 0); // 편집 중: focus 시점 원본값
       }
       return a + (Number(r.partsum) || 0);
     }, 0);
     const supply = labor + part;
     const vat    = Math.floor(supply * 0.1);
     return { sumLabor: labor, sumPart: part, sumSupply: supply, sumVat: vat, sumTotal: supply + vat };
-  }, [rows, partsumCommitKey]);
+  }, [rows, partsumEditingOrgSeq, partsumBeforeEdit]);
 
   const masterSendState = ""; // TODO (지금은 화면만)
 
@@ -806,8 +851,8 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
 
         const base = idx >= 0 ? prev[idx] : prev[prev.length - 1];
 
-        // 현재 선택된 기존 row의 payname이 비어있으면 삽입하지 않음
-        if (!base?.payname) return prev;
+        // 현재 선택된 기존 row의 payname이 비어있으면 삽입하지 않음 (단, rows 자체가 빈 경우는 허용)
+        if (base && !base.payname) return prev;
 
         const pkStr = String(paykind);
 
@@ -822,8 +867,8 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
             : "";
 
         const newRow = {
-          comcode:        base?.comcode        ?? "",
-          est_serial:     base?.est_serial     ?? "",
+          comcode:        base?.comcode        ?? getComcode(),
+          est_serial:     base?.est_serial     ?? master?.est_serial ?? "",
           estb_orgseqno:  "",                           // 서버 할당 → 비워둠
           estb_seqno:     String(insertAt + 1).padStart(3, "0"), // 삽입 위치 순번 (이후 전체 재계산)
           paykind:        pkStr,
@@ -862,24 +907,57 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
           ...prev.slice(insertAt),
         ].map((r, i) => ({ ...r, estb_seqno: String(i + 1).padStart(3, "0") }));
 
-        // 새로 삽입된 row 선택
-        setSelectedOrgSeq?.(newRow.estb_orgseqno);
-
         return next;
       });
 
+      // setRows updater 외부에서 호출 (updater는 순수 함수여야 함)
+      setSelectedOrgSeq?.("");
+
       // payname이 있는 base row였을 때만 savedRow가 채워짐 → API 저장
-      if (savedRow) onInsertDetail?.(savedRow);
+      if (savedRow) {
+        // 신규 row의 estb_seqno를 기록 → saveDetail이 newserial 확정 시 payname 포커스
+        pendingFocusSeqRef.current = savedRow.estb_seqno;
+        onInsertDetail?.(savedRow);
+      }
     },
     [setRows, selectedOrgSeq, setSelectedOrgSeq, master, onInsertDetail]
   );
+
+  // ref 항상 최신 함수로 동기화
+  insertAfterSelectedRef.current = insertAfterSelected;
   
 
   return (
     <div className="min-h-0 flex-1 flex flex-col rounded-md border border-zinc-200 bg-white overflow-hidden">
       <div className="px-2 py-2 flex flex-wrap items-center gap-2 border-b border-zinc-200">
         <IconBtn icon={CheckSquare} label="선택" onClick={() => {}} />
-        <IconBtn icon={Trash2} label="삭제" onClick={onDelete} />
+        {/* 삭제 드롭다운 */}
+        <div className="relative" ref={deleteMenuRef}>
+          <IconBtn
+            icon={Trash2}
+            label="삭제"
+            onClick={() => setDeleteMenuOpen((v) => !v)}
+          />
+          {deleteMenuOpen && (
+            <div className="absolute left-0 top-full mt-1 z-50 min-w-[110px] rounded-md border border-zinc-200 bg-white shadow-lg py-1 text-sm">
+              <button
+                type="button"
+                className="w-full px-3 py-2 text-left hover:bg-zinc-50"
+                onClick={() => { setDeleteMenuOpen(false); onDeleteAll?.(); }}
+              >
+                전체삭제
+              </button>
+              <button
+                type="button"
+                disabled={selectedOrgSeq == null}
+                className="w-full px-3 py-2 text-left hover:bg-zinc-50 disabled:text-zinc-300 disabled:cursor-not-allowed"
+                onClick={() => { setDeleteMenuOpen(false); onDeleteSelected?.(selectedOrgSeq); }}
+              >
+                선택삭제
+              </button>
+            </div>
+          )}
+        </div>
         <IconBtn icon={Plus} label="공임추가" onClick={() => insertAfterSelected("4")} />
         <IconBtn icon={Plus} label="부품추가" onClick={() => insertAfterSelected("5")} />
         <IconBtn icon={ListPlus} label="기본정비항목" onClick={() => alert("TODO")} />

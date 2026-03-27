@@ -15,6 +15,7 @@ import { useEstimate } from "../../hooks/useEstimate";
 import { useMasterEstimateSave } from "../../hooks/useMasterEstimateSave";
 import { useEstimateClaimSave } from "../../hooks/useEstimateClaimSave";
 import { useEstimateDetailSave } from "../../hooks/useEstimateDetailSave";
+import { useEstimateDetailDelete } from "../../hooks/useEstimateDetailDelete";
 import { useEstimateClaims } from "../../hooks/useEstimateClaims";
 import { useLoading } from "../../loading/useLoading";
 
@@ -98,7 +99,9 @@ export default function EstimateEditPage() {
   const [sortMode, setSortMode] = useState("block");
   const [laborOpen, setLaborOpen] = useState(false);
 
+  const { deleteBySeqs, deleteAll } = useEstimateDetailDelete();
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState(null); // null | { type:"all" } | { type:"selected", orgSeq }
   const [selectedOrgSeq, setSelectedOrgSeq] = useState(null);
 
   const laborWinRef = useRef(null);
@@ -395,6 +398,17 @@ export default function EstimateEditPage() {
     setSelectedOrgSeq(null);
   }, [rows, selectedRow]);
 
+  const handleDeleteSelected = useCallback((orgSeq) => {
+    if (!orgSeq) return;
+    setPendingDelete({ type: "selected", orgSeq });
+    setDeleteOpen(true);
+  }, []);
+
+  const handleDeleteAll = useCallback(() => {
+    setPendingDelete({ type: "all" });
+    setDeleteOpen(true);
+  }, []);
+
   const movePaintToBottom = useCallback(() => {
     const paint = rows.filter((r) => r.paykind === "6");
     const others = rows.filter((r) => r.paykind !== "6");
@@ -528,7 +542,8 @@ export default function EstimateEditPage() {
                 setSortMode={setSortMode}
                 // onAddLabor={() => addRowBelow("4")}
                 // onAddPart={() => addRowBelow("5")}
-                onDelete={() => setDeleteOpen(true)}
+                onDeleteSelected={handleDeleteSelected}
+                onDeleteAll={handleDeleteAll}
                 onMovePaintToBottom={movePaintToBottom}
                 master={master}
                 onInsertDetail={saveDetail}
@@ -561,12 +576,30 @@ export default function EstimateEditPage() {
         open={deleteOpen}
         type="delete"
         title="삭제"
-        message="선택한 항목을 삭제할까요?"
+        message={pendingDelete?.type === "all" ? "전체 항목을 삭제할까요?" : "선택한 항목을 삭제할까요?"}
         confirmText="삭제"
         onClose={() => setDeleteOpen(false)}
-        onConfirm={() => {
+        onConfirm={async () => {
           setDeleteOpen(false);
-          removeSelected();
+          try {
+            if (pendingDelete?.type === "all") {
+              await deleteAll(est_serial);
+              setRows([]);
+              setSelectedOrgSeq(null);
+            } else if (pendingDelete?.type === "selected") {
+              const { orgSeq } = pendingDelete;
+              await deleteBySeqs(est_serial, [orgSeq]);
+              setRows((prev) =>
+                prev
+                  .filter((r) => r.estb_orgseqno !== orgSeq)
+                  .map((r, i) => ({ ...r, estb_seqno: i + 1 }))
+              );
+              setSelectedOrgSeq(null);
+            }
+          } catch {
+            // apiOk 내부에서 alert 처리
+          }
+          setPendingDelete(null);
         }}
       />
 

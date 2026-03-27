@@ -10,7 +10,7 @@ function masterToParams(serial, master) {
   return {
     est_serial: serial,
     userid:         getUserid(),
-    estbo_seqno:    master.estbo_seqno    ?? "",
+    ...(master.seccode !== "12" ? { estbo_seqno: master.estbo_seqno ?? "" } : {}),
     carno:          master.carno          ?? "",
     makercode:      master.makercode      ?? "",
     carkind:        master.carkind        ?? "",
@@ -43,10 +43,18 @@ function masterToParams(serial, master) {
     reqday:         master.reqday         ?? "",
     isest:          master.isest          ?? "",
     lastkm:         toInt(master.lastkm),
-    xpay:           master.xpay           ?? "",
-    bpay:           master.bpay           ?? "",
-    ppay:           master.ppay           ?? "",
-    pntrate_sec:    master.pntrate_sec    ?? "",
+    xpay:        master.seccode === "12"
+                   ? (master.claims?.[0]?.xpay        ?? master.xpay        ?? "")
+                   : (master.xpay        ?? ""),
+    bpay:        master.seccode === "12"
+                   ? (master.claims?.[0]?.bpay        ?? master.bpay        ?? "")
+                   : (master.bpay        ?? ""),
+    ppay:        master.seccode === "12"
+                   ? (master.claims?.[0]?.ppay        ?? master.ppay        ?? "")
+                   : (master.ppay        ?? ""),
+    pntrate_sec: master.seccode === "12"
+                   ? (master.claims?.[0]?.pntrate_sec ?? master.pntrate_sec ?? "")
+                   : (master.pntrate_sec ?? ""),
     paint:          master.paint          ?? "",
     driver_nm:      master.driver_nm      ?? "",
     carsale_amt:    toInt(master.carsale_amt),

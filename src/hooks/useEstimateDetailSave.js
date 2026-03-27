@@ -63,7 +63,16 @@ function toApiRow(row) {
  * 저장 실패 시 useAlert.warning 으로 알럿
  */
 export function useEstimateDetailSave(setRows) {
+  // saveDetail / saveAllDetails 전용
   const { refetch: saveReq } = useApi({
+    path: "/est_masterestimateb_u.aspx",
+    method: "POST",
+    bodyType: "json",
+    immediate: false,
+  });
+
+  // saveSingleDetail 전용 — saveReq와 abortRef 독립 분리
+  const { refetch: saveReqSingle } = useApi({
     path: "/est_masterestimateb_u.aspx",
     method: "POST",
     bodyType: "json",
@@ -110,15 +119,16 @@ export function useEstimateDetailSave(setRows) {
     [saveReq, setRows]
   );
 
-  /** 단일 행 조용한 저장 — 로딩/알럿 없음 (settle 자동갱신용) */
+  /** 단일 행 조용한 저장 — 로딩/알럿 없음 (settle 자동갱신용)
+   *  saveReqSingle 사용 → saveDetail(saveReq)과 abort 간섭 없음 */
   const saveSingleDetail = useCallback(
     async (row) => {
       try {
-        const json = await saveReq({ masterestimateb: [toApiRow(row)] });
+        const json = await saveReqSingle({ masterestimateb: [toApiRow(row)] });
         apiOk(json, "견적항목 저장");
       } catch (_) { /* 조용히 무시 */ }
     },
-    [saveReq]
+    [saveReqSingle]
   );
 
   return { saveDetail, saveAllDetails, saveSingleDetail };
