@@ -202,6 +202,9 @@ export default function EstimateItemsTable({
   // 부품액(partsum) 편집 중 summary 보정값 (렌더 계산에 사용하므로 state로 관리)
   const [partsumEditingOrgSeq, setPartsumEditingOrgSeq] = useState(null);
   const [partsumBeforeEdit, setPartsumBeforeEdit] = useState(null);
+  // 공임액(paysum, T/G/W 직접입력) 편집 중 summary 보정값
+  const [paysumEditingOrgSeq, setPaysumEditingOrgSeq] = useState(null);
+  const [paysumBeforeEdit, setPaysumBeforeEdit] = useState(null);
 
   // ── 시간(qty) 입력 후 paysum 자동 계산 ──────────────────────────
   // workcode 그룹별 M/H 단가: 첫 번째 청구처 기준
@@ -556,7 +559,8 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
         render: (_val, row) => {
           const editable = canEditQty(row);
           const id = `cell-${row.estb_orgseqno}-qty`;
-          if (!editable) return <div className="h-8 flex items-center justify-end">{fmtQty(row.qty)}</div>;
+          // T/G/W(세차·구난·견인)는 qty 미사용 → 빈 칸 표시
+          if (!editable) return <div className="h-8 flex items-center justify-end">{["T","G","W"].includes(wc(row)) ? "" : fmtQty(row.qty)}</div>;
           return (
             <div className={CELL_WRAP}>
               <input
@@ -643,17 +647,31 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                 onChange={(v) => setCell(row.estb_orgseqno, "paysum", v)}
                 autoComplete="off"
                 className={CELL_INPUT_BASE + " text-right tabular-nums border border-transparent"}
-                onBlur={() => onValueCommit?.({ ...row })}
+                onFocus={() => {
+                  setSelectedOrgSeq?.(row.estb_orgseqno);
+                  setPaysumEditingOrgSeq(row.estb_orgseqno);
+                  setPaysumBeforeEdit(row.paysum);
+                }}
+                onBlur={() => {
+                  setPaysumEditingOrgSeq(null);
+                  setPaysumBeforeEdit(null);
+                  onValueCommit?.({ ...row });
+                }}
                 onKeyDown={(e) => {
+                  const commitPaysum = () => {
+                    setPaysumEditingOrgSeq(null);
+                    setPaysumBeforeEdit(null);
+                    onValueCommit?.({ ...row });
+                  };
                   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                     e.preventDefault();
-                    onValueCommit?.({ ...row });
+                    commitPaysum();
                     moveFocusUpDown(row, "paysum", e.key === "ArrowDown" ? +1 : -1);
                     return;
                   }
                   if (e.key === "Enter") {
                     e.preventDefault();
-                    onValueCommit?.({ ...row });
+                    commitPaysum();
                     if (e.shiftKey) focusPrevAcrossRows(row, "paysum");
                     else focusNextAcrossRows(row, "paysum");
                   }
@@ -825,9 +843,14 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
     );
   }, [sortMode]);
 
-  // summary — paysum은 rows 그대로, partsum은 편집 중이면 pre-edit 값 사용 (타이핑 중 불변)
+  // summary — paysum/partsum 편집 중이면 focus 시점 원본값 사용 (타이핑 중 불변)
   const { sumLabor, sumPart, sumSupply, sumVat, sumTotal } = useMemo(() => {
-    const labor = rows.reduce((a, r) => a + (Number(r.paysum) || 0), 0);
+    const labor = rows.reduce((a, r) => {
+      if (r.estb_orgseqno === paysumEditingOrgSeq) {
+        return a + (Number(paysumBeforeEdit) || 0); // 편집 중: focus 시점 원본값
+      }
+      return a + (Number(r.paysum) || 0);
+    }, 0);
     const part  = rows.reduce((a, r) => {
       if (r.estb_orgseqno === partsumEditingOrgSeq) {
         return a + (Number(partsumBeforeEdit) || 0); // 편집 중: focus 시점 원본값
@@ -837,90 +860,83 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
     const supply = labor + part;
     const vat    = Math.floor(supply * 0.1);
     return { sumLabor: labor, sumPart: part, sumSupply: supply, sumVat: vat, sumTotal: supply + vat };
-  }, [rows, partsumEditingOrgSeq, partsumBeforeEdit]);
+  }, [rows, paysumEditingOrgSeq, paysumBeforeEdit, partsumEditingOrgSeq, partsumBeforeEdit]);
 
   const masterSendState = ""; // TODO (지금은 화면만)
 
   const insertAfterSelected = useCallback(
     (paykind) => {
-      let savedRow = null; // setRows 콜백 외부에서 newRow 캡처
+      // ① 삽입 위치 · base를 closure rows에서 동기적으로 계산
+      const idx = rows.findIndex((r) => r.estb_orgseqno === selectedOrgSeq);
+      const insertAt = idx >= 0 ? idx + 1 : rows.length;
+      const base = idx >= 0 ? rows[idx] : rows[rows.length - 1];
 
+      // ② payname 가드 — setRows 밖에서 체크 (rows가 비어있으면 base=undefined → 허용)
+      if (base && !base.payname) return;
+
+      const pkStr = String(paykind);
+
+      // payno: paykind별 고정값
+      const paynoMap = { "4": "99994", "5": "99995" };
+      const payno = paynoMap[pkStr] ?? "";
+
+      // state: paykind='5'(부품)일때만 makercode 조건 적용, paykind='4'(공임)은 ''
+      const state =
+        pkStr === "5"
+          ? (master?.makercode ?? "") > "06" ? "F" : "A"
+          : "";
+
+      // ③ newRow 동기 생성 — setRows 콜백 밖에서 만들어야 onInsertDetail에 즉시 전달 가능
+      const newRow = {
+        comcode:        base?.comcode        ?? getComcode(),
+        est_serial:     base?.est_serial     ?? master?.est_serial ?? "",
+        estb_orgseqno:  "",                           // 서버 할당 → 비워둠
+        estb_seqno:     String(insertAt + 1).padStart(3, "0"),
+        paykind:        pkStr,
+        payno,
+        subpayno:       "",
+        payname:        "",
+        workcode:       "",
+        price:          "",
+        qty:            "0",
+        partsum:        "0",
+        paysum:         "0",
+        part_makercode: "",
+        state,
+        statename:      "",
+        oqty:           "",
+        pnt_extr:       "",
+        pnt_hour:       "",
+        pnt_part:       "0",
+        pnt_m:          "",
+        pntcot:         "",
+        ts_payno:       "",
+        update_id:      getUserid(),
+        paykindname:    paykindLabel(pkStr),
+        workcodename:   "",
+        b_level:        "0.00",
+        b_area:         "0",
+        pnt_reduce:     "0",
+        body_panel:     "",
+      };
+
+      // ④ functional updater 유지 → 대기 중인 setCell 업데이트(qty/paysum 등)와 충돌 방지
       setRows((prev) => {
-        const idx = prev.findIndex((r) => r.estb_orgseqno === selectedOrgSeq);
-        const insertAt = idx >= 0 ? idx + 1 : prev.length;
-
-        const base = idx >= 0 ? prev[idx] : prev[prev.length - 1];
-
-        // 현재 선택된 기존 row의 payname이 비어있으면 삽입하지 않음 (단, rows 자체가 빈 경우는 허용)
-        if (base && !base.payname) return prev;
-
-        const pkStr = String(paykind);
-
-        // payno: paykind별 고정값
-        const paynoMap = { "4": "99994", "5": "99995" };
-        const payno = paynoMap[pkStr] ?? "";
-
-        // state: paykind='5'(부품)일때만 makercode 조건 적용, paykind='4'(공임)은 ''
-        const state =
-          pkStr === "5"
-            ? (master?.makercode ?? "") > "06" ? "F" : "A"
-            : "";
-
-        const newRow = {
-          comcode:        base?.comcode        ?? getComcode(),
-          est_serial:     base?.est_serial     ?? master?.est_serial ?? "",
-          estb_orgseqno:  "",                           // 서버 할당 → 비워둠
-          estb_seqno:     String(insertAt + 1).padStart(3, "0"), // 삽입 위치 순번 (이후 전체 재계산)
-          paykind:        pkStr,
-          payno,
-          subpayno:       "",
-          payname:        "",
-          workcode:       "",
-          price:          "",
-          qty:            "0",
-          partsum:        "0",
-          paysum:         "0",
-          part_makercode: "",
-          state,
-          statename:      "",
-          oqty:           "",
-          pnt_extr:       "",
-          pnt_hour:       "",
-          pnt_part:       "0",
-          pnt_m:          "",
-          pntcot:         "",
-          ts_payno:       "",
-          update_id:      getUserid(),
-          paykindname:    paykindLabel(pkStr),
-          workcodename:   "",
-          b_level:        "0.00",
-          b_area:         "0",
-          pnt_reduce:     "0",
-          body_panel:     "",
-        };
-
-        savedRow = newRow; // 캡처
-
-        const next = [
-          ...prev.slice(0, insertAt),
+        const prevIdx = prev.findIndex((r) => r.estb_orgseqno === selectedOrgSeq);
+        const prevInsertAt = prevIdx >= 0 ? prevIdx + 1 : prev.length;
+        return [
+          ...prev.slice(0, prevInsertAt),
           newRow,
-          ...prev.slice(insertAt),
+          ...prev.slice(prevInsertAt),
         ].map((r, i) => ({ ...r, estb_seqno: String(i + 1).padStart(3, "0") }));
-
-        return next;
       });
 
-      // setRows updater 외부에서 호출 (updater는 순수 함수여야 함)
+      // ⑤ 선택 Row · 포커스 대기 · 서버 저장 — 모두 동기 실행 (savedRow 패턴 제거)
       setSelectedOrgSeq?.("");
-
-      // payname이 있는 base row였을 때만 savedRow가 채워짐 → API 저장
-      if (savedRow) {
-        // 신규 row의 estb_seqno를 기록 → saveDetail이 newserial 확정 시 payname 포커스
-        pendingFocusSeqRef.current = savedRow.estb_seqno;
-        onInsertDetail?.(savedRow);
-      }
+      pendingFocusSeqRef.current = newRow.estb_seqno;
+      onInsertDetail?.(newRow);
     },
-    [setRows, selectedOrgSeq, setSelectedOrgSeq, master, onInsertDetail]
+    [setRows, selectedOrgSeq, setSelectedOrgSeq, master, onInsertDetail, rows]
   );
 
   // ref 항상 최신 함수로 동기화
@@ -1086,7 +1102,12 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                         })
                       );
                       closePopover();
-                      focusById(`cell-${orgSeq}-qty`);
+                      // 세차/구난/견인(W/G/T) — qty 비활성 → 공임액으로 포커스
+                      if (["T", "G", "W"].includes(opt.code)) {
+                        focusById(`cell-${orgSeq}-paysum`);
+                      } else {
+                        focusById(`cell-${orgSeq}-qty`);
+                      }
                       if (committed) onValueCommit?.(committed);
                     }}
                   >
