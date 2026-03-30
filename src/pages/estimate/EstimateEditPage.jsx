@@ -128,21 +128,37 @@ export default function EstimateEditPage() {
   
   const openLaborItemsPopup = async () => {
     await saveClaimIfActive();
-    const estSerial = est_serial || "";
-    const carno = master?.carno || "";
-    const codecar = master?.codecar || "";
+    const estSerial   = est_serial || "";
+    const carno       = master?.carno       || "";
+    const codecar     = master?.codecar     || "";
     const est_codecar = master?.est_codecar || "";
-    const carname = master?.carname || "";
-  
+    const carname     = master?.carname     || "";
+    const paykind     = master?.paykind     || "";
+    const paint       = master?.paint       || "";
+    const outday      = master?.outday      || "";
+    const carkind     = master?.carkind     || "";
+    const pntkind     = master?.pntkind     || "";
+    const pntcot_code = master?.pntcot_code || "";
+    const pnt_m       = master?.pnt_m       || "";
+    const modelcode   = master?.modelcode   || "";
+
     const url =
       `/labor-items?est_serial=${encodeURIComponent(estSerial)}` +
-      `&carno=${encodeURIComponent(carno)}`+
-      `&codecar=${encodeURIComponent(codecar)}`+
-      `&est_codecar=${encodeURIComponent(est_codecar)}`+
-      `&carname=${encodeURIComponent(carname)}`;
+      `&carno=${encodeURIComponent(carno)}` +
+      `&codecar=${encodeURIComponent(codecar)}` +
+      `&est_codecar=${encodeURIComponent(est_codecar)}` +
+      `&carname=${encodeURIComponent(carname)}` +
+      `&paykind=${encodeURIComponent(paykind)}` +
+      `&paint=${encodeURIComponent(paint)}` +
+      `&outday=${encodeURIComponent(outday)}` +
+      `&carkind=${encodeURIComponent(carkind)}` +
+      `&pntkind=${encodeURIComponent(pntkind)}` +
+      `&pntcot_code=${encodeURIComponent(pntcot_code)}` +
+      `&pnt_m=${encodeURIComponent(pnt_m)}` +
+      `&modelcode=${encodeURIComponent(modelcode)}`;
 
-  
-    const payload = { est_serial: estSerial, carno, codecar, est_codecar, carname };
+    const payload = { est_serial: estSerial, carno, codecar, est_codecar, carname,
+                      paykind, paint, outday, carkind, pntkind, pntcot_code, pnt_m, modelcode };
 
     // 이미 열려 있으면 재사용 + ctx만 갱신
     if (laborWinRef.current && !laborWinRef.current.closed) {

@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import FixedHeadTable from "../../components/FixedHeadTable";
 import { useUrlContextSnapshot } from "../../hooks/useUrlContextSnapshot";
-import { X, Trash2,  Save,} from "lucide-react";
+import { X } from "lucide-react";
 import IconBtn from "../../components/IconBtn";
+import { useCodepay, useCodepayHour, useCodepnt, useCodepart } from "../../hooks/useLaborItems";
 
 
 const AREA_DEFS = [
@@ -107,91 +108,6 @@ function buildAreaImageMap() {
 
 const AREA_IMG_MAP = buildAreaImageMap();
 
-function seedWorkItems() {
-  // 작업항목명 목록(샘플) : payno, payname, seccode
-  const sec = (code) => code; // 가독성용
-
-  return [
-    // 1A: 프런트범퍼
-    { payno: "A01", payname: "프런트범퍼 커버", seccode: sec("1A") },
-    { payno: "A02", payname: "프런트범퍼 레일", seccode: sec("1A") },
-
-    // 1B: 엔진
-    { payno: "B11", payname: "엔진 커버", seccode: sec("1B") },
-    { payno: "B12", payname: "엔진 마운트", seccode: sec("1B") },
-
-    // 1C: 트랜스미션
-    { payno: "C11", payname: "트랜스미션 하우징", seccode: sec("1C") },
-    { payno: "C12", payname: "클러치 커버", seccode: sec("1C") },
-
-    // 1D: 하체
-    { payno: "D11", payname: "서브프레임", seccode: sec("1D") },
-    { payno: "D12", payname: "로어암(좌)", seccode: sec("1D") },
-
-    // 1E: 배기
-    { payno: "E11", payname: "촉매", seccode: sec("1E") },
-    { payno: "E12", payname: "머플러", seccode: sec("1E") },
-
-    // 1F: 일반
-    { payno: "F11", payname: "일반 점검", seccode: sec("1F") },
-    { payno: "F12", payname: "기타 작업", seccode: sec("1F") },
-  ];
-}
-
-
-function seedWorkTimes() {
-  // 작업/시간(샘플): payno, workcode, workname, hour
-  return [
-    { payno: "A01", workcode: "X", workname: "교환", hour: 3.94 },
-    { payno: "A01", workcode: "R", workname: "탈착", hour: 1.2 },
-    { payno: "A02", workcode: "R", workname: "탈착", hour: 0.58 },
-    { payno: "A02", workcode: "B", workname: "판금", hour: 1.0 },
-    // { payno: "C21", workcode: "S", workname: "판금", hour: 0.8 },
-    // { payno: "C21", workcode: "P", workname: "도장", hour: 2.1 },
-    { payno: "B11", workcode: "R", workname: "탈착", hour: 0.5 },
-    { payno: "B12", workcode: "X", workname: "교환", hour: 0.9 },
-    { payno: "C11", workcode: "S", workname: "판금", hour: 0.8 },
-    // { payno: "C12", workcode: "P", workname: "도장", hour: 2.1 },
-    { payno: "D11", workcode: "B", workname: "판금", hour: 1.4 },
-    { payno: "E11", workcode: "R", workname: "탈착", hour: 0.7 },
-    { payno: "F11", workcode: "O", workname: "점검", hour: 0.3 },
-  ];
-}
-
-function seedPaints() {
-  // 도장 목록(샘플): payno, pntcot_nm, oilpnt_m, oilpnt_h, pnt_m, pnt_h
-  return [
-    { payno:"A01", pntcot:"2", pntcot_nm: "2코트",
-      oilpnt_m:12000, oilpnt_h:0.4,
-      oilpnt_mb:11000, oilpnt_hb:0.38,
-      oilextr21_m:8000, oilextr21_h:0.30,
-      oilextr22_m:15000, oilextr22_h:0.50,
-      pnt_m:9000, pnt_h:0.35,
-      pnt_mb:8500, pnt_hb:0.33,
-      extr21_m:6000, extr21_h:0.25,
-      extr22_m:11000, extr22_h:0.45
-    },
-    { payno: "A01", pntcot:"3", pntcot_nm: "3코트", oilpnt_m: 8000, oilpnt_h: 0.3, pnt_m: 6000, pnt_h: 0.25 },
-    { payno: "C21", pntcot:"2", pntcot_nm: "2코트", oilpnt_m: 15000, oilpnt_h: 0.5, pnt_m: 11000, pnt_h: 0.45 },
-    { payno: "B12", pntcot:"2", pntcot_nm: "2코트", oilpnt_m: 12000, oilpnt_h: 0.4, pnt_m: 9000, pnt_h: 0.35 },
-    { payno: "B12", pntcot:"3", pntcot_nm: "3코트", oilpnt_m: 8000, oilpnt_h: 0.3, pnt_m: 6000, pnt_h: 0.25 },
-    { payno: "D11", pntcot:"2", pntcot_nm: "2코트", oilpnt_m: 15000, oilpnt_h: 0.5, pnt_m: 11000, pnt_h: 0.45 },
-
-  ];
-}
-
-function seedParts() {
-  // 부품 목록(샘플): payno, partno, partname, price
-  return [
-    { payno: "A01", partno: "865403T000", partname: "카바 전범퍼", price: 121000 },
-    { payno: "A02", partno: "0000000001", partname: "스티프너", price: 35000 },
-    { payno: "C21", partno: "0000000002", partname: "후드 인슐레이터", price: 28000 },
-    { payno: "B12", partno: "865403T000", partname: "카바 전범퍼", price: 121000 },
-    { payno: "B12", partno: "0000000001", partname: "스티프너", price: 35000 },
-    { payno: "B12", partno: "0000000002", partname: "후드 인슐레이터", price: 28000 },
-
-  ];
-}
 
 
 function formatNumber(v) {
@@ -228,7 +144,9 @@ function getPaintMH(row, solvent, coatKind) {
 export default function LaborItemsPopup() {
   const ctx = useUrlContextSnapshot({
     storageKey: "LaborItemsCtx",
-    keys: ["est_serial", "carno","codecar","est_codecar","carname"],
+    keys: ["est_serial", "carno", "codecar", "est_codecar", "carname",
+           "paykind", "paint", "outday", "carkind",
+           "pntkind", "pntcot_code", "pnt_m", "modelcode"],
     cleanPath: "/labor-items",
   });
 
@@ -237,6 +155,15 @@ export default function LaborItemsPopup() {
   const [codecar, setCodecar] = useState(() => ctx.codecar || "");
   const [estCodecar, setEstCodecar] = useState(() => ctx.est_codecar || "");
   const [carName, setCarName] = useState(() => ctx.carname || "");
+  const [paykind,     setPaykind]    = useState(() => ctx.paykind     || "");
+  const [paint,       setPaint]      = useState(() => ctx.paint       || "");
+  const [outday,      setOutday]     = useState(() => ctx.outday      || "");
+  const [carkind,     setCarkind]    = useState(() => ctx.carkind     || "");
+  const [pntkind,     setPntkind]    = useState(() => ctx.pntkind     || "");
+  const [pntcotCode,  setPntcotCode] = useState(() => ctx.pntcot_code || "");
+  // pnt_m: '1'=유용성(oil), '2'=수용성(pnt)
+  const [pntM,        setPntM]       = useState(() => ctx.pnt_m       || "");
+  const [modelcode,   setModelcode]  = useState(() => ctx.modelcode   || "");
   
   const hydratedRef = React.useRef(false);
 
@@ -248,11 +175,19 @@ export default function LaborItemsPopup() {
       sessionStorage.setItem(
         "LaborItemsCtx",
         JSON.stringify({
-          est_serial: ctx.est_serial || "",
-          carno: ctx.carno || "",
-          codecar: ctx.codecar || "",
+          est_serial:  ctx.est_serial  || "",
+          carno:       ctx.carno       || "",
+          codecar:     ctx.codecar     || "",
           est_codecar: ctx.est_codecar || "",
-          carname: ctx.carname || "",
+          carname:     ctx.carname     || "",
+          paykind:     ctx.paykind     || "",
+          paint:       ctx.paint       || "",
+          outday:      ctx.outday      || "",
+          carkind:     ctx.carkind     || "",
+          pntkind:     ctx.pntkind     || "",
+          pntcot_code: ctx.pntcot_code || "",
+          pnt_m:       ctx.pnt_m       || "",
+          modelcode:   ctx.modelcode   || "",
         })
       );
     } catch { /* empty */ }
@@ -260,14 +195,24 @@ export default function LaborItemsPopup() {
     if (hydratedRef.current) return;
     hydratedRef.current = true;
 
-    if (ctx.est_serial && !estSerial) setEstSerial(ctx.est_serial);
-    if (ctx.carno && !carNo) setCarNo(ctx.carno);
-    if (ctx.codecar && !codecar) setCodecar(ctx.codecar);
+    if (ctx.est_serial  && !estSerial)  setEstSerial(ctx.est_serial);
+    if (ctx.carno       && !carNo)      setCarNo(ctx.carno);
+    if (ctx.codecar     && !codecar)    setCodecar(ctx.codecar);
     if (ctx.est_codecar && !estCodecar) setEstCodecar(ctx.est_codecar);
-    if (ctx.carname && !carName) setCarName(ctx.carname);
+    if (ctx.carname     && !carName)    setCarName(ctx.carname);
+    if (ctx.paykind     && !paykind)    setPaykind(ctx.paykind);
+    if (ctx.paint       && !paint)      setPaint(ctx.paint);
+    if (ctx.outday      && !outday)     setOutday(ctx.outday);
+    if (ctx.carkind     && !carkind)    setCarkind(ctx.carkind);
+    if (ctx.pntkind     && !pntkind)    setPntkind(ctx.pntkind);
+    if (ctx.pntcot_code && !pntcotCode) setPntcotCode(ctx.pntcot_code);
+    if (ctx.pnt_m       && !pntM)       setPntM(ctx.pnt_m);
+    if (ctx.modelcode   && !modelcode)  setModelcode(ctx.modelcode);
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctx.est_serial, ctx.carno, ctx.codecar, ctx.est_codecar, ctx.carname]);
+  }, [ctx.est_serial, ctx.carno, ctx.codecar, ctx.est_codecar, ctx.carname,
+      ctx.paykind, ctx.paint, ctx.outday, ctx.carkind,
+      ctx.pntkind, ctx.pntcot_code, ctx.pnt_m, ctx.modelcode]);
 
   const postPick = useCallback((payload) => {
     try {
@@ -283,13 +228,40 @@ export default function LaborItemsPopup() {
   const [selectedWorkTimeRow, setSelectedWorkTimeRow] = useState(null);
   const [selectedPaintRow, setSelectedPaintRow] = useState(null);
   const [selectedPartRow, setSelectedPartRow] = useState(null);
-    
-  const [workItems] = useState(seedWorkItems);
-  const [workTimes] = useState(seedWorkTimes);
-  const [paints] = useState(seedPaints);
-  const [parts] = useState(seedParts);
 
-  const [paintSolvent, setPaintSolvent] = useState("pnt"); // "pnt"=수용성, "oil"=유용성
+  const { fetchCodepay }     = useCodepay();
+  const { fetchCodepayHour } = useCodepayHour();
+  const { fetchCodepnt }     = useCodepnt();
+  const { fetchCodepart }    = useCodepart();
+  const [workItems, setWorkItems] = useState([]);
+  const [workTimes, setWorkTimes] = useState([]);
+  const [paints,    setPaints]    = useState([]);
+  const [parts,     setParts]     = useState([]);
+
+  // 팝업 오픈 시 1회 호출 — carcode 확정 후 실행
+  useEffect(() => {
+    const carcode  = estCodecar || codecar;
+    const ocarcode = codecar;
+    if (!carcode) return;
+
+    Promise.all([
+      fetchCodepay({ carcode, ocarcode, paykind }),
+      fetchCodepayHour({ carcode, ocarcode, paykind, paint, outday }),
+      // 도장: carcode=master.paint, paykind=master.pntkind, ocarcode=master.est_codecar
+      fetchCodepnt({ carcode: paint, paykind: pntkind, ocarcode: estCodecar }),
+      // 부품: carcode=master.codecar, modelcode=master.modelcode, paykind=master.paykind
+      fetchCodepart({ carcode: codecar, modelcode, paykind }),
+    ]).then(([wpJson, wtJson, pntJson, ptJson]) => {
+      if (wpJson?.result  === "OK") setWorkItems(wpJson.dataset  ?? []);
+      if (wtJson?.result  === "OK") setWorkTimes(wtJson.dataset  ?? []);
+      if (pntJson?.result === "OK") setPaints(pntJson.dataset    ?? []);
+      if (ptJson?.result  === "OK") setParts(ptJson.dataset      ?? []);
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [estCodecar, codecar]);
+
+  // pnt_m='1'→유용성(oil), pnt_m='2'→수용성(pnt), 기본=수용성
+  const paintSolvent = pntM === "1" ? "oil" : "pnt";
   const [coatKind, setCoatKind] = useState("swap");
 
   const [selectedSec, setSelectedSec] = useState(""); // 기본
@@ -344,6 +316,17 @@ export default function LaborItemsPopup() {
   
     return ordered;
   }, [areaOrder]);
+
+  // carkind 기반 영역 필터
+  // carkind !== '3' : seccode 첫 글자 1,3,5,7
+  // carkind === '3' : seccode 첫 글자 2,4,6
+  const visibleAreaTiles = useMemo(() => {
+    const allowed =
+      carkind !== "3"
+        ? new Set(["1", "3", "5", "7"])
+        : new Set(["2", "4", "6"]);
+    return areaTiles.filter((a) => allowed.has(a.seccode[0]));
+  }, [areaTiles, carkind]);
   
   const moveArea = useCallback((fromCode, toCode) => {
     if (!fromCode || !toCode || fromCode === toCode) return;
@@ -374,23 +357,26 @@ export default function LaborItemsPopup() {
 
   const filteredWorkItems = useMemo(() => {
     const q = workSearch.trim().toLowerCase();
-  
+    const byOrdno = (a, b) => String(a.orderno ?? "").localeCompare(String(b.orderno ?? ""));
+
     // 1) 검색이 있으면: "전체"에서 검색 (영역 무시)
     if (q) {
-      return workItems.filter((x) => {
-        const payno = String(x.payno || "").toLowerCase();
-        const name = String(x.payname || "").toLowerCase();
-        return payno.includes(q) || name.includes(q);
-      });
+      return workItems
+        .filter((x) => {
+          const payno = String(x.payno || "").toLowerCase();
+          const name = String(x.payname || "").toLowerCase();
+          return payno.includes(q) || name.includes(q);
+        })
+        .sort(byOrdno);
     }
-  
+
     // 2) 검색이 없고 영역 선택이 있으면: 영역 필터
     if (selectedSec) {
-      return workItems.filter((x) => x.seccode === selectedSec);
+      return workItems.filter((x) => x.seccode === selectedSec).sort(byOrdno);
     }
-  
+
     // 3) 아무 필터 없으면: 전체
-    return workItems;
+    return [...workItems].sort(byOrdno);
   }, [workItems, selectedSec, workSearch]);
   
     
@@ -404,20 +390,34 @@ export default function LaborItemsPopup() {
     [filteredWorkItems, effectivePayno]
   );
 
-  const filteredWorkTimes = useMemo(
-    () => workTimes.filter((x) => x.payno === effectivePayno),
-    [workTimes, effectivePayno]
-  );
+  const filteredWorkTimes = useMemo(() => {
+    const byPayno = workTimes.filter((x) => x.payno === effectivePayno);
+    // paykind='3'(부품) 이면 subpayno='' 항목만
+    if (paykind === "3") return byPayno.filter((x) => (x.subpayno ?? "") === "");
+    return byPayno;
+  }, [workTimes, effectivePayno, paykind]);
 
   const filteredPaints = useMemo(() => {
-    return paints.filter((x) => x.payno === effectivePayno);
-  }, [paints, effectivePayno]);
+    return paints.filter(
+      (x) => x.payno === effectivePayno &&
+              String(x.pntcot) === String(pntcotCode)
+    );
+  }, [paints, effectivePayno, pntcotCode]);
   
 
-  const filteredParts = useMemo(
-    () => parts.filter((x) => x.payno === effectivePayno),
-    [parts, effectivePayno]
-  );
+  const filteredParts = useMemo(() => {
+    const byPayno = parts.filter((x) => x.payno === effectivePayno);
+    if (paykind === "3") {
+      // paykind='3': payno 일치만
+      return byPayno;
+    }
+    if (paykind === "1") {
+      // paykind='1': payno + subpayno 모두 일치
+      const sub = String(selectedWorkItem?.subpayno ?? "");
+      return byPayno.filter((x) => String(x.subpayno ?? "") === sub);
+    }
+    return byPayno;
+  }, [parts, effectivePayno, paykind, selectedWorkItem]);
 
 
   const workItemCols = useMemo(
@@ -620,7 +620,7 @@ export default function LaborItemsPopup() {
 
           <div className="min-h-0 flex-1 overflow-auto p-2">
             <div className="grid grid-cols-3 gap-3">
-              {areaTiles.map((a) => {
+              {visibleAreaTiles.map((a) => {
                 const active = a.seccode === selectedSec;
                 
                 return (
@@ -695,7 +695,7 @@ export default function LaborItemsPopup() {
         {/* 우: 3단(상/중/하) */}
         <div className="min-w-0 min-h-0 flex-1 flex flex-col gap-2">
           {/* 우(상단): 작업항목 + 작업/시간 (쌍) */}
-          <div className="min-h-0 flex-[1.2] grid grid-cols-2 gap-3">
+          <div className="min-h-0 flex-[1.2] grid gap-3" style={{gridTemplateColumns:"3fr 2fr"}}>
             <div className="min-h-0 rounded-md border border-zinc-200 bg-white overflow-hidden flex flex-col">
               
               <div className="px-3 py-2 border-b border-zinc-200 flex items-center">
@@ -895,15 +895,6 @@ export default function LaborItemsPopup() {
 
               <div className="ml-auto flex items-center gap-2">
                 {/* 테스트용 토글: 나중에 공임설정 탭 값으로 자동 세팅 */}
-                <button
-                  type="button"
-                  className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs hover:bg-zinc-50"
-                  onClick={() => setPaintSolvent((v) => (v === "oil" ? "pnt" : "oil"))}
-                  title="도장도료 선택(공임설정 탭 값으로 교체 예정)"
-                >
-                  도료변경
-                </button>
-
                 <button
                   type="button"
                   disabled={!selectedPaintRow}
