@@ -1,9 +1,11 @@
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import FixedHeadTable from "../../components/FixedHeadTable";
 import { useUrlContextSnapshot } from "../../hooks/useUrlContextSnapshot";
-import { X } from "lucide-react";
+import { X, Wrench } from "lucide-react";
 import IconBtn from "../../components/IconBtn";
 import { useCodepay, useCodepayHour, useCodepnt, useCodepart } from "../../hooks/useLaborItems";
+import { useEstimateClaims } from "../../hooks/useEstimateClaims";
+import { formatLocaleNumber } from "../../utils/numberFormat";
 
 
 const AREA_DEFS = [
@@ -88,6 +90,16 @@ const AREA_DEFS = [
 ];
 const AREA_ORDER_STORAGE_KEY = "LaborItems_AreaOrder_v1";
 
+const GROUP_DEFS = {
+  "1": "프런트",
+  "2": "캐빈",
+  "3": "사이드",
+  "4": "데크/탑",
+  "5": "루프/실내",
+  "6": "프레임",
+  "7": "리어",
+};
+
 
 // assets/areas 폴더의 모든 이미지 자동 로드 (gif/png/jpg/webp)
 const areaImageModules = import.meta.glob("../../assets/areas/*.gif", {
@@ -110,11 +122,6 @@ const AREA_IMG_MAP = buildAreaImageMap();
 
 
 
-function formatNumber(v) {
-  const n = Number(v || 0);
-  if (Number.isNaN(n)) return "";
-  return n.toLocaleString();
-}
 
 function getPaintMH(row, solvent, coatKind) {
   const map = {
@@ -233,10 +240,12 @@ export default function LaborItemsPopup() {
   const { fetchCodepayHour } = useCodepayHour();
   const { fetchCodepnt }     = useCodepnt();
   const { fetchCodepart }    = useCodepart();
+  const { fetchClaims }      = useEstimateClaims();
   const [workItems, setWorkItems] = useState([]);
   const [workTimes, setWorkTimes] = useState([]);
   const [paints,    setPaints]    = useState([]);
   const [parts,     setParts]     = useState([]);
+  const [claims,    setClaims]    = useState([]);
 
   // 팝업 오픈 시 1회 호출 — carcode 확정 후 실행
   useEffect(() => {
@@ -251,11 +260,14 @@ export default function LaborItemsPopup() {
       fetchCodepnt({ carcode: paint, paykind: pntkind, ocarcode: estCodecar }),
       // 부품: carcode=master.codecar, modelcode=master.modelcode, paykind=master.paykind
       fetchCodepart({ carcode: codecar, modelcode, paykind }),
-    ]).then(([wpJson, wtJson, pntJson, ptJson]) => {
-      if (wpJson?.result  === "OK") setWorkItems(wpJson.dataset  ?? []);
-      if (wtJson?.result  === "OK") setWorkTimes(wtJson.dataset  ?? []);
-      if (pntJson?.result === "OK") setPaints(pntJson.dataset    ?? []);
-      if (ptJson?.result  === "OK") setParts(ptJson.dataset      ?? []);
+      // 청구처(보험사 목록): est_serial 기준
+      fetchClaims(estSerial),
+    ]).then(([wpJson, wtJson, pntJson, ptJson, claimsJson]) => {
+      if (wpJson?.result     === "OK") setWorkItems(wpJson.dataset    ?? []);
+      if (wtJson?.result     === "OK") setWorkTimes(wtJson.dataset    ?? []);
+      if (pntJson?.result    === "OK") setPaints(pntJson.dataset      ?? []);
+      if (ptJson?.result     === "OK") setParts(ptJson.dataset        ?? []);
+      if (claimsJson?.result === "OK") setClaims(claimsJson.dataset   ?? []);
     }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [estCodecar, codecar]);
@@ -265,6 +277,7 @@ export default function LaborItemsPopup() {
   const [coatKind, setCoatKind] = useState("swap");
 
   const [selectedSec, setSelectedSec] = useState(""); // 기본
+  const [secGroup,    setSecGroup]    = useState(""); // '' = 전체
   const [selectedPayno, setSelectedPayno] = useState("");
   const [workSearch, setWorkSearch] = useState("");
 
@@ -325,9 +338,18 @@ export default function LaborItemsPopup() {
       carkind !== "3"
         ? new Set(["1", "3", "5", "7"])
         : new Set(["2", "4", "6"]);
-    return areaTiles.filter((a) => allowed.has(a.seccode[0]));
-  }, [areaTiles, carkind]);
+    return areaTiles.filter(
+      (a) =>
+        allowed.has(a.seccode[0]) &&
+        (secGroup === "" || a.seccode[0] === secGroup)
+    );
+  }, [areaTiles, carkind, secGroup]);
   
+  const groupButtons = useMemo(() => {
+    const keys = carkind !== "3" ? ["1", "3", "5", "7"] : ["2", "4", "6"];
+    return keys.map((k) => ({ key: k, label: GROUP_DEFS[k] }));
+  }, [carkind]);
+
   const moveArea = useCallback((fromCode, toCode) => {
     if (!fromCode || !toCode || fromCode === toCode) return;
   
@@ -359,24 +381,38 @@ export default function LaborItemsPopup() {
     const q = workSearch.trim().toLowerCase();
     const byOrdno = (a, b) => String(a.orderno ?? "").localeCompare(String(b.orderno ?? ""));
 
+    // seccode='SS' payno 중복 제거 (첫 번째 항목 유지)
+    const dedupe = (arr) => {
+      const seen = new Set();
+      return arr.filter((x) => {
+        if (x.seccode !== "SS") return true;
+        const key = String(x.payno).slice(0, -2);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    };
+
     // 1) 검색이 있으면: "전체"에서 검색 (영역 무시)
     if (q) {
-      return workItems
-        .filter((x) => {
-          const payno = String(x.payno || "").toLowerCase();
-          const name = String(x.payname || "").toLowerCase();
-          return payno.includes(q) || name.includes(q);
-        })
-        .sort(byOrdno);
+      return dedupe(
+        workItems
+          .filter((x) => {
+            const payno = String(x.payno || "").toLowerCase();
+            const name = String(x.payname || "").toLowerCase();
+            return payno.includes(q) || name.includes(q);
+          })
+          .sort(byOrdno)
+      );
     }
 
     // 2) 검색이 없고 영역 선택이 있으면: 영역 필터
     if (selectedSec) {
-      return workItems.filter((x) => x.seccode === selectedSec).sort(byOrdno);
+      return dedupe(workItems.filter((x) => x.seccode === selectedSec).sort(byOrdno));
     }
 
     // 3) 아무 필터 없으면: 전체
-    return [...workItems].sort(byOrdno);
+    return dedupe([...workItems].sort(byOrdno));
   }, [workItems, selectedSec, workSearch]);
   
     
@@ -391,10 +427,30 @@ export default function LaborItemsPopup() {
   );
 
   const filteredWorkTimes = useMemo(() => {
-    const byPayno = workTimes.filter((x) => x.payno === effectivePayno);
-    // paykind='3'(부품) 이면 subpayno='' 항목만
-    if (paykind === "3") return byPayno.filter((x) => (x.subpayno ?? "") === "");
-    return byPayno;
+    const isSS = String(effectivePayno).startsWith("SS");
+    const baseKey = isSS ? String(effectivePayno).slice(0, -2) : null;
+
+    // SS payno: 뒤 2자리 제거한 기본키로 확장 매칭 / 일반: 정확한 payno 매칭
+    const byPayno = isSS
+      ? workTimes.filter((x) => String(x.payno).slice(0, -2) === baseKey)
+      : workTimes.filter((x) => x.payno === effectivePayno);
+
+    // paykind='3': subpayno='' 항목만 (SS 항목은 제외)
+    const base = !isSS && paykind === "3"
+      ? byPayno.filter((x) => (x.subpayno ?? "") === "")
+      : byPayno;
+
+    // SS payno: workcode 기준 중복 제거 (첫 번째 유지)
+    if (isSS) {
+      const seen = new Set();
+      return base.filter((x) => {
+        if (seen.has(x.workcode)) return false;
+        seen.add(x.workcode);
+        return true;
+      });
+    }
+
+    return base;
   }, [workTimes, effectivePayno, paykind]);
 
   const filteredPaints = useMemo(() => {
@@ -420,6 +476,185 @@ export default function LaborItemsPopup() {
   }, [parts, effectivePayno, paykind, selectedWorkItem]);
 
 
+  // ── workcode='S' 드롭다운 (Row 클릭 위치 / fixed 포지셔닝) ─────────
+  const [wtMenuOpen, setWtMenuOpen] = useState(false);
+  const [wtMenuPos,  setWtMenuPos]  = useState({ top: 0, left: 0 });
+  const wtDropRef = useRef(null);
+
+  useEffect(() => {
+    if (!wtMenuOpen) return;
+    const handle = (e) => {
+      if (!wtDropRef.current?.contains(e.target)) setWtMenuOpen(false);
+    };
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [wtMenuOpen]);
+
+  // ── 경미손상 팝업 state ────────────────────────────────────────────
+  const [suriOpen,           setSuriOpen]           = useState(false);
+  const [suriRows,           setSuriRows]           = useState([]);
+  const [selectedSuriRow,    setSelectedSuriRow]    = useState(null);
+  const [suriPartPrice,      setSuriPartPrice]      = useState(0);
+  const [suriPartPriceInput, setSuriPartPriceInput] = useState("");
+
+  // ── 우수기술료 팝업 state ──────────────────────────────────────────
+  const [ssuriOpen,        setSsuriOpen]        = useState(false);
+  const [ssuriRows,        setSsuriRows]        = useState([]);
+  const [selectedSsuriRow, setSelectedSsuriRow] = useState(null);
+
+  // ── 청구처 bocomcode → bocomname 맵 ───────────────────────────────
+  const bocomMap = useMemo(
+    () => claims.reduce((m, c) => (m.set(c.bocomcode, c.bocomname), m), new Map()),
+    [claims]
+  );
+
+  // ── 부품액 헬퍼 (payno 기준 '범퍼' 포함 부품 최대 단가) ──────────
+  const getMaxBumperPrice = useCallback((payno) => {
+    const bumperParts = parts.filter(
+      (p) => p.payno === payno && String(p.partname || "").includes("범퍼")
+    );
+    if (!bumperParts.length) return 0;
+    return Math.max(...bumperParts.map((p) => Number(p.price) || 0));
+  }, [parts]);
+
+  // ── 일반 postPick (작업/시간) ──────────────────────────────────────
+  const postPickWorkTime = useCallback((row) => {
+    if (!row) return;
+    postPick({
+      type:     "workTime",
+      payno:    effectivePayno,
+      payname:  selectedWorkItem?.payname ?? "",
+      workcode: row.workcode,
+      workname: row.workname,
+      hour:     row.hour,
+    });
+  }, [postPick, effectivePayno, selectedWorkItem]);
+
+  // ── 경미손상 팝업 열기 ─────────────────────────────────────────────
+  const openSuriModal = useCallback((row) => {
+    if (!row) return;
+    const candidates = workTimes.filter(
+      (x) =>
+        x.payno    === row.payno &&
+        x.workcode === "S" &&
+        (x.subpayno ?? "") !== "" &&
+        Number(x.partsum) > 0
+    );
+    const partPrice = getMaxBumperPrice(row.payno);
+    setSuriRows(candidates);
+    setSelectedSuriRow(candidates[0] ?? null);
+    setSuriPartPrice(partPrice);
+    setSuriPartPriceInput(formatLocaleNumber(partPrice));
+    setSuriOpen(true);
+  }, [workTimes, getMaxBumperPrice]);
+
+  // ── 경미손상 팝업 확인 ─────────────────────────────────────────────
+  const confirmSuri = useCallback(() => {
+    if (!selectedSuriRow) return;
+    postPick({
+      type:      "workTime",
+      payno:     effectivePayno,
+      payname:   selectedWorkItem?.payname ?? "",
+      workcode:  selectedSuriRow.workcode,
+      workname:  selectedSuriRow.workname,
+      hour:      selectedSuriRow.hour,
+      subpayno:  selectedSuriRow.subpayno,
+      partsum:   selectedSuriRow.partsum,
+      info:      selectedSuriRow.info,
+      partPrice:  suriPartPrice,
+      adjAmt:     Math.floor(suriPartPrice * 0.03),
+      totalPrice: Number(selectedSuriRow.partsum || 0) + Math.floor(suriPartPrice * 0.03),
+    });
+    setSuriOpen(false);
+  }, [selectedSuriRow, effectivePayno, selectedWorkItem, suriPartPrice, postPick]);
+
+  // ── 우수기술료 팝업 확인 ──────────────────────────────────────────
+  const confirmSsuri = useCallback(() => {
+    if (!selectedSsuriRow) return;
+    const ssPayname = selectedWorkItem
+      ? String(selectedWorkItem.payname || "").split(" - ")[0]
+      : "";
+    postPick({
+      type:     "workTime",
+      payno:    selectedSsuriRow.payno,
+      payname:  ssPayname,
+      workcode: selectedSsuriRow.workcode,
+      workname: selectedSsuriRow.workname,
+      hour:     selectedSsuriRow.hour,
+      subpayno: selectedSsuriRow.subpayno,
+      partsum:  selectedSsuriRow.partsum,
+      info:     selectedSsuriRow.info,
+    });
+    setSsuriOpen(false);
+  }, [selectedSsuriRow, selectedWorkItem, postPick]);
+
+  // ── 우수기술료 팝업 컬럼 ──────────────────────────────────────────
+  const ssuriCols = useMemo(() => [
+    {
+      key: "subpayno",
+      title: "보험사",
+      width: "1fr",
+      render: (_v, row) => (
+        <div className="h-8 flex items-center truncate">
+          {bocomMap.get(row.subpayno) ?? row.subpayno}
+        </div>
+      ),
+    },
+    {
+      key: "info",
+      title: "기준",
+      width: "1fr",
+      render: (v) => <div className="h-8 flex items-center truncate">{v}</div>,
+    },
+    {
+      key: "partsum",
+      title: "재료비",
+      width: "120px",
+      align: "right",
+      render: (v) => (
+        <div className="h-8 flex items-center justify-end tabular-nums">
+          {formatLocaleNumber(v)}
+        </div>
+      ),
+    },
+  ], [bocomMap]);
+
+  // ── 경미손상 팝업 컬럼 ─────────────────────────────────────────────
+  const suriCols = useMemo(() => [
+    { key: "info",  title: "손상범위", width: "1fr" },
+    { key: "hour",  title: "수리시간", width: "90px",  align: "right" },
+    {
+      key: "partsum",
+      title: "재료비",
+      width: "110px",
+      align: "right",
+      render: (v) => (
+        <div className="h-8 flex items-center justify-end tabular-nums">
+          {formatLocaleNumber(v)}
+        </div>
+      ),
+    },
+    {
+      key: "_totalPrice",
+      title: "부품액",
+      width: "120px",
+      align: "right",
+      render: (v) => (
+        <div className="h-8 flex items-center justify-end tabular-nums">
+          {formatLocaleNumber(v)}
+        </div>
+      ),
+    },
+  ], []);
+
+  const suriDisplayRows = useMemo(() => {
+    const adjAmt = Math.floor(suriPartPrice * 0.03);
+    return suriRows.map((r) => ({
+      ...r,
+      _totalPrice: Number(r.partsum || 0) + adjAmt,
+    }));
+  }, [suriRows, suriPartPrice]);
+
   const workItemCols = useMemo(
     () => [
       {
@@ -427,7 +662,12 @@ export default function LaborItemsPopup() {
         title: "작업항목명",
         width: "1fr",
         className: "px-2 py-0",
-        render: (_v, row) => <div className="h-8 flex items-center truncate">{row.payname}</div>,
+        render: (_v, row) => {
+          const name = row.seccode === "SS"
+            ? String(row.payname || "").split(" - ")[0]
+            : row.payname;
+          return <div className="h-8 flex items-center truncate">{name}</div>;
+        },
       },
       // {
       //   key: "pick",
@@ -505,7 +745,7 @@ export default function LaborItemsPopup() {
           const { m } = getPaintMH(row, paintSolvent, coatKind);
           return (
             <div className="h-8 flex items-center justify-end tabular-nums">
-              {formatNumber(m)}
+              {formatLocaleNumber(m)}
             </div>
           );
         },
@@ -553,7 +793,7 @@ export default function LaborItemsPopup() {
         align: "right",
         className: "px-2 py-0",
         render: (_v, row) => (
-          <div className="h-8 flex items-center justify-end tabular-nums">{formatNumber(row.price)}</div>
+          <div className="h-8 flex items-center justify-end tabular-nums">{formatLocaleNumber(row.price)}</div>
         ),
       },
       
@@ -605,17 +845,37 @@ export default function LaborItemsPopup() {
 
           <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-200">
             <div className="text-sm font-semibold text-zinc-800">영역</div>
+          </div>
 
-            <div className="ml-auto flex items-center gap-2">
+          {/* 그룹 필터 탭 */}
+          <div className="flex items-center gap-1 px-3 py-2 border-b border-zinc-200 flex-wrap">
+            <button
+              type="button"
+              className={[
+                "rounded-md px-2.5 py-1 text-xs font-semibold",
+                secGroup === ""
+                  ? "bg-zinc-900 text-white"
+                  : "bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-50",
+              ].join(" ")}
+              onClick={() => setSecGroup("")}
+            >
+              전체
+            </button>
+            {groupButtons.map((g) => (
               <button
+                key={g.key}
                 type="button"
-                className="rounded-md px-3 py-1.5 text-xs font-semibold bg-zinc-900 text-white hover:bg-zinc-800"
-                onClick={() => setSelectedSec("")}
-                title="영역 필터 해제"
+                className={[
+                  "rounded-md px-2.5 py-1 text-xs font-semibold",
+                  secGroup === g.key
+                    ? "bg-zinc-900 text-white"
+                    : "bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-50",
+                ].join(" ")}
+                onClick={() => setSecGroup((prev) => (prev === g.key ? "" : g.key))}
               >
-                영역 필터 해제
+                {g.label}
               </button>
-            </div>
+            ))}
           </div>
 
           <div className="min-h-0 flex-1 overflow-auto p-2">
@@ -702,7 +962,7 @@ export default function LaborItemsPopup() {
                 <div className="text-sm font-semibold text-zinc-800">
                   작업항목
                   <span className="ml-2 text-xs text-zinc-500">
-                    (영역: {selectedSec || "-"})
+                    (영역: {AREA_DEFS.find((a) => a.seccode === selectedSec)?.label || selectedSec || "-"})
                   </span>
                 </div>
 
@@ -765,14 +1025,7 @@ export default function LaborItemsPopup() {
                     ].join(" ")}
                     onClick={() => {
                       if (!selectedWorkTimeRow) return;
-                      postPick({
-                        type: "workTime",
-                        payno: effectivePayno,
-                        payname: selectedWorkItem?.payname ?? "",
-                        workcode: selectedWorkTimeRow.workcode,
-                        workname: selectedWorkTimeRow.workname,
-                        hour: selectedWorkTimeRow.hour,
-                      });
+                      postPickWorkTime(selectedWorkTimeRow);
                     }}
                   >
                     선택
@@ -791,17 +1044,49 @@ export default function LaborItemsPopup() {
                       ? `${selectedWorkTimeRow.payno}-${selectedWorkTimeRow.workcode}-${filteredWorkTimes.indexOf(selectedWorkTimeRow)}`
                       : ""
                   }
-                  onRowClick={(row) => setSelectedWorkTimeRow(row)}
-                  onRowDoubleClick={(row) =>
-                    postPick({
-                      type: "workTime",
-                      payno: effectivePayno,
-                      payname: selectedWorkItem?.payname ?? "",
-                      workcode: row.workcode,
-                      workname: row.workname,
-                      hour: row.hour,
-                    })
-                  }
+                  onRowClick={(row, _idx, e) => {
+                    setSelectedWorkTimeRow(row);
+                    const isSS = String(row.payno).startsWith("SS");
+                    if (isSS) {
+                      // SS: 우수기술료 팝업
+                      const baseKey = String(row.payno).slice(0, -2);
+                      const ssRows = workTimes.filter(
+                        (x) =>
+                          String(x.payno).slice(0, -2) === baseKey &&
+                          x.workcode === row.workcode &&
+                          bocomMap.has(x.subpayno)
+                      );
+                      if (ssRows.length > 0) {
+                        setSsuriRows(ssRows);
+                        setSelectedSsuriRow(ssRows[0]);
+                        setSsuriOpen(true);
+                      } else {
+                        postPickWorkTime(row);
+                      }
+                      setWtMenuOpen(false);
+                    } else if (row.workcode === "S") {
+                      const candidates = workTimes.filter(
+                        (x) =>
+                          x.payno    === row.payno &&
+                          x.workcode === "S" &&
+                          (x.subpayno ?? "") !== "" &&
+                          Number(x.partsum) > 0
+                      );
+                      if (candidates.length > 0) {
+                        const MENU_W = 120;
+                        const left = e.clientX + MENU_W > window.innerWidth
+                          ? e.clientX - MENU_W
+                          : e.clientX;
+                        setWtMenuPos({ top: e.clientY + 4, left });
+                        setWtMenuOpen(true);
+                      } else {
+                        setWtMenuOpen(false);
+                      }
+                    } else {
+                      setWtMenuOpen(false);
+                    }
+                  }}
+                  onRowDoubleClick={(row) => postPickWorkTime(row)}
                 />
               </div>
             </div>
@@ -891,6 +1176,7 @@ export default function LaborItemsPopup() {
               {/* 도료 타입은 “둘 중 하나만” 표시 */}
               <div className="ml-2 text-xs font-semibold text-zinc-600">
                 {paintSolvent === "oil" ? "유용성" : "수용성"}
+                {pntcotCode ? ` - ${pntcotCode} 코트` : ""}
               </div>
 
               <div className="ml-auto flex items-center gap-2">
@@ -1013,6 +1299,185 @@ export default function LaborItemsPopup() {
           </div>
         </div>
       </div>
+
+      {/* workcode='S' 드롭다운 (Row 클릭 위치 / fixed) */}
+      {wtMenuOpen && (
+        <div
+          ref={wtDropRef}
+          className="fixed z-[55] min-w-[110px] rounded-md border border-zinc-200 bg-white shadow-lg py-1 text-sm"
+          style={{ top: wtMenuPos.top, left: wtMenuPos.left }}
+        >
+          <button
+            type="button"
+            className="w-full px-3 py-2 text-left hover:bg-zinc-100 active:bg-zinc-200"
+            onClick={() => {
+              setWtMenuOpen(false);
+              openSuriModal(selectedWorkTimeRow);
+            }}
+          >
+            경미손상
+          </button>
+          <button
+            type="button"
+            className="w-full px-3 py-2 text-left hover:bg-zinc-100 active:bg-zinc-200"
+            onClick={() => {
+              setWtMenuOpen(false);
+              postPickWorkTime(selectedWorkTimeRow);
+            }}
+          >
+            사용자 입력
+          </button>
+        </div>
+      )}
+
+      {/* 경미손상 팝업 */}
+      {suriOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30">
+          <div className="rounded-md border border-zinc-200 bg-white shadow-xl overflow-hidden w-[600px]">
+
+            {/* 헤더 */}
+            <div className="flex items-center border-b border-zinc-200 bg-zinc-50 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-700">
+                  <Wrench className="h-4 w-4" />
+                </span>
+                <div className="text-base font-semibold text-zinc-900">
+                  경미손상 — {selectedWorkItem?.payname}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="ml-auto inline-flex items-center justify-center rounded-md border border-zinc-200 bg-white px-2 py-2 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
+                onClick={() => setSuriOpen(false)}
+                aria-label="닫기"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* 바디 */}
+            <div className="p-4">
+              {/* 부품액 입력 + 설명 */}
+              <div className="mb-3 flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-zinc-700 whitespace-nowrap">부품액</span>
+                  <input
+                    type="text"
+                    value={suriPartPriceInput}
+                    onChange={(e) => setSuriPartPriceInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        const val = Number(String(e.target.value).replace(/,/g, "")) || 0;
+                        setSuriPartPrice(val);
+                        setSuriPartPriceInput(formatLocaleNumber(val));
+                      }
+                    }}
+                    className="h-8 w-[130px] rounded-md border border-zinc-200 px-2 text-sm text-right tabular-nums outline-none focus:border-zinc-400"
+                  />
+                </div>
+                <div className="ml-auto text-xs font-semibold text-red-600 whitespace-nowrap">
+                  조정계수금액 : {formatLocaleNumber(Math.floor(suriPartPrice * 0.03))}
+                  <span className="ml-1 font-normal text-zinc-500">(부품액 × 3%)</span>
+                </div>
+              </div>
+              <div className="h-[220px] overflow-hidden">
+                <FixedHeadTable
+                  columns={suriCols}
+                  rows={suriDisplayRows}
+                  rowKey={(r, i) => r.subpayno || String(i)}
+                  rowSize="sm"
+                  selectedKey={selectedSuriRow?.subpayno ?? ""}
+                  onRowClick={(row) => setSelectedSuriRow(row)}
+                  onRowDoubleClick={() => confirmSuri()}
+                />
+              </div>
+            </div>
+
+            {/* 푸터 */}
+            <div className="border-t border-zinc-200 px-4 py-3 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-md border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-50"
+                onClick={() => setSuriOpen(false)}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-50"
+                disabled={!selectedSuriRow}
+                onClick={confirmSuri}
+              >
+                확인
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* 우수기술료 팝업 */}
+      {ssuriOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30">
+          <div className="rounded-md border border-zinc-200 bg-white shadow-xl overflow-hidden w-[560px]">
+
+            {/* 헤더 */}
+            <div className="flex items-center border-b border-zinc-200 bg-zinc-50 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-700">
+                  <Wrench className="h-4 w-4" />
+                </span>
+                <div className="text-base font-semibold text-zinc-900">
+                  우수기술료 — {selectedWorkItem ? String(selectedWorkItem.payname || "").split(" - ")[0] : ""}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="ml-auto inline-flex items-center justify-center rounded-md border border-zinc-200 bg-white px-2 py-2 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
+                onClick={() => setSsuriOpen(false)}
+                aria-label="닫기"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* 바디 */}
+            <div className="p-4">
+              <div className="h-[220px] overflow-hidden">
+                <FixedHeadTable
+                  columns={ssuriCols}
+                  rows={ssuriRows}
+                  rowKey={(r) => `${r.payno}-${r.subpayno}`}
+                  rowSize="sm"
+                  selectedKey={selectedSsuriRow ? `${selectedSsuriRow.payno}-${selectedSsuriRow.subpayno}` : ""}
+                  onRowClick={(row) => setSelectedSsuriRow(row)}
+                  onRowDoubleClick={() => confirmSsuri()}
+                />
+              </div>
+            </div>
+
+            {/* 푸터 */}
+            <div className="border-t border-zinc-200 px-4 py-3 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-md border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-50"
+                onClick={() => setSsuriOpen(false)}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-50"
+                disabled={!selectedSsuriRow}
+                onClick={confirmSsuri}
+              >
+                확인
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
 
       <div className="px-4 py-2 border-t border-zinc-200 bg-white text-xs text-zinc-600">
         선택영역: <span className="font-semibold text-zinc-800">{selectedSec || "-"}</span> ·

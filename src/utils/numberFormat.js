@@ -1,5 +1,18 @@
 /**
- * 숫자를 천 단위 콤마 포맷으로 변환
+ * 숫자를 천 단위 콤마 포맷으로 변환 (소수점·음수 보존, toLocaleString 기반)
+ * null/undefined/빈값 → "0"
+ * @param {string|number} value
+ * @returns {string}
+ */
+export function formatLocaleNumber(value) {
+  const n = Number(value || 0);
+  if (Number.isNaN(n)) return "";
+  return n.toLocaleString();
+}
+
+/**
+ * 숫자를 천 단위 콤마 포맷으로 변환 (소수점·음수 보존 안함) 양의정수로 변환 
+ * * null/undefined/빈값 → ""
  * @param {string|number} value
  * @returns {string}
  */
