@@ -24,7 +24,9 @@ function toApiRow(row) {
     // varchar
     comcode:        toStrOrNull(row.comcode),
     est_serial:     toStrOrNull(row.est_serial),
-    estb_orgseqno:  toStrOrNull(row.estb_orgseqno),
+    estb_orgseqno:  String(row.estb_orgseqno || "").startsWith("_new_")
+                      ? null
+                      : toStrOrNull(row.estb_orgseqno),
     estb_seqno:     row.estb_seqno != null && row.estb_seqno !== ""
                       ? String(row.estb_seqno).padStart(3, "0")
                       : null,
@@ -92,7 +94,7 @@ export function useEstimateDetailSave(setRows) {
           if (newserial) {
             setRows((prev) =>
               prev.map((r) =>
-                r.estb_orgseqno === "" && r.estb_seqno === newRow.estb_seqno
+                r.estb_orgseqno === newRow.estb_orgseqno
                   ? { ...r, estb_orgseqno: newserial }
                   : r
               )

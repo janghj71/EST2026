@@ -534,11 +534,15 @@ export default function LaborItemsPopup() {
       type:     "workTime",
       payno:    effectivePayno,
       payname:  selectedWorkItem?.payname ?? "",
+      paykind:  row.paykind ?? "4",
+      subpayno: selectedWorkItem?.subpayno ?? "",
+      ts_payno: selectedWorkItem?.ts_payno ?? "",
+      orderno:  selectedWorkItem?.orderno ?? "",
       workcode: row.workcode,
       workname: row.workname,
       hour:     row.hour,
     });
-  }, [postPick, effectivePayno, selectedWorkItem]);
+  }, [postPick, effectivePayno, selectedWorkItem, paykind]);
 
   // ── 경미손상 팝업 열기 ─────────────────────────────────────────────
   const openSuriModal = useCallback((row) => {

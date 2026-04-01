@@ -18,6 +18,7 @@ import { useEstimateDetailSave } from "../../hooks/useEstimateDetailSave";
 import { useEstimateDetailDelete } from "../../hooks/useEstimateDetailDelete";
 import { useEstimateClaims } from "../../hooks/useEstimateClaims";
 import { useLoading } from "../../loading/useLoading";
+import { getUserid, getComcode } from "../../api/config";
 
 export default function EstimateEditPage() {
   const navigate = useNavigate();
@@ -73,9 +74,11 @@ export default function EstimateEditPage() {
   // 청구처 변경 여부 (변경 시에만 저장)
   const claimDirtyRef = useRef(false);
 
-  // 최신 master를 stale closure 없이 접근하기 위한 ref
+  // 최신 master/rows를 stale closure 없이 접근하기 위한 ref
   const masterRef = useRef(master);
   masterRef.current = master;
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
 
   // 청구처 M/H 단가 변경(blur) 시 견적내역 paysum 일괄 재계산
   const recalcPaysum = useCallback(() => {
@@ -381,24 +384,115 @@ export default function EstimateEditPage() {
   };
   
 
+  const onMsgHandlerRef = useRef(null);
+
   useEffect(() => {
-    const onMsg = (e) => {
+    onMsgHandlerRef.current = (e) => {
       if (e.origin !== window.location.origin) return;
       const { type, payload } = e.data || {};
       if (
-        type !== "LABOR_ITEMS_PICK" && 
-        type !== "PAINT_ITEMS_PICK" && 
+        type !== "LABOR_ITEMS_PICK" &&
+        type !== "PAINT_ITEMS_PICK" &&
         type !== "CHEM_ITEMS_PICK" &&
-        type !== "PART_LOOKUP_PICK" 
-
+        type !== "PART_LOOKUP_PICK"
       ) return;
-  
-      // TODO: 여기서 payload를 rows에 반영(나중 단계)
+
+      if (type === "LABOR_ITEMS_PICK" && payload?.type === "workTime") {
+        const {
+          payno, payname, paykind: itemPaykind, subpayno,
+          ts_payno, orderno, workcode, workname, hour,
+        } = payload;
+
+        const currentRows = rowsRef.current;
+
+        // 1. 중복 체크: payno + workcode 조합이 이미 존재하면 스킵
+        if (currentRows.some((r) => r.payno === payno && r.workcode === workcode)) return;
+
+        // 2. 삽입 위치: pay_orderno 순서 + workcode rank 보조
+        //    탈착(R)→교환(X)→판금(B)→수리(S)→조정(A)→오버홀(O)→도장(P)
+        const WC_RANK = { R: 0, X: 1, B: 2, S: 3, A: 4, O: 5, P: 6 };
+        const newOrderno = String(orderno ?? "");
+        const newRank = WC_RANK[workcode] ?? 99;
+
+        let insertIdx = currentRows.length;
+        for (let i = currentRows.length - 1; i >= 0; i--) {
+          const r = currentRows[i];
+          const rOrderno = String(r.pay_orderno ?? "");
+          const rRank = WC_RANK[r.workcode] ?? 99;
+          if (
+            rOrderno &&
+            (rOrderno < newOrderno ||
+              (rOrderno === newOrderno && rRank <= newRank))
+          ) {
+            insertIdx = i + 1;
+            break;
+          }
+          if (i === 0) insertIdx = 0;
+        }
+
+        // 3. 새 row 생성 — 임시 ID로 key 중복 방지
+        const comcode = masterRef.current?.comcode ?? getComcode();
+        const estSerial = masterRef.current?.est_serial ?? est_serial ?? "";
+        const pkStr = String(itemPaykind || "4");
+        const pkLabel = { "1": "주체", "3": "부품", "4": "#공임", "5": "#부품", "6": "도장" }[pkStr] ?? "";
+
+        const newRow = {
+          comcode,
+          est_serial:     estSerial,
+          estb_orgseqno:  "_new_" + Date.now(),
+          estb_seqno:     String(insertIdx + 1).padStart(3, "0"),
+          paykind:        pkStr,
+          payno,
+          subpayno:       subpayno ?? "",
+          payname,
+          workcode,
+          workcodename:   workname ?? "",
+          price:          "",
+          qty:            String(hour ?? "0"),
+          oqty:           String(hour ?? "0"),
+          partsum:        "0",
+          paysum:         "0",
+          part_makercode: "",
+          state:          "",
+          statename:      "",
+          pnt_extr:       "",
+          pnt_hour:       "",
+          pnt_part:       "0",
+          pnt_m:          "",
+          pntcot:         "",
+          ts_payno:       ts_payno ?? "",
+          update_id:      getUserid(),
+          paykindname:    pkLabel,
+          b_level:        "0.00",
+          b_area:         "0",
+          pnt_reduce:     "0",
+          body_panel:     "",
+          pay_orderno:    String(orderno ?? ""),
+        };
+
+        // 4. state 반영 + seqno 재부여
+        const combined = [
+          ...currentRows.slice(0, insertIdx),
+          newRow,
+          ...currentRows.slice(insertIdx),
+        ].map((r, i) => ({ ...r, estb_seqno: String(i + 1).padStart(3, "0") }));
+        setRows(combined);
+        recalcPaysum();
+
+        // 5. 서버 저장 — toApiRow에서 "_new_" prefix → null 변환
+        //    응답 newserial로 estb_orgseqno 교체 (saveDetail 내부)
+        saveDetail(newRow);
+        return;
+      }
+
       console.log(`[${type}]`, payload);
     };
-  
-    window.addEventListener("message", onMsg);
-    return () => window.removeEventListener("message", onMsg);
+  }, [est_serial, saveDetail, setRows, recalcPaysum]);
+
+  useEffect(() => {
+    const handler = (e) => onMsgHandlerRef.current?.(e);
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
   }, []);
   
   useEffect(() => {

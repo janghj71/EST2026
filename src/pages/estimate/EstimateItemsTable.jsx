@@ -957,7 +957,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
       const newRow = {
         comcode:        base?.comcode        ?? getComcode(),
         est_serial:     base?.est_serial     ?? master?.est_serial ?? "",
-        estb_orgseqno:  "",                           // 서버 할당 → 비워둠
+        estb_orgseqno:  "_new_" + Date.now(),           // 임시 유니크 ID (서버 응답 후 교체)
         estb_seqno:     String(insertAt + 1).padStart(3, "0"),
         paykind:        pkStr,
         payno,
