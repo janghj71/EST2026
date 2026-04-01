@@ -106,6 +106,7 @@ export default function EstimateEditPage() {
   const [selectedOrgSeqs, setSelectedOrgSeqs] = useState(new Set());
 
   const laborWinRef = useRef(null);
+  const [laborWinOpen, setLaborWinOpen] = useState(false);
   const paintWinRef = useRef(null);
   const chemicalWinRef = useRef(null);
   const partLookupWinRef = useRef(null);
@@ -125,6 +126,17 @@ export default function EstimateEditPage() {
     });
     childWinsRef.current.clear();
   };
+
+  // 공임항목 팝업 닫힘 감지 (500ms 폴링)
+  useEffect(() => {
+    if (!laborWinOpen) return;
+    const id = setInterval(() => {
+      try {
+        if (laborWinRef.current?.closed) setLaborWinOpen(false);
+      } catch { setLaborWinOpen(false); }
+    }, 500);
+    return () => clearInterval(id);
+  }, [laborWinOpen]);
   
   const openLaborItemsPopup = async () => {
     await saveClaimIfActive();
@@ -166,19 +178,21 @@ export default function EstimateEditPage() {
         laborWinRef.current.focus();
         laborWinRef.current.postMessage({ type: "LABOR_ITEMS_SET_CTX", payload }, window.location.origin);
         registerChildWin(laborWinRef.current);
+        setLaborWinOpen(true);
         return;
       } catch {
         laborWinRef.current = null;
       }
     }
-  
+
     const win = openCenteredWindow(url, "laborItems", 1000, 1300, {
       scrollbars: "yes",
       resizable: "yes",
     });
-  
+
     laborWinRef.current = win;
     registerChildWin(win);
+    setLaborWinOpen(true);
   
     setTimeout(() => {
       try {
@@ -548,7 +562,7 @@ export default function EstimateEditPage() {
         <div className="min-h-0 flex-1 flex gap-3 min-w-0">
           {/* 좌: 접수 + 테이블 */}
           <div className="min-h-0 flex-1 flex flex-col gap-2 min-w-0">
-            <EstimateReception master={master} setMaster={setMaster} />
+            <EstimateReception master={master} setMaster={setMaster} laborWinOpen={laborWinOpen} />
 
             <div className="min-h-0 flex-1 flex flex-col min-w-0">
               <EstimateItemsTable
@@ -587,6 +601,7 @@ export default function EstimateEditPage() {
             onOpenChange={setSidePanelOpen}
             onSettleEnter={handleSettleEnter}
             settleRefreshKey={settleRefreshKey}
+            laborWinOpen={laborWinOpen}
           />
         </div>
       </div>

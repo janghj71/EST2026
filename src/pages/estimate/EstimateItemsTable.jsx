@@ -121,9 +121,11 @@ function canEditWorkcode(row) {
 }
 
 function canEditPayName(row) {
-  // 기존 유지(공임/부품 추가행만 작업내용 수정 가능)
   const k = pk(row);
-  return k === "4" || k === "5";
+  if (k !== "4" && k !== "5") return false;
+  // paykind='4', subpayno in ('99990','99991') 수정 불가
+  if (k === "4" && (row.subpayno === "99990" || row.subpayno === "99991")) return false;
+  return true;
 }
 
 
@@ -287,25 +289,31 @@ export default function EstimateItemsTable({
 
     const activeRow = rows[fromIndex];
 
+    const BLOCK_KINDS = new Set(["1", "2", "3", "6"]);
     const canDragRow = (r) => {
-      // if (String(r.paykind) === "1") return true;
-      // if (sortMode === "free" && String(r.paykind) === "6") return true;
-      // return false;
       const k = String(r.paykind);
-      if (sortMode === "block") return k === "1"; 
-      if (sortMode === "free") return k === "4" || k === "5" || k === "6";
+      if (sortMode === "block") return BLOCK_KINDS.has(k) && String(r.payno || "") !== "";
+      if (sortMode === "free") return true; // 모든 row
       return false;
     };
     if (!canDragRow(activeRow)) return;
 
-    // 블록 모드: 주체는 payno 블록 통째 이동
-    if (sortMode === "block" && String(activeRow.paykind) === "1") {
-      // const { start, end } = getPaynoBlockRange(rows, activeRow.payno);
-      const { start, end } = getSubjectBlockRange(rows, fromIndex);
+    // 블록 모드: 동일 payno 블록 전체 이동
+    if (sortMode === "block") {
+      const blockPayno = String(activeRow.payno || "");
+      if (!blockPayno) return;
+
+      // 동일 payno를 가진 연속 블럭의 start/end 인덱스
+      const start = rows.findIndex((r) => String(r.payno || "") === blockPayno);
+      let end = start;
+      for (let i = start + 1; i < rows.length; i++) {
+        if (String(rows[i].payno || "") === blockPayno) end = i;
+        else break;
+      }
       if (start < 0 || end < start) return;
 
       const block = rows.slice(start, end + 1);
-      const rest = rows.filter((_, i) => i < start || i > end);
+      const rest  = rows.filter((_, i) => i < start || i > end);
 
       const overIndexInRest = rest.findIndex((r) => r.estb_orgseqno === overOrg);
       const insertAt =
@@ -864,16 +872,31 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
     ];
   }, [openPopover, setCell, moveFocusUpDown, focusPrevAcrossRows, focusNextAcrossRows, calcPaysum]);
 
+  // 블럭 모드: payno 기준 첫 번째 row의 estb_orgseqno Set (핸들 표시 기준)
+  const firstPaynoOrgSeqs = useMemo(() => {
+    const seen   = new Set();
+    const result = new Set();
+    for (const r of rows) {
+      const p = String(r.payno || "");
+      if (!p) continue;
+      if (!seen.has(p)) {
+        seen.add(p);
+        result.add(r.estb_orgseqno);
+      }
+    }
+    return result;
+  }, [rows]);
+
   // rowRenderer(드래그): FixedHeadTable 패치의 rowRenderer를 사용
   const rowRenderer = useCallback(({ row, idx, key, trProps, cells }) => {
-    const isSubject = String(row.paykind) === "1";
-    const isPaint = String(row.paykind) === "6";
-    // const dragEnabled = isSubject || (sortMode === "free" && isPaint);
     const k = String(row.paykind);
+    const BLOCK_KINDS = new Set(["1", "2", "3", "6"]);
     const dragEnabled =
       sortMode === "block"
-      ? k === "1"
-      : (k === "4" || k === "5" || k === "6"); // 자유: 4,5,6
+      ? BLOCK_KINDS.has(k) &&
+        String(row.payno || "") !== "" &&
+        firstPaynoOrgSeqs.has(row.estb_orgseqno)
+      : true; // 자유: 모든 row
 
     return (
       <SortableTr
@@ -885,7 +908,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
         cells={cells}
       />
     );
-  }, [sortMode, selectedOrgSeqs]);
+  }, [sortMode, selectedOrgSeqs, firstPaynoOrgSeqs]);
 
   // summary — paysum/partsum 편집 중이면 focus 시점 원본값 사용 (타이핑 중 불변)
   const { sumLabor, sumPart, sumSupply, sumVat, sumTotal } = useMemo(() => {
@@ -1072,7 +1095,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
 
         <div className="ml-auto flex items-center gap-2">
           <div className="flex items-center gap-2 rounded-md bg-zinc-50 px-2 py-1">
-            <span className="text-xs text-zinc-600">정렬</span>
+            <span className="text-xs text-zinc-600">자리이동</span>
             <button
               type="button"
               className={`px-2 py-1 rounded-md text-xs ${

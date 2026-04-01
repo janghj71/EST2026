@@ -15,7 +15,7 @@ import { useTbCode } from "../../hooks/useTbCode";
 import { usePntcot } from "../../hooks/usePntcot";
 
 
-export default function EstimateSidePanel({ master, setMaster, active, onTabChange, onClaimLeave, onClaimDirty, onClaimClean, onRateChange, onOpenChange, onSettleEnter, settleRefreshKey }) {
+export default function EstimateSidePanel({ master, setMaster, active, onTabChange, onClaimLeave, onClaimDirty, onClaimClean, onRateChange, onOpenChange, onSettleEnter, settleRefreshKey, laborWinOpen = false }) {
   const [open, setOpen] = useState(false);
   const changeOpen = (next) => { setOpen(next); onOpenChange?.(next); };
   const set = (k) => (vOrEvent) => {
@@ -80,29 +80,41 @@ export default function EstimateSidePanel({ master, setMaster, active, onTabChan
 
         <button
           type="button"
-          className={`rounded-md px-2 py-3 text-sm text-white ${
-            active === "labor" ? "bg-zinc-900" : "bg-zinc-700 hover:bg-zinc-800"
-          }`}
+          disabled={laborWinOpen}
+          className={[
+            "rounded-md px-2 py-3 text-sm text-white",
+            laborWinOpen
+              ? "bg-zinc-500 opacity-60 cursor-not-allowed"
+              : active === "labor" ? "bg-zinc-900" : "bg-zinc-700 hover:bg-zinc-800",
+          ].join(" ")}
           onClick={async () => {
+            if (laborWinOpen) return;
             if (active === "claim") await onClaimLeave?.();
             onTabChange("labor");
             changeOpen(true);
           }}
           style={{ writingMode: "vertical-rl" }}
+          title={laborWinOpen ? "공임항목 팝업 열려 있음" : undefined}
         >
           공임설정
         </button>
 
         <button
           type="button"
-          className={`rounded-md px-2 py-3 text-sm text-white ${
-            active === "claim" ? "bg-zinc-900" : "bg-zinc-700 hover:bg-zinc-800"
-          }`}
+          disabled={laborWinOpen}
+          className={[
+            "rounded-md px-2 py-3 text-sm text-white",
+            laborWinOpen
+              ? "bg-zinc-500 opacity-60 cursor-not-allowed"
+              : active === "claim" ? "bg-zinc-900" : "bg-zinc-700 hover:bg-zinc-800",
+          ].join(" ")}
           onClick={() => {
+            if (laborWinOpen) return;
             onTabChange("claim");
             changeOpen(true);
           }}
           style={{ writingMode: "vertical-rl" }}
+          title={laborWinOpen ? "공임항목 팝업 열려 있음" : undefined}
         >
           청구처
         </button>
@@ -125,7 +137,14 @@ export default function EstimateSidePanel({ master, setMaster, active, onTabChan
       </div>
 
       {open && (
-        <div className="ml-2 w-[520px] rounded-md border border-zinc-200 bg-white p-3 shadow-xs overflow-auto">
+        <div className="ml-2 w-[520px] rounded-md border border-zinc-200 bg-white p-3 shadow-xs overflow-auto relative">
+          {laborWinOpen && (active === "labor" || active === "claim") && (
+            <div className="absolute inset-0 z-10 rounded-md bg-white/70 flex items-center justify-center pointer-events-none">
+              <span className="text-xs font-semibold text-zinc-500 bg-white/90 px-3 py-1 rounded-md border border-zinc-200">
+                공임항목 팝업 열려 있음
+              </span>
+            </div>
+          )}
           {active === "labor" && (
             <LaborPanel
               master={master}

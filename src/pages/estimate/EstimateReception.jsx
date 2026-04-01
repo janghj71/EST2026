@@ -14,7 +14,7 @@ import { useLaborSettings } from "../../hooks/useLaborSettings";
  * - Field는 "라벨 + children" 레이아웃 컴포넌트라서
  *   실제 input/select는 children으로 넣어야 함.
  */
-export default function EstimateReception({ master, setMaster }) {
+export default function EstimateReception({ master, setMaster, laborWinOpen = false }) {
   const [carHelpOpen, setCarHelpOpen] = useState(false);
   const { form: laborForm } = useLaborSettings();
 
@@ -115,10 +115,11 @@ export default function EstimateReception({ master, setMaster }) {
 
                   <IconBtn
                     icon={Info}
-                    title="차량코드 선택"
+                    title={laborWinOpen ? "공임항목 팝업 열려 있음" : "차량코드 선택"}
                     size="sm"
+                    disabled={laborWinOpen}
                     className="h-9 rounded-md border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 ms-2"
-                    onClick={() => setCarHelpOpen(true)}
+                    onClick={() => !laborWinOpen && setCarHelpOpen(true)}
                   />
                 </div>
 

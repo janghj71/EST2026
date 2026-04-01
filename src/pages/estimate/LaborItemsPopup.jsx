@@ -6,6 +6,7 @@ import IconBtn from "../../components/IconBtn";
 import { useCodepay, useCodepayHour, useCodepnt, useCodepart } from "../../hooks/useLaborItems";
 import { useEstimateClaims } from "../../hooks/useEstimateClaims";
 import { formatLocaleNumber } from "../../utils/numberFormat";
+import { useLoading } from "../../loading/useLoading";
 
 
 const AREA_DEFS = [
@@ -241,6 +242,7 @@ export default function LaborItemsPopup() {
   const { fetchCodepnt }     = useCodepnt();
   const { fetchCodepart }    = useCodepart();
   const { fetchClaims }      = useEstimateClaims();
+  const { withLoading }      = useLoading();
   const [workItems, setWorkItems] = useState([]);
   const [workTimes, setWorkTimes] = useState([]);
   const [paints,    setPaints]    = useState([]);
@@ -253,22 +255,24 @@ export default function LaborItemsPopup() {
     const ocarcode = codecar;
     if (!carcode) return;
 
-    Promise.all([
-      fetchCodepay({ carcode, ocarcode, paykind }),
-      fetchCodepayHour({ carcode, ocarcode, paykind, paint, outday }),
-      // 도장: carcode=master.paint, paykind=master.pntkind, ocarcode=master.est_codecar
-      fetchCodepnt({ carcode: paint, paykind: pntkind, ocarcode: estCodecar }),
-      // 부품: carcode=master.codecar, modelcode=master.modelcode, paykind=master.paykind
-      fetchCodepart({ carcode: codecar, modelcode, paykind }),
-      // 청구처(보험사 목록): est_serial 기준
-      fetchClaims(estSerial),
-    ]).then(([wpJson, wtJson, pntJson, ptJson, claimsJson]) => {
-      if (wpJson?.result     === "OK") setWorkItems(wpJson.dataset    ?? []);
-      if (wtJson?.result     === "OK") setWorkTimes(wtJson.dataset    ?? []);
-      if (pntJson?.result    === "OK") setPaints(pntJson.dataset      ?? []);
-      if (ptJson?.result     === "OK") setParts(ptJson.dataset        ?? []);
-      if (claimsJson?.result === "OK") setClaims(claimsJson.dataset   ?? []);
-    }).catch(() => {});
+    withLoading(() =>
+      Promise.all([
+        fetchCodepay({ carcode, ocarcode, paykind }),
+        fetchCodepayHour({ carcode, ocarcode, paykind, paint, outday }),
+        // 도장: carcode=master.paint, paykind=master.pntkind, ocarcode=master.est_codecar
+        fetchCodepnt({ carcode: paint, paykind: pntkind, ocarcode: estCodecar }),
+        // 부품: carcode=master.codecar, modelcode=master.modelcode, paykind=master.paykind
+        fetchCodepart({ carcode: codecar, modelcode, paykind }),
+        // 청구처(보험사 목록): est_serial 기준
+        fetchClaims(estSerial),
+      ]).then(([wpJson, wtJson, pntJson, ptJson, claimsJson]) => {
+        if (wpJson?.result     === "OK") setWorkItems(wpJson.dataset    ?? []);
+        if (wtJson?.result     === "OK") setWorkTimes(wtJson.dataset    ?? []);
+        if (pntJson?.result    === "OK") setPaints(pntJson.dataset      ?? []);
+        if (ptJson?.result     === "OK") setParts(ptJson.dataset        ?? []);
+        if (claimsJson?.result === "OK") setClaims(claimsJson.dataset   ?? []);
+      })
+    , "공임 데이터 불러오는 중...");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [estCodecar, codecar]);
 
@@ -478,8 +482,14 @@ export default function LaborItemsPopup() {
 
   // ── workcode='S' 드롭다운 (Row 클릭 위치 / fixed 포지셔닝) ─────────
   const [wtMenuOpen, setWtMenuOpen] = useState(false);
+  const [wtMenuType, setWtMenuType] = useState("");   // "S" | "B"
   const [wtMenuPos,  setWtMenuPos]  = useState({ top: 0, left: 0 });
   const wtDropRef = useRef(null);
+
+  // 판금(B) 시간 선택 목록: 0.5 ~ 9.0 (0.5 단위)
+  const PANEL_HOURS = Array.from({ length: 18 }, (_, i) =>
+    ((i + 1) * 0.5).toFixed(1)
+  );
 
   useEffect(() => {
     if (!wtMenuOpen) return;
@@ -1078,10 +1088,24 @@ export default function LaborItemsPopup() {
                           ? e.clientX - MENU_W
                           : e.clientX;
                         setWtMenuPos({ top: e.clientY + 4, left });
+                        setWtMenuType("S");
                         setWtMenuOpen(true);
                       } else {
                         setWtMenuOpen(false);
                       }
+                    } else if (row.workcode === "B") {
+                      // 판금: 시간 선택 드롭다운 (18항목 + 구분선 + 사용자입력 ≈ 570px)
+                      const MENU_W = 130;
+                      const MENU_H = 570;
+                      const left = e.clientX + MENU_W > window.innerWidth
+                        ? e.clientX - MENU_W
+                        : e.clientX;
+                      const top = e.clientY + 4 + MENU_H > window.innerHeight
+                        ? Math.max(4, e.clientY - MENU_H)
+                        : e.clientY + 4;
+                      setWtMenuPos({ top, left });
+                      setWtMenuType("B");
+                      setWtMenuOpen(true);
                     } else {
                       setWtMenuOpen(false);
                     }
@@ -1300,33 +1324,64 @@ export default function LaborItemsPopup() {
         </div>
       </div>
 
-      {/* workcode='S' 드롭다운 (Row 클릭 위치 / fixed) */}
+      {/* 작업/시간 Row 클릭 드롭다운 (fixed) */}
       {wtMenuOpen && (
         <div
           ref={wtDropRef}
-          className="fixed z-[55] min-w-[110px] rounded-md border border-zinc-200 bg-white shadow-lg py-1 text-sm"
-          style={{ top: wtMenuPos.top, left: wtMenuPos.left }}
+          className="fixed z-[55] rounded-md border border-zinc-200 bg-white shadow-lg py-1 text-sm"
+          style={{ top: wtMenuPos.top, left: wtMenuPos.left, minWidth: 130 }}
         >
-          <button
-            type="button"
-            className="w-full px-3 py-2 text-left hover:bg-zinc-100 active:bg-zinc-200"
-            onClick={() => {
-              setWtMenuOpen(false);
-              openSuriModal(selectedWorkTimeRow);
-            }}
-          >
-            경미손상
-          </button>
-          <button
-            type="button"
-            className="w-full px-3 py-2 text-left hover:bg-zinc-100 active:bg-zinc-200"
-            onClick={() => {
-              setWtMenuOpen(false);
-              postPickWorkTime(selectedWorkTimeRow);
-            }}
-          >
-            사용자 입력
-          </button>
+          {wtMenuType === "S" ? (
+            <>
+              <button
+                type="button"
+                className="w-full px-3 py-2 text-left hover:bg-zinc-100 active:bg-zinc-200"
+                onClick={() => { setWtMenuOpen(false); openSuriModal(selectedWorkTimeRow); }}
+              >
+                경미손상
+              </button>
+              <button
+                type="button"
+                className="w-full px-3 py-2 text-left hover:bg-zinc-100 active:bg-zinc-200"
+                onClick={() => { setWtMenuOpen(false); postPickWorkTime(selectedWorkTimeRow); }}
+              >
+                사용자 입력
+              </button>
+            </>
+          ) : wtMenuType === "B" ? (
+            <>
+              {PANEL_HOURS.map((h) => (
+                <button
+                  key={h}
+                  type="button"
+                  className="w-full px-3 py-1 text-left tabular-nums hover:bg-zinc-100 active:bg-zinc-200"
+                  onClick={() => {
+                    setWtMenuOpen(false);
+                    const row = selectedWorkTimeRow;
+                    if (!row) return;
+                    postPick({
+                      type:     "workTime",
+                      payno:    effectivePayno,
+                      payname:  selectedWorkItem?.payname ?? "",
+                      workcode: row.workcode,
+                      workname: row.workname,
+                      hour:     h,
+                    });
+                  }}
+                >
+                  {h} H
+                </button>
+              ))}
+              <div className="my-1 border-t border-zinc-100" />
+              <button
+                type="button"
+                className="w-full px-3 py-2 text-left hover:bg-zinc-100 active:bg-zinc-200"
+                onClick={() => { setWtMenuOpen(false); postPickWorkTime(selectedWorkTimeRow); }}
+              >
+                사용자 입력
+              </button>
+            </>
+          ) : null}
         </div>
       )}
 
