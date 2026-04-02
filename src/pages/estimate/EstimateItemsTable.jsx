@@ -120,6 +120,34 @@ function canEditWorkcode(row) {
   return pk(row) !== "3" && pk(row) !== "5";
 }
 
+/**
+ * 견적 row의 [상태] 표시 텍스트 계산
+ * workcode='P' AND substring(payno,4,1)<>'P' AND paykind='3' 인 경우
+ */
+function computeStatename(row) {
+  const payno    = String(row.payno    ?? "");
+  const subpayno = String(row.subpayno ?? "");
+
+  if (String(row.workcode) === "P") {
+    // 악세사리 케이스: payno = subpayno (paykind 무관)
+    if (payno !== "" && payno === subpayno) {
+      const bl = parseInt(row.b_level ?? "0", 10);
+      if (bl === 3) return "악세사리- 중 (20 X 20cm)";
+      if (bl === 4) return "악세사리- 대 (30 X 30cm)";
+      return "악세사리- 소 (10 X 10cm)";
+    }
+    // state 케이스: substring(payno,4,1)<>'P' AND paykind='3'
+    if (payno.charAt(3) !== "P" && String(row.paykind) === "3") {
+      const st = String(row.state ?? "");
+      if (st === "1") return "교환도장";
+      if (st === "2") return "표면도장";
+      if (st === "3") return "외측판금도장";
+      if (st === "4") return "전면판금도장";
+    }
+  }
+  return row.statename || "";
+}
+
 function canEditPayName(row) {
   const k = pk(row);
   if (k !== "4" && k !== "5") return false;
@@ -859,13 +887,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
         className: "px-2 py-0",
         render: (_val, row) => (
           <div className="h-8 flex items-center">
-            <button
-              type="button"
-              className="w-full text-left hover:underline"
-              onClick={(e) => openPopover(e, "statename", row)}
-            >
-              {row.statename || ""}
-            </button>
+            {computeStatename(row)}
           </div>
         ),
       },

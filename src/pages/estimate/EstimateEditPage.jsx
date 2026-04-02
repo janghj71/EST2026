@@ -20,6 +20,10 @@ import { useEstimateClaims } from "../../hooks/useEstimateClaims";
 import { useLoading } from "../../loading/useLoading";
 import { getUserid, getComcode } from "../../api/config";
 
+// 모듈 스코프 단조 증가 카운터 — 동일 ms 내 연속 호출 시에도 고유 임시 ID 보장
+let _tempRowSeq = 0;
+const newTempId = () => `_new_${++_tempRowSeq}`;
+
 export default function EstimateEditPage() {
   const navigate = useNavigate();
   const { est_serial } = useParams();
@@ -73,6 +77,9 @@ export default function EstimateEditPage() {
   const [settleRefreshKey, setSettleRefreshKey] = useState(0);
   // 청구처 변경 여부 (변경 시에만 저장)
   const claimDirtyRef = useRef(false);
+
+  // saveDetail 연속 호출 시 abort 방지용 직렬 큐
+  const saveQueueRef = useRef(Promise.resolve());
 
   // 최신 master/rows를 stale closure 없이 접근하기 위한 ref
   const masterRef = useRef(master);
@@ -454,7 +461,7 @@ export default function EstimateEditPage() {
         const newRow = {
           comcode,
           est_serial:     estSerial,
-          estb_orgseqno:  "_new_" + Date.now(),
+          estb_orgseqno:  newTempId(),
           estb_seqno:     String(insertIdx + 1).padStart(3, "0"),
           paykind:        pkStr,
           payno,
@@ -491,12 +498,92 @@ export default function EstimateEditPage() {
           newRow,
           ...currentRows.slice(insertIdx),
         ].map((r, i) => ({ ...r, estb_seqno: String(i + 1).padStart(3, "0") }));
+        rowsRef.current = combined;   // 연속 메시지 처리 시 stale ref 방지
         setRows(combined);
         recalcPaysum();
 
         // 5. 서버 저장 — toApiRow에서 "_new_" prefix → null 변환
         //    응답 newserial로 estb_orgseqno 교체 (saveDetail 내부)
-        saveDetail(newRow);
+        const _row = newRow;  // closure 캡처
+        saveQueueRef.current = saveQueueRef.current.then(() => saveDetail(_row));
+        return;
+      }
+
+      if (type === "LABOR_ITEMS_PICK" && payload?.type === "paint") {
+        const {
+          payno, payname, paykind, orderno, ts_payno,
+          workname, hour, partsum,
+          pnt_m, pnt_hour, pnt_part, pntcot,
+          body_panel, subpayno, b_level, state,
+        } = payload;
+
+        const currentRows = rowsRef.current;
+
+        // 1. 중복 체크: payno + workcode='P'
+        if (currentRows.some((r) => r.payno === payno && r.workcode === "P")) return;
+
+        // 2. 삽입 위치: 같은 payno를 가진 마지막 row 다음
+        let insertIdx = currentRows.length;
+        for (let i = currentRows.length - 1; i >= 0; i--) {
+          if (String(currentRows[i].payno) === String(payno)) {
+            insertIdx = i + 1;
+            break;
+          }
+        }
+
+        // 3. 새 row 생성
+        const comcode   = masterRef.current?.comcode ?? getComcode();
+        const estSerial = masterRef.current?.est_serial ?? est_serial ?? "";
+        const pkStr     = String(paykind || "6");
+        const pkLabel   = { "1": "주체", "3": "부품", "4": "#공임", "5": "#부품", "6": "도장" }[pkStr] ?? "";
+
+        const newRow = {
+          comcode,
+          est_serial:     estSerial,
+          estb_orgseqno:  newTempId(),
+          estb_seqno:     String(insertIdx + 1).padStart(3, "0"),
+          paykind:        pkStr,
+          payno,
+          subpayno:       subpayno ?? "",
+          payname,
+          workcode:       "P",
+          workcodename:   workname ?? "도장",
+          price:          "",
+          qty:            String(hour ?? "0"),
+          oqty:           String(hour ?? "0"),
+          partsum:        String(partsum ?? "0"),
+          paysum:         "0",
+          part_makercode: "",
+          state:          state ?? "",
+          statename:      "",
+          pnt_extr:       "",
+          pnt_hour:       String(pnt_hour ?? "0"),
+          pnt_part:       String(pnt_part ?? "0"),
+          pnt_m:          String(pnt_m ?? ""),
+          pntcot:         String(pntcot ?? ""),
+          ts_payno:       ts_payno ?? "",
+          update_id:      getUserid(),
+          paykindname:    pkLabel,
+          b_level:        String(b_level ?? "0.00"),
+          b_area:         "0",
+          pnt_reduce:     "0",
+          body_panel:     body_panel ?? "",
+          pay_orderno:    String(orderno ?? ""),
+        };
+
+        // 4. state 반영
+        const combined = [
+          ...currentRows.slice(0, insertIdx),
+          newRow,
+          ...currentRows.slice(insertIdx),
+        ].map((r, i) => ({ ...r, estb_seqno: String(i + 1).padStart(3, "0") }));
+        rowsRef.current = combined;
+        setRows(combined);
+        recalcPaysum();
+
+        // 5. 서버 저장 (직렬 큐)
+        const _row = newRow;
+        saveQueueRef.current = saveQueueRef.current.then(() => saveDetail(_row));
         return;
       }
 

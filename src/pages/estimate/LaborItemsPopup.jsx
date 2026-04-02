@@ -124,6 +124,9 @@ const AREA_IMG_MAP = buildAreaImageMap();
 
 
 
+// coatKind → 견적 state 값 (교환도장=1, 표면판금=2, 외측판금=3, 전면판금=5)
+const COAT_STATE = { swap: "1", outer: "3", surface: "2", front: "5" };
+
 function getPaintMH(row, solvent, coatKind) {
   const map = {
     oil: {
@@ -527,6 +530,13 @@ export default function LaborItemsPopup() {
     return Math.max(...bumperParts.map((p) => Number(p.price) || 0));
   }, [parts]);
 
+  // ── 헤드램프 자동 연동 맵 ─────────────────────────────────────────
+  // adl0700/adl0701 삽입 시 에이밍 항목 자동 추가
+  const AUTO_INSERT_MAP = {
+    adl0700: ["adl0710", "adl0720"],
+    adl0701: ["adl0711", "adl0720"],
+  };
+
   // ── 일반 postPick (작업/시간) ──────────────────────────────────────
   const postPickWorkTime = useCallback((row) => {
     if (!row) return;
@@ -542,7 +552,57 @@ export default function LaborItemsPopup() {
       workname: row.workname,
       hour:     row.hour,
     });
-  }, [postPick, effectivePayno, selectedWorkItem, paykind]);
+
+    // 헤드램프 자동 연동: adl0700 → adl0710+adl0720, adl0701 → adl0711+adl0720
+    const relPaynos = AUTO_INSERT_MAP[effectivePayno];
+    if (relPaynos) {
+      relPaynos.forEach((relPayno) => {
+        const relItem = workItems.find((x) => x.payno === relPayno);
+        const relTime = workTimes.find((x) => x.payno === relPayno && x.workcode === "A");
+        if (!relItem || !relTime) return;
+        postPick({
+          type:     "workTime",
+          payno:    relPayno,
+          payname:  relItem.payname ?? "",
+          paykind:  relTime.paykind ?? row.paykind ?? "4",
+          subpayno: relItem.subpayno ?? "",
+          ts_payno: relItem.ts_payno ?? "",
+          orderno:  relItem.orderno ?? "",
+          workcode: relTime.workcode,
+          workname: relTime.workname,
+          hour:     relTime.hour,
+        });
+      });
+    }
+  }, [postPick, effectivePayno, selectedWorkItem, workItems, workTimes]);
+
+  // ── 도장 postPick payload 빌더 ────────────────────────────────────
+  const buildPaintPayload = useCallback((row) => {
+    const { h, m } = getPaintMH(row, paintSolvent, coatKind);
+    const pntHour = pntM === "1" ? (row.oilpnt_hb ?? 0) : (row.pnt_hb ?? 0);
+    const pntPart = pntM === "1" ? (row.oilpnt_mb ?? 0) : (row.pnt_mb ?? 0);
+    const isSubseq2 = String(row.subseq ?? "") === "2";
+    return {
+      type:       "paint",
+      payno:      effectivePayno,
+      payname:    selectedWorkItem?.payname ?? "",
+      paykind:    "6",
+      orderno:    selectedWorkItem?.orderno ?? "",
+      ts_payno:   selectedWorkItem?.ts_payno ?? "",
+      workcode:   "P",
+      workname:   "도장",
+      hour:       h,
+      partsum:    m,
+      pnt_m:      pntM || "2",
+      pnt_hour:   pntHour,
+      pnt_part:   pntPart,
+      pntcot:     row.pntcot ?? "",
+      body_panel: row.body_panel ?? "",
+      subpayno:   isSubseq2 ? (selectedWorkItem?.payno ?? "") : "",
+      b_level:    isSubseq2 ? String(row.carcode ?? "").charAt(5) : "0.00",
+      state:      COAT_STATE[coatKind] ?? "",
+    };
+  }, [effectivePayno, selectedWorkItem, paintSolvent, coatKind, pntM]);
 
   // ── 경미손상 팝업 열기 ─────────────────────────────────────────────
   const openSuriModal = useCallback((row) => {
@@ -1218,18 +1278,7 @@ export default function LaborItemsPopup() {
                   ].join(" ")}
                   onClick={() => {
                     if (!selectedPaintRow) return;
-                    const { h, m } = getPaintMH(selectedPaintRow, paintSolvent, coatKind);
-
-                    postPick({
-                      type: "paint",
-                      payno: effectivePayno,
-                      payname: selectedWorkItem?.payname ?? "",
-                      pntcot_nm: selectedPaintRow.pntcot_nm,
-                      solvent: paintSolvent, // oil|pnt
-                      coatKind,              // swap|outer|surface|front
-                      hour: h,
-                      material: m,
-                    });
+                    postPick(buildPaintPayload(selectedPaintRow));
                   }}
                 >
                   선택
@@ -1250,18 +1299,7 @@ export default function LaborItemsPopup() {
                     : ""
                 }
                 onRowClick={(row) => setSelectedPaintRow(row)}
-                onRowDoubleClick={(row) =>
-                  postPick({
-                    type: "paint",
-                    payno: effectivePayno,
-                    payname: selectedWorkItem?.payname ?? "",
-                    pntcot_nm: row.pntcot_nm,
-                    pnt_m: row.pnt_m,
-                    pnt_h: row.pnt_h,
-                    oilpnt_m: row.oilpnt_m,
-                    oilpnt_h: row.oilpnt_h,
-                  })
-                }
+                onRowDoubleClick={(row) => postPick(buildPaintPayload(row))}
               />
             </div>
           </div>
