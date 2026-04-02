@@ -565,19 +565,19 @@ export default function LaborItemsPopup() {
   // ── 경미손상 팝업 확인 ─────────────────────────────────────────────
   const confirmSuri = useCallback(() => {
     if (!selectedSuriRow) return;
+    const basePayname = selectedWorkItem?.payname ?? "";
+    const info        = selectedSuriRow.info ?? "";
     postPick({
       type:      "workTime",
       payno:     effectivePayno,
-      payname:   selectedWorkItem?.payname ?? "",
+      payname:   info ? `${basePayname}-[경미] ${info}` : basePayname,
+      paykind:   "4",
+      orderno:   selectedWorkItem?.orderno ?? "",
       workcode:  selectedSuriRow.workcode,
       workname:  selectedSuriRow.workname,
       hour:      selectedSuriRow.hour,
-      subpayno:  selectedSuriRow.subpayno,
-      partsum:   selectedSuriRow.partsum,
-      info:      selectedSuriRow.info,
-      partPrice:  suriPartPrice,
-      adjAmt:     Math.floor(suriPartPrice * 0.03),
-      totalPrice: Number(selectedSuriRow.partsum || 0) + Math.floor(suriPartPrice * 0.03),
+      subpayno:  "",
+      partsum:   Number(selectedSuriRow.partsum || 0) + Math.floor(suriPartPrice * 0.03),
     });
     setSuriOpen(false);
   }, [selectedSuriRow, effectivePayno, selectedWorkItem, suriPartPrice, postPick]);
@@ -719,7 +719,7 @@ export default function LaborItemsPopup() {
         width: "90px",
         align: "right",
         className: "px-2 py-0",
-        render: (_v, row) => <div className="h-8 flex items-center justify-end tabular-nums">{row.hour}</div>,
+        render: (_v, row) => <div className="h-8 flex items-center justify-end tabular-nums">{parseFloat(Number(row.hour ?? 0).toFixed(2))}</div>,
       },
       
     ],

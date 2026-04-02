@@ -400,7 +400,7 @@ export default function EstimateEditPage() {
       if (type === "LABOR_ITEMS_PICK" && payload?.type === "workTime") {
         const {
           payno, payname, paykind: itemPaykind, subpayno,
-          ts_payno, orderno, workcode, workname, hour,
+          ts_payno, orderno, workcode, workname, hour, partsum,
         } = payload;
 
         const currentRows = rowsRef.current;
@@ -415,6 +415,7 @@ export default function EstimateEditPage() {
         const newRank = WC_RANK[workcode] ?? 99;
 
         let insertIdx = currentRows.length;
+        let anchorIdx = -1;
         for (let i = currentRows.length - 1; i >= 0; i--) {
           const r = currentRows[i];
           const rOrderno = String(r.pay_orderno ?? "");
@@ -424,10 +425,24 @@ export default function EstimateEditPage() {
             (rOrderno < newOrderno ||
               (rOrderno === newOrderno && rRank <= newRank))
           ) {
+            anchorIdx = i;
             insertIdx = i + 1;
             break;
           }
           if (i === 0) insertIdx = 0;
+        }
+
+        // anchor를 찾은 경우에만 fallback 수행:
+        // 계산된 삽입 위치 뒤에서 pay_orderno가 빈 동일 payno(=anchor payno) 연속 구간을 함께 건너뛴다.
+        if (anchorIdx >= 0) {
+          const anchorPayno = String(currentRows[anchorIdx]?.payno ?? "");
+          while (insertIdx < currentRows.length) {
+            const r = currentRows[insertIdx];
+            const rOrderno = String(r?.pay_orderno ?? "");
+            const rPayno = String(r?.payno ?? "");
+            if (rOrderno !== "" || rPayno !== anchorPayno) break;
+            insertIdx += 1;
+          }
         }
 
         // 3. 새 row 생성 — 임시 ID로 key 중복 방지
@@ -450,7 +465,7 @@ export default function EstimateEditPage() {
           price:          "",
           qty:            String(hour ?? "0"),
           oqty:           String(hour ?? "0"),
-          partsum:        "0",
+          partsum:        String(partsum ?? 0),
           paysum:         "0",
           part_makercode: "",
           state:          "",
