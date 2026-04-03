@@ -8,6 +8,7 @@ import MoneyInput from "../../components/MoneyInput";
 import { formatNumber } from "../../utils/numberFormat";
 import { focusById } from "../../utils/focusUtils";
 import { getUserid, getComcode } from "../../api/config";
+import { useTbCode } from "../../hooks/useTbCode";
 
 import {
   DndContext,
@@ -124,9 +125,16 @@ function canEditWorkcode(row) {
  * 견적 row의 [상태] 표시 텍스트 계산
  * workcode='P' AND substring(payno,4,1)<>'P' AND paykind='3' 인 경우
  */
-function computeStatename(row) {
+function computeStatename(row, master, wrk34Codes, pyk02Codes) {
   const payno    = String(row.payno    ?? "");
   const subpayno = String(row.subpayno ?? "");
+
+  // 우수기술료: left(payno,2)='SS' → PYK02/subcode=right(payno,2) codename 표시
+  if (payno.substring(0, 2) === "SS") {
+    const subcode = payno.slice(-2);
+    const tbEntry = (pyk02Codes ?? []).find((c) => c.value === subcode);
+    return tbEntry ? tbEntry.label : (row.statename || "");
+  }
 
   if (String(row.workcode) === "P") {
     // 악세사리 케이스: payno = subpayno (paykind 무관)
@@ -136,9 +144,23 @@ function computeStatename(row) {
       if (bl === 4) return "악세사리- 대 (30 X 30cm)";
       return "악세사리- 소 (10 X 10cm)";
     }
-    // state 케이스: substring(payno,4,1)<>'P' AND paykind='3'
-    if (payno.charAt(3) !== "P" && String(row.paykind) === "3") {
+    // state 케이스: substring(payno,4,1)<>'P' AND master.paykind='3' AND row.paykind in ('4','6')
+    const rowPk = String(row.paykind ?? "");
+    if (
+      payno.charAt(3) !== "P" &&
+      String(master?.paykind ?? "") === "3" &&
+      (rowPk === "4" || rowPk === "6")
+    ) {
       const st = String(row.state ?? "");
+      // pnt_extr 가 있으면 WRK34/subcode=9 의 codename 을 접미사로 붙임
+      if (String(row.pnt_extr ?? "") !== "") {
+        const tbEntry = (wrk34Codes ?? []).find((c) => c.value === String(row.pnt_extr));
+        const suffix = tbEntry ? "-" + tbEntry.label : "";
+        if (st === "1") return "교환도장" + suffix;
+        if (st === "2") return "표면도장" + suffix;
+        if (st === "3") return "외측판금도장" + suffix;
+        if (st === "4") return "전면판금도장" + suffix;
+      }
       if (st === "1") return "교환도장";
       if (st === "2") return "표면도장";
       if (st === "3") return "외측판금도장";
@@ -190,6 +212,9 @@ export default function EstimateItemsTable({
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } })
   );
+
+  const { codes: wrk34Codes } = useTbCode("WRK34");
+  const { codes: pyk02Codes } = useTbCode("PYK02");
 
   const [popover, setPopover] = useState(null);
   // popover: { type: "workcodename"|"ts_payno"|"statename", anchorRect, rowOrgSeq }
@@ -887,7 +912,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
         className: "px-2 py-0",
         render: (_val, row) => (
           <div className="h-8 flex items-center">
-            {computeStatename(row)}
+            {computeStatename(row, master, wrk34Codes, pyk02Codes)}
           </div>
         ),
       },

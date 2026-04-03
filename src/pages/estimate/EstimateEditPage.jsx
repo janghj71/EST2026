@@ -1,5 +1,5 @@
 // src/pages/estimate/EstimateEditPage.jsx
-import React, { useMemo, useState, useCallback, useEffect, useRef } from "react";
+import React, { useMemo, useState, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAlert } from "../../alerts";
 
@@ -19,6 +19,7 @@ import { useEstimateDetailDelete } from "../../hooks/useEstimateDetailDelete";
 import { useEstimateClaims } from "../../hooks/useEstimateClaims";
 import { useLoading } from "../../loading/useLoading";
 import { getUserid, getComcode } from "../../api/config";
+import { useTbCode } from "../../hooks/useTbCode";
 
 // 모듈 스코프 단조 증가 카운터 — 동일 ms 내 연속 호출 시에도 고유 임시 ID 보장
 let _tempRowSeq = 0;
@@ -81,11 +82,20 @@ export default function EstimateEditPage() {
   // saveDetail 연속 호출 시 abort 방지용 직렬 큐
   const saveQueueRef = useRef(Promise.resolve());
 
+  // 범퍼 도장 자동 추가행용 WRK34 공통코드 (subcode='9')
+  const { codes: wrk34Codes } = useTbCode("WRK34");
+  const wrk34CodesRef = useRef(wrk34Codes);
+
   // 최신 master/rows를 stale closure 없이 접근하기 위한 ref
   const masterRef = useRef(master);
-  masterRef.current = master;
   const rowsRef = useRef(rows);
-  rowsRef.current = rows;
+
+  // render phase 외부(commit 후)에서 ref 동기화 — "Cannot access refs during render" 방지
+  useLayoutEffect(() => {
+    wrk34CodesRef.current = wrk34Codes;
+    masterRef.current = master;
+    rowsRef.current = rows;
+  });
 
   // 청구처 M/H 단가 변경(blur) 시 견적내역 paysum 일괄 재계산
   const recalcPaysum = useCallback(() => {
@@ -571,19 +581,66 @@ export default function EstimateEditPage() {
           pay_orderno:    String(orderno ?? ""),
         };
 
-        // 4. state 반영
+        // 4. 범퍼 자동 추가 행: payname에 '범퍼' 포함 AND WRK34/9 항목 존재
+        let extraRow = null;
+        if (String(payname).includes("범퍼")) {
+          const tbEntry = (wrk34CodesRef.current ?? []).find((c) => c.value === "9");
+          if (tbEntry) {
+            const qty = String(Number(tbEntry.def_value ?? 0) / 100);
+            extraRow = {
+              comcode,
+              est_serial:     estSerial,
+              estb_orgseqno:  newTempId(),
+              estb_seqno:     String(insertIdx + 2).padStart(3, "0"),
+              paykind:        "6",
+              payno,
+              subpayno:       "",
+              payname:        String(payname) + " " + tbEntry.label,
+              workcode:       "P",
+              workcodename:   "도장",
+              price:          "",
+              qty,
+              oqty:           qty,
+              partsum:        "0",
+              paysum:         "0",
+              part_makercode: "",
+              state:          state ?? "",
+              statename:      "",
+              pnt_extr:       "9",
+              pnt_hour:       "0",
+              pnt_part:       "0",
+              pnt_m:          String(pnt_m ?? ""),
+              pntcot:         String(pntcot ?? ""),
+              ts_payno:       ts_payno ?? "",
+              update_id:      getUserid(),
+              paykindname:    "도장",
+              b_level:        "0.00",
+              b_area:         "0",
+              pnt_reduce:     "0",
+              body_panel:     body_panel ?? "",
+              pay_orderno:    String(orderno ?? ""),
+            };
+          }
+        }
+
+        // 5. state 반영
+        const toInsert = extraRow ? [newRow, extraRow] : [newRow];
         const combined = [
           ...currentRows.slice(0, insertIdx),
-          newRow,
+          ...toInsert,
           ...currentRows.slice(insertIdx),
         ].map((r, i) => ({ ...r, estb_seqno: String(i + 1).padStart(3, "0") }));
         rowsRef.current = combined;
         setRows(combined);
         recalcPaysum();
 
-        // 5. 서버 저장 (직렬 큐)
+        // 6. 서버 저장 (직렬 큐)
         const _row = newRow;
         saveQueueRef.current = saveQueueRef.current.then(() => saveDetail(_row));
+        if (extraRow) {
+          const _extra = extraRow;
+          saveQueueRef.current = saveQueueRef.current.then(() => saveDetail(_extra));
+        }
         return;
       }
 
@@ -612,18 +669,18 @@ export default function EstimateEditPage() {
   }, []);
   
 
-  const selectedRow = useMemo(
-    () => rows.find((r) => r.estb_orgseqno === selectedOrgSeq) ?? null,
-    [rows, selectedOrgSeq]
-  );
+  // const selectedRow = useMemo(
+  //   () => rows.find((r) => r.estb_orgseqno === selectedOrgSeq) ?? null,
+  //   [rows, selectedOrgSeq]
+  // );
 
 
-  const removeSelected = useCallback(() => {
-    if (!selectedRow) return;
-    const next = rows.filter((r) => r.estb_orgseqno !== selectedRow.estb_orgseqno);
-    setRows(next.map((r, i) => ({ ...r, estb_seqno: i + 1 })));
-    setSelectedOrgSeq(null);
-  }, [rows, selectedRow]);
+  // const removeSelected = useCallback(() => {
+  //   if (!selectedRow) return;
+  //   const next = rows.filter((r) => r.estb_orgseqno !== selectedRow.estb_orgseqno);
+  //   setRows(next.map((r, i) => ({ ...r, estb_seqno: i + 1 })));
+  //   setSelectedOrgSeq(null);
+  // }, [rows, selectedRow]);
 
   const handleDeleteSelected = useCallback((orgSeqs) => {
     // orgSeqs: string[] (멀티선택 또는 단일선택 배열)
