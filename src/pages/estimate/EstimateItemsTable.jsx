@@ -9,6 +9,7 @@ import { formatNumber } from "../../utils/numberFormat";
 import { focusById } from "../../utils/focusUtils";
 import { getUserid, getComcode } from "../../api/config";
 import { useTbCode } from "../../hooks/useTbCode";
+import { useCodepnt } from "../../hooks/useLaborItems";
 
 import {
   DndContext,
@@ -45,10 +46,10 @@ const WORK_OPTIONS = [
   { code: "A", label: "조정" },
   { code: "O", label: "오버홀" },
   { code: "S", label: "수리" },
+  { code: "P", label: "도장" },
   { code: "T", label: "견인" },
   { code: "G", label: "구난" },
   { code: "W", label: "세차" },
-  { code: "P", label: "도장" },
 ];
 
 /** 도장(P) 소분류 — master.pntkind 별, state 포함 */
@@ -64,6 +65,25 @@ const PAINT_OPTIONS = {
     { label: "판금도장",     state: "3" },
     { label: "부분판금도장", state: "2" },
   ],
+};
+
+/** 도장 state → coatKind 역매핑 */
+const STATE_TO_COAT = { "1": "swap", "3": "outer", "2": "surface", "5": "front" };
+
+/** solvent × coatKind → 도장 API 응답 필드명 매핑 */
+const PAINT_COAT_FIELD_MAP = {
+  oil: {
+    swap:    { h: "oilpnt_h",    m: "oilpnt_m"    },
+    outer:   { h: "oilpnt_hb",   m: "oilpnt_mb"   },
+    surface: { h: "oilextr21_h", m: "oilextr21_m"  },
+    front:   { h: "oilextr22_h", m: "oilextr22_m"  },
+  },
+  pnt: {
+    swap:    { h: "pnt_h",    m: "pnt_m"    },
+    outer:   { h: "pnt_hb",   m: "pnt_mb"   },
+    surface: { h: "extr21_h", m: "extr21_m"  },
+    front:   { h: "extr22_h", m: "extr22_m"  },
+  },
 };
 
 function paykindLabel(paykind) {
@@ -159,12 +179,12 @@ function computeStatename(row, master, wrk34Codes, pyk02Codes) {
         if (st === "1") return "교환도장" + suffix;
         if (st === "2") return "표면도장" + suffix;
         if (st === "3") return "외측판금도장" + suffix;
-        if (st === "4") return "전면판금도장" + suffix;
+        if (st === "5") return "전면판금도장" + suffix;
       }
       if (st === "1") return "교환도장";
       if (st === "2") return "표면도장";
       if (st === "3") return "외측판금도장";
-      if (st === "4") return "전면판금도장";
+      if (st === "5") return "전면판금도장";
     }
   }
   return row.statename || "";
@@ -208,6 +228,7 @@ export default function EstimateItemsTable({
   onValueCommit,
   selectedOrgSeqs = new Set(),
   setSelectedOrgSeqs,
+  workTimes = [],
 }) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } })
@@ -215,6 +236,20 @@ export default function EstimateItemsTable({
 
   const { codes: wrk34Codes } = useTbCode("WRK34");
   const { codes: pyk02Codes } = useTbCode("PYK02");
+
+  const { fetchCodepnt } = useCodepnt();
+  const [pntRows, setPntRows] = useState([]);
+
+  // master 변경 시 도장 목록 1회 fetch → pntRows 캐시
+  useEffect(() => {
+    const carcode  = master?.paint    ?? "";
+    const paykind  = master?.pntkind  ?? "";
+    const ocarcode = master?.codecar  ?? "";
+    if (!carcode && !ocarcode) return;
+    fetchCodepnt({ carcode, paykind, ocarcode })
+      .then((json) => { if (json?.result === "OK") setPntRows(json.dataset ?? []); })
+      .catch(() => {});
+  }, [master?.paint, master?.pntkind, master?.codecar]);
 
   const [popover, setPopover] = useState(null);
   // popover: { type: "workcodename"|"ts_payno"|"statename", anchorRect, rowOrgSeq }
@@ -314,7 +349,16 @@ export default function EstimateItemsTable({
     );
   }, [setRows]);
 
+  /** [작업] 팝업을 열지 않을 Row 판별 */
+  const isWorkcodePopupBlocked = (row) =>
+    row.subpayno === "99990" ||
+    row.subpayno === "99991" ||
+    (row.pnt_extr ?? "") !== "" ||
+    String(row.payno ?? "").startsWith("SS");
+
   const openPopover = useCallback((e, type, row) => {
+    // 컬러매칭/가열건조비/도장부가/우수기술료 Row는 [작업] 팝업 차단
+    if (type === "workcodename" && isWorkcodePopupBlocked(row)) return;
     const rect = e.currentTarget.getBoundingClientRect();
     setPaintSubRect(null);
     setPopover({
@@ -632,12 +676,13 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
         className: "px-2 py-0",
         render: (_val, row) => {
           const editable = canEditWorkcode(row);
+          const blocked = editable && isWorkcodePopupBlocked(row);
           return (
             <div className="h-8 flex items-stretch">
               {editable ? (
                 <button
                   type="button"
-                  className="w-full text-left hover:underline"
+                  className={`w-full text-left${blocked ? "" : " hover:underline"}`}
                   onClick={(e) => openPopover(e, "workcodename", row)}
                 >
                   {row.workcodename || "선택"}
@@ -1228,54 +1273,145 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
         <SimplePopover
           anchorRect={popover.anchorRect}
           onClose={closePopover}
+          placement={popover.type === "workcodename" ? "right-top" : "bottom-left"}
+          minWidth={popover.type === "workcodename" ? "100px" : "360px"}
+          noTitle={popover.type === "workcodename"}
           title={
-            popover.type === "workcodename" ? "작업 선택" :
             popover.type === "ts_payno" ? "국토부" : "상태"
           }
         >
-          {popover.type === "workcodename" ? (
-            <div className="grid grid-cols-3 gap-2">
-              {WORK_OPTIONS.map((opt) =>
-                opt.code === "P" ? (
+          {popover.type === "workcodename" ? (() => {
+            const popoverRow = rows.find((r) => r.estb_orgseqno === popover?.rowOrgSeq);
+            const pk = String(popoverRow?.paykind ?? "");
+            const isFiltered = pk === "1" || pk === "2";
+            // workcode='P' + paykind in ('4','6') → (P)도장 버튼만 활성화
+            const isPaintOnly =
+              popoverRow?.workcode === "P" && (pk === "4" || pk === "6");
+            return (
+            <div className="flex flex-col gap-0.5">
+              {WORK_OPTIONS.map((opt) => {
+                const disabled =
+                  (isPaintOnly && opt.code !== "P") ||
+                  (isFiltered && !workTimes.some(
+                    (wt) => String(wt.payno) === String(popoverRow?.payno) && wt.workcode === opt.code
+                  ));
+                return opt.code === "P" ? (
                   /* 도장(P) — 플라이아웃 서브메뉴 진입 */
                   <button
                     key="P"
                     type="button"
-                    className="rounded-md border border-zinc-200 bg-white px-2 py-2 text-sm hover:bg-zinc-50"
-                    onClick={(e) => setPaintSubRect(e.currentTarget.getBoundingClientRect())}
+                    disabled={disabled}
+                    className={`rounded border px-2 py-1 text-sm text-left
+                      ${disabled
+                        ? "border-zinc-100 bg-zinc-50 text-zinc-300 cursor-not-allowed"
+                        : "border-zinc-200 bg-white hover:bg-zinc-50"}`}
+                    onClick={disabled ? undefined : (e) => setPaintSubRect(e.currentTarget.getBoundingClientRect())}
                   >
-                    <span className="text-xs text-zinc-500 mr-1">(P)</span>
+                    <span className="text-xs mr-1">(P)</span>
                     도장 ▶
                   </button>
                 ) : (
                   <button
                     key={opt.code}
                     type="button"
-                    className="rounded-md border border-zinc-200 bg-white px-2 py-2 text-sm hover:bg-zinc-50"
-                    onClick={() => {
+                    disabled={disabled}
+                    className={`rounded border px-2 py-1 text-sm text-left
+                      ${disabled
+                        ? "border-zinc-100 bg-zinc-50 text-zinc-300 cursor-not-allowed"
+                        : "border-zinc-200 bg-white hover:bg-zinc-50"}`}
+                    onClick={disabled ? undefined : () => {
                       const orgSeq = popover.rowOrgSeq;
                       let committed = null;
-                      setRows((prev) =>
-                        prev.map((r) => {
-                          if (r.estb_orgseqno !== orgSeq) return r;
-                          const ps = calcPaysum(opt.code, r.qty);
-                          committed = {
-                            ...r,
-                            workcode:     opt.code,
-                            workcodename: opt.label,
-                            // P → 다른 작업 변경 시 도장 관련 필드 초기화
-                            ...(r.workcode === "P" ? {
-                              state:     "",
-                              statename: "",
-                              pnt_extr:  "",
-                              pnt_hour:  "0",
-                              pnt_part:  "0",
-                            } : {}),
-                            ...(ps !== null ? { paysum: ps } : {}),
-                          };
-                          return committed;
-                        })
-                      );
+                      const cascadeCommits = [];
+                      const toDelete = [];   // →X 시 삭제할 행 orgseqno
+                      setRows((prev) => {
+                        const mainRow = prev.find((r) => r.estb_orgseqno === orgSeq);
+                        const prevWC  = mainRow?.workcode;
+                        const newWC   = opt.code;
+                        const isP1    = mainRow && String(mainRow.paykind) === "1";
+                        // (어떤 workcode든)→B/S 또는 →X 인 경우 도장 캐스케이드
+                        const anyToBS = isP1 && (newWC === "B" || newWC === "S") && !(prevWC === "B" || prevWC === "S");
+                        const anyToX  = isP1 && newWC === "X" && prevWC !== "X";
+
+                        // →X 시: 같은 payno paykind='1' 의 R/B/S/O 행 삭제 수집
+                        if (anyToX) {
+                          prev.forEach((r) => {
+                            if (r.estb_orgseqno !== orgSeq &&
+                                String(r.paykind) === "1" &&
+                                String(r.payno) === String(mainRow.payno) &&
+                                ["R", "B", "S", "O"].includes(r.workcode)) {
+                              toDelete.push(r.estb_orgseqno);
+                            }
+                          });
+                        }
+
+                        return prev.map((r) => {
+                          // ── 메인 행 ──
+                          if (r.estb_orgseqno === orgSeq) {
+                            const wtEntry = workTimes.find(
+                              (wt) => String(wt.payno) === String(r.payno) && wt.workcode === newWC
+                            );
+                            const newQty = wtEntry ? String(wtEntry.hour ?? "0") : r.qty;
+                            const ps = calcPaysum(newWC, newQty);
+                            committed = {
+                              ...r,
+                              workcode:     newWC,
+                              workcodename: opt.label,
+                              qty:          newQty,
+                              oqty:         newQty,
+                              paysum:       ps ?? "0",
+                              ...(prevWC === "P" ? {
+                                state:     "",
+                                statename: "",
+                                pnt_extr:  "",
+                                pnt_hour:  "0",
+                                pnt_part:  "0",
+                              } : {}),
+                            };
+                            return committed;
+                          }
+
+                          // ── 캐스케이드: 같은 payno 도장(P) 행 ──
+                          if ((anyToBS || anyToX) &&
+                              r.workcode === "P" &&
+                              String(r.payno) === String(mainRow.payno)) {
+                            let targetState, targetCoat;
+                            if      (anyToBS && r.state !== "3") { targetState = "3"; targetCoat = "outer"; }
+                            else if (anyToX  && r.state !== "1") { targetState = "1"; targetCoat = "swap";  }
+                            else return r; // 이미 원하는 상태면 스킵
+
+                            const solvent = String(r.pnt_m ?? "") === "1" ? "oil" : "pnt";
+                            const fields  = PAINT_COAT_FIELD_MAP[solvent]?.[targetCoat];
+                            let newHour = r.qty, newPart = r.partsum;
+                            if (fields) {
+                              const pntRow = pntRows.find(
+                                (d) => String(d.payno)  === String(r.payno) &&
+                                       String(d.pntcot) === String(r.pntcot ?? "")
+                              );
+                              if (pntRow) {
+                                newHour = String(parseFloat(pntRow[fields.h] ?? "0"));
+                                newPart = String(parseFloat(pntRow[fields.m] ?? "0"));
+                              }
+                            }
+                            const paintLabel = (PAINT_OPTIONS[String(master?.pntkind)] ?? PAINT_OPTIONS.default)
+                              .find((o) => o.state === targetState)?.label ?? "";
+                            const ps = calcPaysum("P", newHour);
+                            const cascaded = {
+                              ...r,
+                              state:     targetState,
+                              statename: paintLabel,
+                              qty:       newHour,
+                              oqty:      newHour,
+                              partsum:   newPart,
+                              paysum:    ps ?? "0",
+                            };
+                            cascadeCommits.push(cascaded);
+                            return cascaded;
+                          }
+
+                          return r;
+                        });
+                      });
                       closePopover();
                       // 세차/구난/견인(W/G/T) — qty 비활성 → 공임액으로 포커스
                       if (["T", "G", "W"].includes(opt.code)) {
@@ -1284,15 +1420,20 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                         focusById(`cell-${orgSeq}-qty`);
                       }
                       if (committed) onValueCommit?.(committed);
+                      cascadeCommits.forEach((row) => onValueCommit?.(row));
+                      // cascade 삭제: 표시 개수 = toDelete.length (실제 삭제 대상만)
+                      if (toDelete.length > 0) onDeleteSelected?.(toDelete, toDelete.length);
                     }}
                   >
-                    <span className="text-xs text-zinc-500 mr-1">({opt.code})</span>
+                    <span className="text-xs mr-1">({opt.code})</span>
                     {opt.label}
                   </button>
-                )
-              )}
+                );
+              })}
             </div>
-          ) : (
+            );
+          })()
+          : (
             <div className="text-sm text-zinc-600">
               TODO: {popover.type} 옵션 목록
               <div className="mt-2">
@@ -1312,40 +1453,101 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
       {/* 도장(P) 소분류 플라이아웃 — SimplePopover의 z-50 overlay 위(z-51)에 렌더 */}
       {paintSubRect && popover?.type === "workcodename" && (
         <div
-          className="fixed rounded-md border border-zinc-200 bg-white shadow-lg z-[51] w-[200px]"
+          className="fixed rounded-md border border-zinc-200 bg-white shadow-lg z-[51]"
           style={{ top: paintSubRect.top, left: paintSubRect.right + 6 }}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <div className="px-3 py-2 border-b border-zinc-200 text-sm font-semibold text-zinc-800">
-            도장 소분류
-          </div>
-          <div className="p-2 flex flex-col gap-1">
+          <div className="p-1.5 flex flex-col gap-0.5">
             {(PAINT_OPTIONS[master?.pntkind] ?? PAINT_OPTIONS.default).map((opt) => (
               <button
                 key={opt.label}
                 type="button"
-                className="w-full text-left rounded px-2 py-1.5 text-sm hover:bg-zinc-50"
+                className="text-left rounded px-2 py-1 text-sm hover:bg-zinc-50 whitespace-nowrap"
                 onClick={() => {
                   const orgSeq = popover.rowOrgSeq;
                   let committed = null;
-                  setRows((prev) =>
-                    prev.map((r) => {
-                      if (r.estb_orgseqno !== orgSeq) return r;
-                      const ps = calcPaysum("P", r.qty);
-                      committed = {
-                        ...r,
-                        workcode:     "P",
-                        workcodename: "도장",
-                        state:        opt.state,
-                        statename:    opt.label,
-                        ...(ps !== null ? { paysum: ps } : {}),
-                      };
-                      return committed;
-                    })
-                  );
+                  const cascadeCommits = [];
+                  setRows((prev) => {
+                    const paintRow  = prev.find((r) => r.estb_orgseqno === orgSeq);
+                    const prevState = paintRow?.state;
+                    const newState  = opt.state;
+                    // 교환(1)↔비교환(3/2/5) 전환 시 workcode 캐스케이드
+                    const stateToOuter = prevState === "1" && newState !== "1";
+                    const stateToSwap  = prevState !== "1" && newState === "1";
+
+                    return prev.map((r) => {
+                      // ── 도장 행 ──
+                      if (r.estb_orgseqno === orgSeq) {
+                        const coatKind = STATE_TO_COAT[newState];
+                        const solvent  = String(r.pnt_m ?? "") === "1" ? "oil" : "pnt";
+                        const fields   = coatKind ? PAINT_COAT_FIELD_MAP[solvent]?.[coatKind] : null;
+                        let newHour = r.qty, newPart = r.partsum;
+                        if (fields) {
+                          const pntRow = pntRows.find(
+                            (d) => String(d.payno)  === String(r.payno) &&
+                                   String(d.pntcot) === String(r.pntcot ?? "")
+                          );
+                          if (pntRow) {
+                            newHour = String(parseFloat(pntRow[fields.h] ?? "0"));
+                            newPart = String(parseFloat(pntRow[fields.m] ?? "0"));
+                          }
+                        }
+                        const ps = calcPaysum("P", newHour);
+                        committed = {
+                          ...r,
+                          workcode:     "P",
+                          workcodename: "도장",
+                          state:        newState,
+                          statename:    opt.label,
+                          qty:          newHour,
+                          oqty:         newHour,
+                          partsum:      newPart,
+                          ...(ps !== null ? { paysum: ps } : {}),
+                        };
+                        return committed;
+                      }
+
+                      // ── 캐스케이드: 같은 payno paykind='1' 행 ──
+                      if ((stateToOuter || stateToSwap) &&
+                          String(r.paykind) === "1" &&
+                          String(r.payno) === String(paintRow?.payno)) {
+                        let newWC, newWCName;
+                        if (stateToOuter && r.workcode === "X") {
+                          // state 1→3/2/5: X → B or S (workTimes에서 결정)
+                          // workTimes에서 B 먼저, 없으면 S 로 결정
+                          const wtB = workTimes.find((wt) => String(wt.payno) === String(r.payno) && wt.workcode === "B");
+                          const wtS = workTimes.find((wt) => String(wt.payno) === String(r.payno) && wt.workcode === "S");
+                          if      (wtB) { newWC = "B"; newWCName = "판금"; }
+                          else if (wtS) { newWC = "S"; newWCName = "수리"; }
+                          else          { newWC = "B"; newWCName = "판금"; } // fallback
+                        } else if (stateToSwap && (r.workcode === "B" || r.workcode === "S")) {
+                          newWC = "X"; newWCName = "교환";
+                        } else return r; // 이미 원하는 상태면 스킵
+
+                        const wtEntry = workTimes.find(
+                          (wt) => String(wt.payno) === String(r.payno) && wt.workcode === newWC
+                        );
+                        const newQty = wtEntry ? String(wtEntry.hour ?? "0") : r.qty;
+                        const ps = calcPaysum(newWC, newQty);
+                        const cascaded = {
+                          ...r,
+                          workcode:     newWC,
+                          workcodename: newWCName,
+                          qty:          newQty,
+                          oqty:         newQty,
+                          paysum:       ps ?? "0",
+                        };
+                        cascadeCommits.push(cascaded);
+                        return cascaded;
+                      }
+
+                      return r;
+                    });
+                  });
                   closePopover();
                   focusById(`cell-${orgSeq}-qty`);
                   if (committed) onValueCommit?.(committed);
+                  cascadeCommits.forEach((row) => onValueCommit?.(row));
                 }}
               >
                 {opt.label}

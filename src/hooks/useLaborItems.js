@@ -48,7 +48,7 @@ export function useCodepnt() {
     immediate: false,
   });
 
-  // carcode = master.paint, paykind = master.pntkind, ocarcode = master.est_codecar
+  // carcode = master.paint, paykind = master.pntkind, ocarcode = master.codecar
   const fetchCodepnt = useCallback(
     ({ carcode, paykind, ocarcode }) =>
       refetch({ carcode, paykind, ocarcode }),

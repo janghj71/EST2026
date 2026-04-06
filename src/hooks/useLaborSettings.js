@@ -11,6 +11,9 @@ const EMPTY_FORM = {
   expay: "0", ebpay: "0", eppay: "0",
   w_manname: "", pntmix_model: "",
   pnt_material: false, est_aosonly: false,
+  pntcolormix:  "0",   // 도장 컬러매칭 시간
+  pntmix_m_oil: "0",   // 컬러매칭 재료비 (유용성)
+  pntmix_m:     "0",   // 컬러매칭 재료비 (수용성)
 };
 
 /** dataset 배열 → { set_name: set_value } 맵 */
@@ -43,6 +46,9 @@ function mapToForm(json) {
     pntmix_model: m.pntmix_model ?? "",
     pnt_material: m.pnt_material === "1",
     est_aosonly:  m.est_aosonly  === "1",
+    pntcolormix:  m.pntcolormix  ?? "0",
+    pntmix_m_oil: m.pntmix_m_oil ?? "0",
+    pntmix_m:     m.pntmix_m     ?? "0",
   };
 }
 
@@ -65,6 +71,9 @@ function formToParams(form) {
     pntmix_model: form.pntmix_model,
     pnt_material: form.pnt_material ? "1" : "2",
     est_aosonly:  form.est_aosonly  ? "1" : "0",
+    pntcolormix:  form.pntcolormix,
+    pntmix_m_oil: form.pntmix_m_oil,
+    pntmix_m:     form.pntmix_m,
   };
 }
 

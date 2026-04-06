@@ -20,10 +20,29 @@ import { useEstimateClaims } from "../../hooks/useEstimateClaims";
 import { useLoading } from "../../loading/useLoading";
 import { getUserid, getComcode } from "../../api/config";
 import { useTbCode } from "../../hooks/useTbCode";
+import { useLaborSettings } from "../../hooks/useLaborSettings";
+import { useCodepayHour } from "../../hooks/useLaborItems";
 
 // 모듈 스코프 단조 증가 카운터 — 동일 ms 내 연속 호출 시에도 고유 임시 ID 보장
 let _tempRowSeq = 0;
 const newTempId = () => `_new_${++_tempRowSeq}`;
+
+// 도장 solvent × coatKind → 필드명 매핑 (PaintItemsPopup.getPaintMH 와 동일)
+const PAINT_FIELD_MAP = {
+  oil: {
+    swap:    { h: "oilpnt_h",    m: "oilpnt_m"    },
+    outer:   { h: "oilpnt_hb",   m: "oilpnt_mb"   },
+    surface: { h: "oilextr21_h", m: "oilextr21_m"  },
+    front:   { h: "oilextr22_h", m: "oilextr22_m"  },
+  },
+  pnt: {
+    swap:    { h: "pnt_h",    m: "pnt_m"    },
+    outer:   { h: "pnt_hb",   m: "pnt_mb"   },
+    surface: { h: "extr21_h", m: "extr21_m"  },
+    front:   { h: "extr22_h", m: "extr22_m"  },
+  },
+};
+const COAT_STATE_MAP = { swap: "1", outer: "3", surface: "2", front: "5" };
 
 export default function EstimateEditPage() {
   const navigate = useNavigate();
@@ -38,6 +57,8 @@ export default function EstimateEditPage() {
 
   const [master, setMaster] = useState({});
   const [rows, setRows] = useState([]);
+  const [workTimes, setWorkTimes] = useState([]);
+  const { fetchCodepayHour } = useCodepayHour();
 
   const { saveDetail, saveAllDetails, saveSingleDetail } = useEstimateDetailSave(setRows);
 
@@ -72,6 +93,19 @@ export default function EstimateEditPage() {
     }).catch(() => {});
   }, [est_serial]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 작업/시간 목록 fetch — [작업] 컬럼 팝업 workcode 비활성화에 사용
+  useEffect(() => {
+    const carcode  = master?.est_codecar || "";
+    const ocarcode = master?.codecar     || "";
+    const paykind  = master?.paykind     || "";
+    const paint    = master?.paint       || "";
+    const outday   = master?.outday      || "";
+    if (!carcode && !ocarcode) return;
+    fetchCodepayHour({ carcode, ocarcode, paykind, outday })
+      .then((json) => { if (json?.result === "OK") setWorkTimes(json.dataset ?? []); })
+      .catch(() => {});
+  }, [master?.est_codecar, master?.codecar, master?.paykind, master?.paint, master?.outday]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // EstimateSidePanel 탭/열림 상태
   const [sideActive, setSideActive] = useState("labor");
   const [sidePanelOpen, setSidePanelOpen] = useState(false);
@@ -86,15 +120,20 @@ export default function EstimateEditPage() {
   const { codes: wrk34Codes } = useTbCode("WRK34");
   const wrk34CodesRef = useRef(wrk34Codes);
 
+  // 도장 컬러매칭/가열건조비 금액 설정
+  const { form: laborSettings } = useLaborSettings();
+  const laborSettingsRef = useRef(laborSettings);
+
   // 최신 master/rows를 stale closure 없이 접근하기 위한 ref
   const masterRef = useRef(master);
   const rowsRef = useRef(rows);
 
   // render phase 외부(commit 후)에서 ref 동기화 — "Cannot access refs during render" 방지
   useLayoutEffect(() => {
-    wrk34CodesRef.current = wrk34Codes;
-    masterRef.current = master;
-    rowsRef.current = rows;
+    wrk34CodesRef.current    = wrk34Codes;
+    masterRef.current        = master;
+    rowsRef.current          = rows;
+    laborSettingsRef.current = laborSettings;
   });
 
   // 청구처 M/H 단가 변경(blur) 시 견적내역 paysum 일괄 재계산
@@ -104,6 +143,7 @@ export default function EstimateEditPage() {
     setRows((prev) =>
       prev.map((r) => {
         if (!r.workcode || !r.qty) return r;
+        if (r.subpayno === "99991") return r;  // 가열건조비: paysum 고정값 유지
         const qty = parseFloat(r.qty);
         if (isNaN(qty)) return r;
         let rate = null;
@@ -115,6 +155,61 @@ export default function EstimateEditPage() {
       })
     );
   }, [setRows]);
+
+  // 도장 컬러매칭(99990) / 가열건조비(99991) 자동 추가 행 생성
+  const buildSpecialRows = useCallback((currentRows, paintSolvent) => {
+    const mst      = masterRef.current ?? {};
+    const ls       = laborSettingsRef.current ?? {};
+    const paykind  = String(mst.paykind ?? "");
+    const comcode  = mst.comcode   ?? getComcode();
+    const estSerial= mst.est_serial ?? "";
+    const solvent  = paintSolvent === "oil" ? "oil" : "pnt";
+    const result   = [];
+
+    // 도장 컬러매칭: paykind='3' 이고 99990 미존재
+    if (paykind === "3" && !currentRows.some((r) => r.subpayno === "99990")) {
+      const qty     = String(ls.pntcolormix  ?? "0");
+      const partsum = solvent === "oil"
+        ? String(ls.pntmix_m_oil ?? "0")
+        : String(ls.pntmix_m     ?? "0");
+      const ppay    = parseFloat(mst.claims?.[0]?.ppay ?? "0");
+      const paysum  = String(Math.round(ppay * parseFloat(qty || "0")));
+      result.push({
+        comcode, est_serial: estSerial, estb_orgseqno: newTempId(),
+        paykind: "4", payno: "", subpayno: "99990",
+        payname: "도장 컬러매칭", workcode: "P", workcodename: "도장",
+        price: "", qty, oqty: qty,
+        partsum, paysum, part_makercode: "",
+        state: "", statename: "", pnt_extr: "",
+        pnt_hour: qty, pnt_part: "0", pnt_m: solvent === "oil" ? "1" : "2",
+        pntcot: "", ts_payno: "", update_id: getUserid(),
+        paykindname: "#공임", b_level: "0.00", b_area: "0",
+        pnt_reduce: "0", body_panel: "", pay_orderno: "",
+      });
+    }
+
+    // 가열건조비: paykind='3' or '1', req_pnt_drypay='1', 99991 미존재
+    if (
+      (paykind === "3" || paykind === "1") &&
+      mst.req_pnt_drypay === "1" &&
+      !currentRows.some((r) => r.subpayno === "99991")
+    ) {
+      result.push({
+        comcode, est_serial: estSerial, estb_orgseqno: newTempId(),
+        paykind: "4", payno: "", subpayno: "99991",
+        payname: "가열건조비", workcode: "P", workcodename: "도장",
+        price: "", qty: "1", oqty: "1",
+        partsum: "0", paysum: String(mst.pnt_drypay ?? "0"),
+        part_makercode: "", state: "", statename: "", pnt_extr: "",
+        pnt_hour: "0", pnt_part: "0", pnt_m: "",
+        pntcot: "", ts_payno: "", update_id: getUserid(),
+        paykindname: "#공임", b_level: "0.00", b_area: "0",
+        pnt_reduce: "0", body_panel: "", pay_orderno: "",
+      });
+    }
+
+    return result;
+  }, []); // refs만 사용하므로 deps 불필요
 
   const [sortMode, setSortMode] = useState("block");
   const [laborOpen, setLaborOpen] = useState(false);
@@ -522,15 +617,47 @@ export default function EstimateEditPage() {
       if (type === "LABOR_ITEMS_PICK" && payload?.type === "paint") {
         const {
           payno, payname, paykind, orderno, ts_payno,
-          workname, hour, partsum,
-          pnt_m, pnt_hour, pnt_part, pntcot,
-          body_panel, subpayno, b_level, state,
+          workname, pnt_m, pnt_hour, pnt_part, pntcot,
+          body_panel, subpayno, b_level,
+          paintSolvent, rawPaint,
         } = payload;
+        let { hour, partsum, state } = payload;
 
         const currentRows = rowsRef.current;
 
         // 1. 중복 체크: payno + workcode='P'
         if (currentRows.some((r) => r.payno === payno && r.workcode === "P")) return;
+
+        // 2. 견적내역 동일 payno workcode 로 coatKind/hour/partsum/state 자동 결정
+        //    - workcode='X'        → 무조건 swap(교환도장) 으로 override
+        //    - workcode in('B','S') + 표면/전면판금 선택 → 선택값 그대로 인서트
+        //    - workcode in('B','S') + 교환/외측판금 선택 → outer(외측판금) 으로 override
+        if (rawPaint && paintSolvent) {
+          const solvent  = paintSolvent === "oil" ? "oil" : "pnt";
+          const sameRows = currentRows.filter((r) => String(r.payno) === String(payno));
+          const hasX  = sameRows.some((r) => r.workcode === "X");
+          const hasBS = sameRows.some((r) => r.workcode === "B" || r.workcode === "S");
+          const isFixedCoat = state === "2" || state === "5"; // 표면판금·전면판금
+
+          let coatKind = null;
+          if (hasX) {
+            // workcode='X' → 항상 교환도장
+            coatKind = "swap";
+          } else if (hasBS && !isFixedCoat) {
+            // workcode in('B','S') + 교환/외측 선택 → 외측판금
+            coatKind = "outer";
+          }
+          // hasBS && isFixedCoat → 그대로 (coatKind=null → override 없음)
+
+          if (coatKind) {
+            const fields = PAINT_FIELD_MAP[solvent]?.[coatKind];
+            if (fields) {
+              hour    = Number(rawPaint[fields.h] ?? 0);
+              partsum = Number(rawPaint[fields.m] ?? 0);
+              state   = COAT_STATE_MAP[coatKind] ?? state;
+            }
+          }
+        }
 
         // 2. 삽입 위치: 같은 payno를 가진 마지막 row 다음
         let insertIdx = currentRows.length;
@@ -581,9 +708,9 @@ export default function EstimateEditPage() {
           pay_orderno:    String(orderno ?? ""),
         };
 
-        // 4. 범퍼 자동 추가 행: payname에 '범퍼' 포함 AND WRK34/9 항목 존재
+        // 4. 범퍼 자동 추가 행: payname에 '범퍼' 포함 AND state='1' AND WRK34/9 항목 존재
         let extraRow = null;
-        if (String(payname).includes("범퍼")) {
+        if (String(payname).includes("범퍼") && state === "1") {
           const tbEntry = (wrk34CodesRef.current ?? []).find((c) => c.value === "9");
           if (tbEntry) {
             const qty = String(Number(tbEntry.def_value ?? 0) / 100);
@@ -641,12 +768,189 @@ export default function EstimateEditPage() {
           const _extra = extraRow;
           saveQueueRef.current = saveQueueRef.current.then(() => saveDetail(_extra));
         }
+
+        // 7. 도장 컬러매칭 / 가열건조비 자동 추가
+        const specialRows = buildSpecialRows(rowsRef.current, paintSolvent ?? "pnt");
+        if (specialRows.length > 0) {
+          // 현재 전체 rows의 max seqno 계산 → 특수행에 max+1, max+2 부여
+          const maxSeq = rowsRef.current.reduce(
+            (m, r) => Math.max(m, parseInt(r.estb_seqno || "0", 10)), 0
+          );
+          const seqAssigned = specialRows.map((sr, i) => ({
+            ...sr,
+            estb_seqno: String(maxSeq + 1 + i).padStart(3, "0"),
+          }));
+          const withSpecial = [...rowsRef.current, ...seqAssigned];
+          rowsRef.current = withSpecial;
+          setRows(withSpecial);
+          for (const sr of seqAssigned) {
+            const _sr = sr;
+            saveQueueRef.current = saveQueueRef.current.then(() => saveDetail(_sr));
+          }
+        }
+        return;
+      }
+
+      if (type === "PAINT_ITEMS_PICK") {
+        const { paintSolvent, selectedKind, ...paintRow } = payload;
+        const payno   = paintRow.payno;
+        const payname = paintRow.payname;
+
+        const currentRows = rowsRef.current;
+
+        // 1. 중복 체크
+        if (currentRows.some((r) => r.payno === payno && r.workcode === "P")) return;
+
+        // 2. 견적내역 동일 payno workcode 로 coatKind 결정
+        const sameRows = currentRows.filter((r) => String(r.payno) === String(payno));
+        let coatKind = selectedKind ?? "swap";
+        if (sameRows.some((r) => r.workcode === "X")) {
+          coatKind = "swap";
+        } else if (sameRows.some((r) => r.workcode === "B" || r.workcode === "S")) {
+          coatKind = "outer";
+        }
+
+        // 3. solvent × coatKind → hour / partsum
+        const solvent = paintSolvent === "oil" ? "oil" : "pnt";
+        const fields  = PAINT_FIELD_MAP[solvent]?.[coatKind] ?? PAINT_FIELD_MAP.pnt.swap;
+        const hour    = Number(paintRow[fields.h] ?? 0);
+        const partsum = Number(paintRow[fields.m] ?? 0);
+        const state   = COAT_STATE_MAP[coatKind] ?? "";
+        const pntM    = solvent === "oil" ? "1" : "2";
+
+        // pnt_hour / pnt_part: 항상 outer 기준
+        const pntHourField = solvent === "oil" ? "oilpnt_hb" : "pnt_hb";
+        const pntPartField = solvent === "oil" ? "oilpnt_mb" : "pnt_mb";
+        const pntHour = Number(paintRow[pntHourField] ?? 0);
+        const pntPart = Number(paintRow[pntPartField] ?? 0);
+
+        // 4. 삽입 위치
+        let insertIdx = currentRows.length;
+        for (let i = currentRows.length - 1; i >= 0; i--) {
+          if (String(currentRows[i].payno) === String(payno)) { insertIdx = i + 1; break; }
+        }
+
+        const comcode   = masterRef.current?.comcode ?? getComcode();
+        const estSerial = masterRef.current?.est_serial ?? est_serial ?? "";
+
+        const newRow = {
+          comcode,
+          est_serial:     estSerial,
+          estb_orgseqno:  newTempId(),
+          estb_seqno:     String(insertIdx + 1).padStart(3, "0"),
+          paykind:        "6",
+          payno,
+          subpayno:       "",
+          payname,
+          workcode:       "P",
+          workcodename:   "도장",
+          price:          "",
+          qty:            String(hour),
+          oqty:           String(hour),
+          partsum:        String(partsum),
+          paysum:         "0",
+          part_makercode: "",
+          state,
+          statename:      "",
+          pnt_extr:       "",
+          pnt_hour:       String(pntHour),
+          pnt_part:       String(pntPart),
+          pnt_m:          pntM,
+          pntcot:         String(paintRow.pntcot ?? ""),
+          ts_payno:       "",
+          update_id:      getUserid(),
+          paykindname:    "도장",
+          b_level:        "0.00",
+          b_area:         "0",
+          pnt_reduce:     "0",
+          body_panel:     String(paintRow.body_panel ?? ""),
+          pay_orderno:    "",
+        };
+
+        // 5. 범퍼 자동 추가행: payname에 '범퍼' 포함 AND state='1'
+        let extraRow = null;
+        if (String(payname).includes("범퍼") && state === "1") {
+          const tbEntry = (wrk34CodesRef.current ?? []).find((c) => c.value === "9");
+          if (tbEntry) {
+            const qty = String(Number(tbEntry.def_value ?? 0) / 100);
+            extraRow = {
+              comcode,
+              est_serial:     estSerial,
+              estb_orgseqno:  newTempId(),
+              estb_seqno:     String(insertIdx + 2).padStart(3, "0"),
+              paykind:        "6",
+              payno,
+              subpayno:       "",
+              payname:        String(payname) + " " + tbEntry.label,
+              workcode:       "P",
+              workcodename:   "도장",
+              price:          "",
+              qty,
+              oqty:           qty,
+              partsum:        "0",
+              paysum:         "0",
+              part_makercode: "",
+              state,
+              statename:      "",
+              pnt_extr:       "9",
+              pnt_hour:       "0",
+              pnt_part:       "0",
+              pnt_m:          pntM,
+              pntcot:         String(paintRow.pntcot ?? ""),
+              ts_payno:       "",
+              update_id:      getUserid(),
+              paykindname:    "도장",
+              b_level:        "0.00",
+              b_area:         "0",
+              pnt_reduce:     "0",
+              body_panel:     String(paintRow.body_panel ?? ""),
+              pay_orderno:    "",
+            };
+          }
+        }
+
+        // 6. rows 업데이트 + 저장
+        const toInsert = extraRow ? [newRow, extraRow] : [newRow];
+        const combined = [
+          ...currentRows.slice(0, insertIdx),
+          ...toInsert,
+          ...currentRows.slice(insertIdx),
+        ].map((r, i) => ({ ...r, estb_seqno: String(i + 1).padStart(3, "0") }));
+        rowsRef.current = combined;
+        setRows(combined);
+        recalcPaysum();
+
+        const _row = newRow;
+        saveQueueRef.current = saveQueueRef.current.then(() => saveDetail(_row));
+        if (extraRow) {
+          const _extra = extraRow;
+          saveQueueRef.current = saveQueueRef.current.then(() => saveDetail(_extra));
+        }
+
+        // 도장 컬러매칭 / 가열건조비 자동 추가
+        const specialRowsPaint = buildSpecialRows(rowsRef.current, solvent);
+        if (specialRowsPaint.length > 0) {
+          const maxSeqPaint = rowsRef.current.reduce(
+            (m, r) => Math.max(m, parseInt(r.estb_seqno || "0", 10)), 0
+          );
+          const seqAssignedPaint = specialRowsPaint.map((sr, i) => ({
+            ...sr,
+            estb_seqno: String(maxSeqPaint + 1 + i).padStart(3, "0"),
+          }));
+          const withSpecialPaint = [...rowsRef.current, ...seqAssignedPaint];
+          rowsRef.current = withSpecialPaint;
+          setRows(withSpecialPaint);
+          for (const sr of seqAssignedPaint) {
+            const _sr = sr;
+            saveQueueRef.current = saveQueueRef.current.then(() => saveDetail(_sr));
+          }
+        }
         return;
       }
 
       console.log(`[${type}]`, payload);
     };
-  }, [est_serial, saveDetail, setRows, recalcPaysum]);
+  }, [est_serial, saveDetail, setRows, recalcPaysum, buildSpecialRows]);
 
   useEffect(() => {
     const handler = (e) => onMsgHandlerRef.current?.(e);
@@ -682,10 +986,11 @@ export default function EstimateEditPage() {
   //   setSelectedOrgSeq(null);
   // }, [rows, selectedRow]);
 
-  const handleDeleteSelected = useCallback((orgSeqs) => {
+  const handleDeleteSelected = useCallback((orgSeqs, displayCount) => {
     // orgSeqs: string[] (멀티선택 또는 단일선택 배열)
+    // displayCount: 메시지에 표시할 개수 (미전달 시 orgSeqs.length)
     if (!orgSeqs?.length) return;
-    setPendingDelete({ type: "selected", orgSeqs });
+    setPendingDelete({ type: "selected", orgSeqs, displayCount: displayCount ?? orgSeqs.length });
     setDeleteOpen(true);
   }, []);
 
@@ -835,6 +1140,7 @@ export default function EstimateEditPage() {
                 onValueCommit={handleValueCommit}
                 selectedOrgSeqs={selectedOrgSeqs}
                 setSelectedOrgSeqs={setSelectedOrgSeqs}
+                workTimes={workTimes}
               />
               
             </div>
@@ -867,7 +1173,7 @@ export default function EstimateEditPage() {
         message={
           pendingDelete?.type === "all"
             ? "전체 항목을 삭제할까요?"
-            : `선택한 ${pendingDelete?.orgSeqs?.length ?? 1}개 항목을 삭제할까요?`
+            : `선택한 ${pendingDelete?.displayCount ?? pendingDelete?.orgSeqs?.length ?? 1}개 항목을 삭제할까요?`
         }
         confirmText="삭제"
         showCancel
@@ -884,7 +1190,48 @@ export default function EstimateEditPage() {
             } else if (pendingDelete?.type === "selected") {
               const { orgSeqs } = pendingDelete;
               const seqSet = new Set(orgSeqs);
-              await deleteBySeqs(est_serial, orgSeqs);
+
+              // 삭제 대상 row 의 payno 수집 (도장 row 한정)
+              const deletedPaynos = new Set(
+                rows
+                  .filter(
+                    (r) =>
+                      seqSet.has(r.estb_orgseqno) &&
+                      r.workcode === "P" &&
+                      (r.paykind === "6" || r.paykind === "4") &&
+                      r.subpayno !== "99990" &&
+                      r.subpayno !== "99991"
+                  )
+                  .map((r) => r.payno)
+              );
+              // 동일 payno + pnt_extr≠'' 인 연동 row 도 삭제 대상에 추가
+              if (deletedPaynos.size > 0) {
+                rows
+                  .filter(
+                    (r) =>
+                      deletedPaynos.has(r.payno) &&
+                      String(r.pnt_extr ?? "") !== ""
+                  )
+                  .forEach((r) => seqSet.add(r.estb_orgseqno));
+              }
+
+              // 삭제 후 남을 일반 도장 row 여부 확인
+              const remaining = rows.filter((r) => !seqSet.has(r.estb_orgseqno));
+              const hasPaintLeft = remaining.some(
+                (r) =>
+                  r.workcode === "P" &&
+                  (r.paykind === "6" || r.paykind === "4") &&
+                  r.subpayno !== "99990" &&
+                  r.subpayno !== "99991"
+              );
+              // 남은 도장 row 없으면 특수행(99990/99991)도 삭제 대상에 추가
+              if (!hasPaintLeft) {
+                rows
+                  .filter((r) => r.subpayno === "99990" || r.subpayno === "99991")
+                  .forEach((r) => seqSet.add(r.estb_orgseqno));
+              }
+
+              await deleteBySeqs(est_serial, [...seqSet]);
               setRows((prev) =>
                 prev
                   .filter((r) => !seqSet.has(r.estb_orgseqno))

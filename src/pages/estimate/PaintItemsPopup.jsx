@@ -281,8 +281,16 @@ export default function PaintItemsPopup() {
       const tdBase = "px-3 py-2 align-middle whitespace-nowrap truncate";
       const tdAlign = (align) => (align === "right" ? "text-right tabular-nums" : align === "center" ? "text-center" : "text-left");
 
+      const onRowDblClick = () => {
+        if (!row?.payno) return;
+        window.opener?.postMessage(
+          { type: "PAINT_ITEMS_PICK", payload: { ...row, paintSolvent, selectedKind } },
+          window.location.origin
+        );
+      };
+
       return (
-        <tr {...trProps}>
+        <tr {...trProps} onDoubleClick={onRowDblClick}>
           {columns.map((c) => {
             const kind =
               c.key.startsWith("swap_")

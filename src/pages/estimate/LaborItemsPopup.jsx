@@ -254,16 +254,17 @@ export default function LaborItemsPopup() {
 
   // 팝업 오픈 시 1회 호출 — carcode 확정 후 실행
   useEffect(() => {
-    const carcode  = estCodecar || codecar;
+    // const carcode  = estCodecar || codecar;
     const ocarcode = codecar;
-    if (!carcode) return;
+    if (!codecar) return;
+    if (!estCodecar) return;
 
     withLoading(() =>
       Promise.all([
-        fetchCodepay({ carcode, ocarcode, paykind }),
-        fetchCodepayHour({ carcode, ocarcode, paykind, paint, outday }),
-        // 도장: carcode=master.paint, paykind=master.pntkind, ocarcode=master.est_codecar
-        fetchCodepnt({ carcode: paint, paykind: pntkind, ocarcode: estCodecar }),
+        fetchCodepay({ carcode: estCodecar, ocarcode, paykind }),
+        fetchCodepayHour({ carcode: estCodecar, ocarcode, paykind, outday }),
+        // 도장: carcode=master.paint, paykind=master.pntkind, ocarcode=master.codecar
+        fetchCodepnt({ carcode: paint, paykind: pntkind, ocarcode }),
         // 부품: carcode=master.codecar, modelcode=master.modelcode, paykind=master.paykind
         fetchCodepart({ carcode: codecar, modelcode, paykind }),
         // 청구처(보험사 목록): est_serial 기준
@@ -583,26 +584,121 @@ export default function LaborItemsPopup() {
     const pntPart = pntM === "1" ? (row.oilpnt_mb ?? 0) : (row.pnt_mb ?? 0);
     const isSubseq2 = String(row.subseq ?? "") === "2";
     return {
-      type:       "paint",
-      payno:      effectivePayno,
-      payname:    selectedWorkItem?.payname ?? "",
-      paykind:    "6",
-      orderno:    selectedWorkItem?.orderno ?? "",
-      ts_payno:   selectedWorkItem?.ts_payno ?? "",
-      workcode:   "P",
-      workname:   "도장",
-      hour:       h,
-      partsum:    m,
-      pnt_m:      pntM || "2",
-      pnt_hour:   pntHour,
-      pnt_part:   pntPart,
-      pntcot:     row.pntcot ?? "",
-      body_panel: row.body_panel ?? "",
-      subpayno:   isSubseq2 ? (selectedWorkItem?.payno ?? "") : "",
-      b_level:    isSubseq2 ? String(row.carcode ?? "").charAt(5) : "0.00",
-      state:      COAT_STATE[coatKind] ?? "",
+      type:         "paint",
+      payno:        effectivePayno,
+      payname:      selectedWorkItem?.payname ?? "",
+      paykind:      "6",
+      orderno:      selectedWorkItem?.orderno ?? "",
+      ts_payno:     selectedWorkItem?.ts_payno ?? "",
+      workcode:     "P",
+      workname:     "도장",
+      hour:         h,
+      partsum:      m,
+      pnt_m:        pntM || "2",
+      pnt_hour:     pntHour,
+      pnt_part:     pntPart,
+      pntcot:       row.pntcot ?? "",
+      body_panel:   row.body_panel ?? "",
+      subpayno:     isSubseq2 ? (selectedWorkItem?.payno ?? "") : "",
+      b_level:      isSubseq2 ? String(row.carcode ?? "").charAt(5) : "0.00",
+      state:        COAT_STATE[coatKind] ?? "",
+      // EstimateEditPage에서 workcode 기반 coatKind 자동 결정에 사용
+      paintSolvent,
+      rawPaint: {
+        pnt_h:     row.pnt_h    ?? 0,
+        pnt_m:     row.pnt_m    ?? 0,
+        pnt_hb:    row.pnt_hb   ?? 0,
+        pnt_mb:    row.pnt_mb   ?? 0,
+        oilpnt_h:  row.oilpnt_h  ?? 0,
+        oilpnt_m:  row.oilpnt_m  ?? 0,
+        oilpnt_hb: row.oilpnt_hb ?? 0,
+        oilpnt_mb: row.oilpnt_mb ?? 0,
+      },
     };
   }, [effectivePayno, selectedWorkItem, paintSolvent, coatKind, pntM]);
+
+  // ── 작업항목 더블클릭 자동 인서트 ─────────────────────────────────
+  const insertWorkItemRow = useCallback((row) => {
+    const payno = row.payno;
+    const isSS  = String(payno).startsWith("SS");
+    const baseKey = isSS ? String(payno).slice(0, -2) : null;
+
+    // filteredWorkTimes 와 동일한 필터 로직
+    let times = isSS
+      ? workTimes.filter((wt) => String(wt.payno).slice(0, -2) === baseKey)
+      : workTimes.filter((wt) => wt.payno === payno);
+    if (!isSS && paykind === "3") {
+      times = times.filter((wt) => String(wt.subpayno ?? "") === "");
+    }
+
+    // 인서트할 workTime 결정: 여러 개면 'X', 1개면 그대로
+    let timeRow = null;
+    if (times.length > 1) {
+      timeRow = times.find((wt) => wt.workcode === "X") ?? null;
+    } else if (times.length === 1) {
+      timeRow = times[0];
+    }
+
+    if (timeRow) {
+      postPick({
+        type:     "workTime",
+        payno,
+        payname:  row.payname  ?? "",
+        paykind:  timeRow.paykind ?? "4",
+        subpayno: row.subpayno ?? "",
+        ts_payno: row.ts_payno ?? "",
+        orderno:  row.orderno  ?? "",
+        workcode: timeRow.workcode,
+        workname: timeRow.workname,
+        hour:     timeRow.hour,
+      });
+    }
+
+    // 도장 인서트: workTimes 중 'X' 가 있을 때만
+    const hasX = times.some((wt) => wt.workcode === "X");
+    if (hasX) {
+      const paintRow = paints.find(
+        (p) => p.payno === payno && String(p.pntcot) === String(pntcotCode)
+      );
+      if (paintRow) {
+        const { h, m } = getPaintMH(paintRow, paintSolvent, coatKind);
+        const pntHour   = pntM === "1" ? (paintRow.oilpnt_hb ?? 0) : (paintRow.pnt_hb ?? 0);
+        const pntPart   = pntM === "1" ? (paintRow.oilpnt_mb ?? 0) : (paintRow.pnt_mb ?? 0);
+        const isSubseq2 = String(paintRow.subseq ?? "") === "2";
+        postPick({
+          type:        "paint",
+          payno,
+          payname:     row.payname  ?? "",
+          paykind:     "6",
+          orderno:     row.orderno  ?? "",
+          ts_payno:    row.ts_payno ?? "",
+          workcode:    "P",
+          workname:    "도장",
+          hour:        h,
+          partsum:     m,
+          pnt_m:       pntM || "2",
+          pnt_hour:    pntHour,
+          pnt_part:    pntPart,
+          pntcot:      paintRow.pntcot     ?? "",
+          body_panel:  paintRow.body_panel ?? "",
+          subpayno:    isSubseq2 ? payno : "",
+          b_level:     isSubseq2 ? String(paintRow.carcode ?? "").charAt(5) : "0.00",
+          state:       COAT_STATE[coatKind] ?? "",
+          paintSolvent,
+          rawPaint: {
+            pnt_h:     paintRow.pnt_h     ?? 0,
+            pnt_m:     paintRow.pnt_m     ?? 0,
+            pnt_hb:    paintRow.pnt_hb    ?? 0,
+            pnt_mb:    paintRow.pnt_mb    ?? 0,
+            oilpnt_h:  paintRow.oilpnt_h  ?? 0,
+            oilpnt_m:  paintRow.oilpnt_m  ?? 0,
+            oilpnt_hb: paintRow.oilpnt_hb ?? 0,
+            oilpnt_mb: paintRow.oilpnt_mb ?? 0,
+          },
+        });
+      }
+    }
+  }, [postPick, workTimes, paints, paykind, pntcotCode, pntM, paintSolvent, coatKind, getPaintMH]);
 
   // ── 경미손상 팝업 열기 ─────────────────────────────────────────────
   const openSuriModal = useCallback((row) => {
@@ -1073,9 +1169,7 @@ export default function LaborItemsPopup() {
                   rowSize="sm"
                   selectedKey={effectivePayno}
                   onRowClick={(row) => setSelectedPayno(row.payno)}
-                  onRowDoubleClick={(row) =>
-                    postPick({ type: "workItem", payno: row.payno, payname: row.payname, seccode: row.seccode })
-                  }
+                  onRowDoubleClick={(row) => insertWorkItemRow(row)}
                 />
               </div>
             </div>
