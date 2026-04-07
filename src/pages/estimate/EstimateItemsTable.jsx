@@ -10,6 +10,7 @@ import { focusById } from "../../utils/focusUtils";
 import { getUserid, getComcode } from "../../api/config";
 import { useTbCode } from "../../hooks/useTbCode";
 import { useCodepnt } from "../../hooks/useLaborItems";
+import { useAlert } from "../../alerts";
 
 import {
   DndContext,
@@ -125,6 +126,7 @@ function canEditPartAmt(row) {
   // 4 & workcode P: 부품액
   // 5: 부품액
   // 6: 부품액
+  if (row.subpayno === "99991") return false; // 가열건조비: partsum 수정 불가
   const k = pk(row);
   if (k === "3" || k === "5" || k === "6") return true;
   if (k === "4" && wc(row) === "P") return true;
@@ -239,6 +241,7 @@ export default function EstimateItemsTable({
 
   const { fetchCodepnt } = useCodepnt();
   const [pntRows, setPntRows] = useState([]);
+  const { info: alertInfo } = useAlert();
 
   // master 변경 시 도장 목록 1회 fetch → pntRows 캐시
   useEffect(() => {
@@ -732,7 +735,14 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                   // 정규화 값이 다르면 state 반영 (.3→0.3, 1.→1)
                   if (curQty !== rawQty) setCell(row.estb_orgseqno, "qty", curQty);
                   if (curQty !== qtyBeforeEditRef.current) {
-                    const ps = calcPaysum(row.workcode, curQty);
+                    let ps;
+                    if (row.subpayno === "99991") {
+                      const dry = parseFloat(master?.pnt_drypay ?? "0");
+                      const q   = parseFloat(curQty);
+                      ps = (!isNaN(dry) && !isNaN(q)) ? String(Math.round(dry * q)) : null;
+                    } else {
+                      ps = calcPaysum(row.workcode, curQty);
+                    }
                     if (ps !== null) setCell(row.estb_orgseqno, "paysum", ps);
                     qtyBeforeEditRef.current = curQty;
                     onValueCommit?.({ ...row, qty: curQty, ...(ps !== null ? { paysum: ps } : {}) });
@@ -752,7 +762,14 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                     const curQty = normalizeQty(rawQty);
                     if (curQty !== rawQty) setCell(row.estb_orgseqno, "qty", curQty);
                     if (curQty !== qtyBeforeEditRef.current) {
-                      const ps = calcPaysum(row.workcode, curQty);
+                      let ps;
+                      if (row.subpayno === "99991") {
+                        const dry = parseFloat(master?.pnt_drypay ?? "0");
+                        const q   = parseFloat(curQty);
+                        ps = (!isNaN(dry) && !isNaN(q)) ? String(Math.round(dry * q)) : null;
+                      } else {
+                        ps = calcPaysum(row.workcode, curQty);
+                      }
                       if (ps !== null) setCell(row.estb_orgseqno, "paysum", ps);
                       qtyBeforeEditRef.current = curQty;
                       onValueCommit?.({ ...row, qty: curQty, ...(ps !== null ? { paysum: ps } : {}) });
@@ -1321,6 +1338,52 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                         : "border-zinc-200 bg-white hover:bg-zinc-50"}`}
                     onClick={disabled ? undefined : () => {
                       const orgSeq = popover.rowOrgSeq;
+
+                      // workcode 변경 충돌 체크 (paykind='1', setRows 호출 전)
+                      const _chkRow = rows.find((r) => r.estb_orgseqno === orgSeq);
+                      if (_chkRow && String(_chkRow.paykind) === "1") {
+                        const _newWC = opt.code;
+                        // 동일 workcode 중복 방지
+                        const _hasDup = rows.some(
+                          (r) => String(r.payno) === String(_chkRow.payno) &&
+                                 String(r.paykind) === "1" &&
+                                 r.workcode === _newWC &&
+                                 r.estb_orgseqno !== orgSeq
+                        );
+                        if (_hasDup) {
+                          alertInfo(`이미 ${opt.label} 작업이 있어 변경할 수 없습니다.`);
+                          closePopover();
+                          return;
+                        }
+                        // X↔B/S 공존 방지
+                        if (_newWC === "B" || _newWC === "S") {
+                          const _hasX = rows.some(
+                            (r) => String(r.payno) === String(_chkRow.payno) &&
+                                   String(r.paykind) === "1" &&
+                                   r.workcode === "X" &&
+                                   r.estb_orgseqno !== orgSeq
+                          );
+                          if (_hasX) {
+                            alertInfo("교환 작업이 있어 판금/수리로 변경할 수 없습니다.");
+                            closePopover();
+                            return;
+                          }
+                        }
+                        if (_newWC === "X") {
+                          const _hasBS = rows.some(
+                            (r) => String(r.payno) === String(_chkRow.payno) &&
+                                   String(r.paykind) === "1" &&
+                                   (r.workcode === "B" || r.workcode === "S") &&
+                                   r.estb_orgseqno !== orgSeq
+                          );
+                          if (_hasBS) {
+                            alertInfo("판금/수리 작업이 있어 교환으로 변경할 수 없습니다.");
+                            closePopover();
+                            return;
+                          }
+                        }
+                      }
+
                       let committed = null;
                       const cascadeCommits = [];
                       const toDelete = [];   // →X 시 삭제할 행 orgseqno

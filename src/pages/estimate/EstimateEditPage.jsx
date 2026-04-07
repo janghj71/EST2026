@@ -52,7 +52,7 @@ export default function EstimateEditPage() {
   const { save, saving } = useMasterEstimateSave();
   const { saveClaim } = useEstimateClaimSave();
   const { fetchClaims } = useEstimateClaims();
-  const { error: alertError } = useAlert();
+  const { error: alertError, info: alertInfo } = useAlert();
   const { withLoading } = useLoading();
 
   const [master, setMaster] = useState({});
@@ -520,6 +520,21 @@ export default function EstimateEditPage() {
         // 1. 중복 체크: payno + workcode 조합이 이미 존재하면 스킵
         if (currentRows.some((r) => r.payno === payno && r.workcode === workcode)) return;
 
+        // 1-1. X↔B/S 공존 방지 (paykind='1' 한정)
+        if (String(itemPaykind) === "1") {
+          const sameP1 = currentRows.filter(
+            (r) => String(r.payno) === String(payno) && String(r.paykind) === "1"
+          );
+          if (workcode === "X" && sameP1.some((r) => r.workcode === "B" || r.workcode === "S")) {
+            alertInfo("판금/수리 작업이 있어 교환을 추가할 수 없습니다.");
+            return;
+          }
+          if ((workcode === "B" || workcode === "S") && sameP1.some((r) => r.workcode === "X")) {
+            alertInfo("교환 작업이 있어 판금/수리를 추가할 수 없습니다.");
+            return;
+          }
+        }
+
         // 2. 삽입 위치: pay_orderno 순서 + workcode rank 보조
         //    탈착(R)→교환(X)→판금(B)→수리(S)→조정(A)→오버홀(O)→도장(P)
         const WC_RANK = { R: 0, X: 1, B: 2, S: 3, A: 4, O: 5, P: 6 };
@@ -556,6 +571,10 @@ export default function EstimateEditPage() {
             insertIdx += 1;
           }
         }
+
+        // 도장컬러매칭(99990)/가열건조비(99991)보다 앞에 인서트
+        { const _si = currentRows.findIndex((r) => r.subpayno === "99990" || r.subpayno === "99991");
+          if (_si !== -1 && insertIdx > _si) insertIdx = _si; }
 
         // 3. 새 row 생성 — 임시 ID로 key 중복 방지
         const comcode = masterRef.current?.comcode ?? getComcode();
@@ -679,6 +698,10 @@ export default function EstimateEditPage() {
             break;
           }
         }
+
+        // 도장컬러매칭(99990)/가열건조비(99991)보다 앞에 인서트
+        { const _si = currentRows.findIndex((r) => r.subpayno === "99990" || r.subpayno === "99991");
+          if (_si !== -1 && insertIdx > _si) insertIdx = _si; }
 
         // 3. 새 row 생성
         const comcode   = masterRef.current?.comcode ?? getComcode();
@@ -981,11 +1004,28 @@ export default function EstimateEditPage() {
           String(r.part_makercode ?? "") === String(part_makercode ?? "")
         )) return;
 
-        // 삽입 위치: 같은 payno 마지막 row 다음, 없으면 맨 끝
+        // 삽입 위치: 같은 payno 중 paykind='6' 또는 workcode='P' 인 첫 row 직전
+        //           해당 row 없으면 같은 payno 마지막 row 다음, 없으면 맨 끝
         let insertIdx = currentRows.length;
-        for (let i = currentRows.length - 1; i >= 0; i--) {
-          if (String(currentRows[i].payno) === String(payno)) { insertIdx = i + 1; break; }
+        let paintIdx = -1;
+        let lastSamePaynoIdx = -1;
+        for (let i = 0; i < currentRows.length; i++) {
+          const r = currentRows[i];
+          if (String(r.payno) !== String(payno)) continue;
+          lastSamePaynoIdx = i;
+          if (paintIdx === -1 && (String(r.paykind) === "6" || r.workcode === "P")) {
+            paintIdx = i;
+          }
         }
+        if (paintIdx !== -1) {
+          insertIdx = paintIdx;
+        } else if (lastSamePaynoIdx !== -1) {
+          insertIdx = lastSamePaynoIdx + 1;
+        }
+
+        // 도장컬러매칭(99990)/가열건조비(99991)보다 앞에 인서트
+        { const _si = currentRows.findIndex((r) => r.subpayno === "99990" || r.subpayno === "99991");
+          if (_si !== -1 && insertIdx > _si) insertIdx = _si; }
 
         const comcode   = masterRef.current?.comcode ?? getComcode();
         const estSerial = masterRef.current?.est_serial ?? est_serial ?? "";
