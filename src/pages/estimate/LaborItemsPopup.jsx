@@ -1268,7 +1268,10 @@ export default function LaborItemsPopup() {
                       setWtMenuOpen(false);
                     }
                   }}
-                  onRowDoubleClick={(row) => postPickWorkTime(row)}
+                  onRowDoubleClick={(row) => {
+                    if (row.workcode === "B" || row.workcode === "S") return;
+                    postPickWorkTime(row);
+                  }}
                 />
               </div>
             </div>
@@ -1417,13 +1420,18 @@ export default function LaborItemsPopup() {
                   ].join(" ")}
                   onClick={() => {
                     if (!selectedPartRow) return;
+                    const partState = String(codecar).slice(0, 2) > "06" ? "F" : "A";
                     postPick({
-                      type: "part",
-                      payno: effectivePayno,
-                      payname: selectedWorkItem?.payname ?? "",
-                      partno: selectedPartRow.partno,
-                      partname: selectedPartRow.partname,
-                      price: selectedPartRow.price,
+                      type:           "part",
+                      payno:          selectedPartRow.payno          ?? "",
+                      subpayno:       selectedPartRow.subpayno       ?? "",
+                      paykind:        "3",
+                      part_makercode: selectedPartRow.partno         ?? "",
+                      payname:        selectedPartRow.partname       ?? "",
+                      state:          partState,
+                      partsum:        selectedPartRow.price          ?? "0",
+                      qty:            "1",
+                      ts_payno:       selectedWorkItem?.ts_payno ?? "",
                     });
                   }}
                 >
@@ -1444,16 +1452,21 @@ export default function LaborItemsPopup() {
                     : ""
                 }
                 onRowClick={(row) => setSelectedPartRow(row)}
-                onRowDoubleClick={(row) =>
+                onRowDoubleClick={(row) => {
+                  const partState = String(codecar).slice(0, 2) > "06" ? "F" : "A";
                   postPick({
-                    type: "part",
-                    payno: effectivePayno,
-                    payname: selectedWorkItem?.payname ?? "",
-                    partno: row.partno,
-                    partname: row.partname,
-                    price: row.price,
-                  })
-                }
+                    type:           "part",
+                    payno:          row.payno          ?? "",
+                    subpayno:       row.subpayno       ?? "",
+                    paykind:        "3",
+                    part_makercode: row.partno         ?? "",
+                    payname:        row.partname       ?? "",
+                    state:          partState,
+                    partsum:        row.price          ?? "0",
+                    qty:            "1",
+                    ts_payno:       selectedWorkItem?.ts_payno ?? "",
+                  });
+                }}
               />
             </div>
           </div>

@@ -563,6 +563,18 @@ export default function EstimateEditPage() {
         const pkStr = String(itemPaykind || "4");
         const pkLabel = { "1": "주체", "3": "부품", "4": "#공임", "5": "#부품", "6": "도장" }[pkStr] ?? "";
 
+        // paysum 즉시 계산 — 연속 postMessage 시 recalcPaysum 타이밍 덮어쓰기 방지
+        const _wt_claim0 = masterRef.current?.claims?.[0];
+        const _wt_qty    = parseFloat(hour ?? "0");
+        let   _wt_paysum = "0";
+        if (_wt_claim0 && !isNaN(_wt_qty)) {
+          let _wt_rate = null;
+          if ("SB".includes(workcode))        _wt_rate = parseFloat(_wt_claim0.bpay);
+          else if (workcode === "P")          _wt_rate = parseFloat(_wt_claim0.ppay);
+          else if ("RXOA".includes(workcode)) _wt_rate = parseFloat(_wt_claim0.xpay);
+          if (_wt_rate != null && !isNaN(_wt_rate)) _wt_paysum = String(Math.round(_wt_rate * _wt_qty));
+        }
+
         const newRow = {
           comcode,
           est_serial:     estSerial,
@@ -578,7 +590,7 @@ export default function EstimateEditPage() {
           qty:            String(hour ?? "0"),
           oqty:           String(hour ?? "0"),
           partsum:        String(partsum ?? 0),
-          paysum:         "0",
+          paysum:         _wt_paysum,
           part_makercode: "",
           state:          "",
           statename:      "",
@@ -674,6 +686,15 @@ export default function EstimateEditPage() {
         const pkStr     = String(paykind || "6");
         const pkLabel   = { "1": "주체", "3": "부품", "4": "#공임", "5": "#부품", "6": "도장" }[pkStr] ?? "";
 
+        // paysum 즉시 계산 (도장행: ppay × hour)
+        const _pnt_claim0 = masterRef.current?.claims?.[0];
+        const _pnt_qty    = parseFloat(hour ?? "0");
+        let   _pnt_paysum = "0";
+        if (_pnt_claim0 && !isNaN(_pnt_qty)) {
+          const _pnt_rate = parseFloat(_pnt_claim0.ppay);
+          if (!isNaN(_pnt_rate)) _pnt_paysum = String(Math.round(_pnt_rate * _pnt_qty));
+        }
+
         const newRow = {
           comcode,
           est_serial:     estSerial,
@@ -689,7 +710,7 @@ export default function EstimateEditPage() {
           qty:            String(hour ?? "0"),
           oqty:           String(hour ?? "0"),
           partsum:        String(partsum ?? "0"),
-          paysum:         "0",
+          paysum:         _pnt_paysum,
           part_makercode: "",
           state:          state ?? "",
           statename:      "",
@@ -945,6 +966,74 @@ export default function EstimateEditPage() {
             saveQueueRef.current = saveQueueRef.current.then(() => saveDetail(_sr));
           }
         }
+        return;
+      }
+
+      if (type === "LABOR_ITEMS_PICK" && payload?.type === "part") {
+        const { payno, subpayno, payname, part_makercode, state: partState, partsum, qty, ts_payno } = payload;
+
+        const currentRows = rowsRef.current;
+
+        // 중복 체크: payno + subpayno + part_makercode 조합이 이미 존재하면 스킵
+        if (currentRows.some((r) =>
+          String(r.payno)          === String(payno)          &&
+          String(r.subpayno ?? "") === String(subpayno ?? "") &&
+          String(r.part_makercode ?? "") === String(part_makercode ?? "")
+        )) return;
+
+        // 삽입 위치: 같은 payno 마지막 row 다음, 없으면 맨 끝
+        let insertIdx = currentRows.length;
+        for (let i = currentRows.length - 1; i >= 0; i--) {
+          if (String(currentRows[i].payno) === String(payno)) { insertIdx = i + 1; break; }
+        }
+
+        const comcode   = masterRef.current?.comcode ?? getComcode();
+        const estSerial = masterRef.current?.est_serial ?? est_serial ?? "";
+
+        const newRow = {
+          comcode,
+          est_serial:     estSerial,
+          estb_orgseqno:  newTempId(),
+          estb_seqno:     String(insertIdx + 1).padStart(3, "0"),
+          paykind:        "3",
+          payno:          payno ?? "",
+          subpayno:       subpayno ?? "",
+          payname:        payname ?? "",
+          workcode:       "",
+          workcodename:   "",
+          price:          "",
+          qty:            String(qty ?? "1"),
+          oqty:           String(qty ?? "1"),
+          partsum:        String(partsum ?? "0"),
+          paysum:         "0",
+          part_makercode: part_makercode ?? "",
+          state:          partState ?? "",
+          statename:      "",
+          pnt_extr:       "",
+          pnt_hour:       "",
+          pnt_part:       "0",
+          pnt_m:          "",
+          pntcot:         "",
+          ts_payno:       ts_payno ?? "",
+          update_id:      getUserid(),
+          paykindname:    "부품",
+          b_level:        "0.00",
+          b_area:         "0",
+          pnt_reduce:     "0",
+          body_panel:     "",
+          pay_orderno:    "",
+        };
+
+        const combined = [
+          ...currentRows.slice(0, insertIdx),
+          newRow,
+          ...currentRows.slice(insertIdx),
+        ].map((r, i) => ({ ...r, estb_seqno: String(i + 1).padStart(3, "0") }));
+        rowsRef.current = combined;
+        setRows(combined);
+
+        const _row = newRow;
+        saveQueueRef.current = saveQueueRef.current.then(() => saveDetail(_row));
         return;
       }
 
