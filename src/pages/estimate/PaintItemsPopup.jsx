@@ -2,66 +2,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import FixedHeadTable from "../../components/FixedHeadTable";
 import { useUrlContextSnapshot } from "../../hooks/useUrlContextSnapshot";
+import { useCodepnt } from "../../hooks/useLaborItems";
 import { X, Search } from "lucide-react";
-
-function makeDemoRows() {
-  const names = [
-    "프런트 범퍼",
-    "리어 범퍼",
-    "프런트 펜더(좌)",
-    "프런트 펜더(우)",
-    "프런트 도어(좌)",
-    "프런트 도어(우)",
-    "리어 도어(좌)",
-    "리어 도어(우)",
-    "쿼터 패널(좌)",
-    "쿼터 패널(우)",
-    "본넷",
-    "트렁크 리드",
-    "루프",
-    "사이드미러(좌)",
-    "사이드미러(우)",
-    "라디에이터 서포트",
-    "헤드램프 가니쉬(좌)",
-    "헤드램프 가니쉬(우)",
-    "테일램프 가니쉬(좌)",
-    "테일램프 가니쉬(우)",
-  ];
-
-  return names.map((payname, i) => {
-    const payno = `P${String(i + 1).padStart(3, "0")}`;
-    const baseM = 8000 + i * 700;
-    const baseH = 0.25 + i * 0.03;
-    const clampH = (x) => Math.round(Math.min(3.5, Math.max(0, x)) * 100) / 100;
-
-    return {
-      payno,
-      pntcot: "2",
-      pntcot_nm: "2코트",
-      payname,
-
-      // 유용성
-      oilpnt_m: baseM + 2500,
-      oilpnt_h: clampH(baseH + 0.12),
-      oilpnt_mb: baseM + 2200,
-      oilpnt_hb: clampH(baseH + 0.10),
-      oilextr21_m: baseM - 800,
-      oilextr21_h: clampH(baseH - 0.03),
-      oilextr22_m: baseM + 4000,
-      oilextr22_h: clampH(baseH + 0.18),
-
-      // 수용성
-      pnt_m: baseM + 1200,
-      pnt_h: clampH(baseH + 0.06),
-      pnt_mb: baseM + 900,
-      pnt_hb: clampH(baseH + 0.05),
-      extr21_m: baseM - 1400,
-      extr21_h: clampH(baseH - 0.05),
-      extr22_m: baseM + 2800,
-      extr22_h: clampH(baseH + 0.14),
-    };
-  });
-}
 
 function fmtMoney(v) {
   const n = Number(v ?? 0);
@@ -75,8 +17,6 @@ function fmtHour(v) {
   return n.toFixed(2);
 }
 
-
-
 function solventLabel(solvent) {
   return solvent === "oil" ? "유용성" : "수용성";
 }
@@ -85,24 +25,23 @@ function solventFromPntM(pnt_m) {
   const n = Number(pnt_m);
   if (n === 1) return "oil"; // 유용성
   if (n === 2) return "pnt"; // 수용성
-  return ""; // unknown
+  return "";
 }
-
 
 // solvent: "oil" | "pnt"
 function getPaintMH(row, solvent, kind) {
   const map = {
     oil: {
-      swap: { m: "oilpnt_m", h: "oilpnt_h" },
-      outer: { m: "oilpnt_mb", h: "oilpnt_hb" },
+      swap:    { m: "oilpnt_m",    h: "oilpnt_h"    },
+      outer:   { m: "oilpnt_mb",   h: "oilpnt_hb"   },
       surface: { m: "oilextr21_m", h: "oilextr21_h" },
-      front: { m: "oilextr22_m", h: "oilextr22_h" },
+      front:   { m: "oilextr22_m", h: "oilextr22_h" },
     },
     pnt: {
-      swap: { m: "pnt_m", h: "pnt_h" },
-      outer: { m: "pnt_mb", h: "pnt_hb" },
+      swap:    { m: "pnt_m",    h: "pnt_h"    },
+      outer:   { m: "pnt_mb",   h: "pnt_hb"   },
       surface: { m: "extr21_m", h: "extr21_h" },
-      front: { m: "extr22_m", h: "extr22_h" },
+      front:   { m: "extr22_m", h: "extr22_h" },
     },
   };
 
@@ -112,6 +51,24 @@ function getPaintMH(row, solvent, kind) {
     m: Number(row?.[f.m] ?? 0),
     h: Number(row?.[f.h] ?? 0),
   };
+}
+
+/** workcode 에 따라 클릭 가능한 kind 판별
+ *  X       → swap 만 사용
+ *  B / S   → outer / surface / front 사용
+ *  그 외   → 모두 허용
+ */
+function canClickKind(kind, workcode) {
+  if (workcode === "X")                          return kind === "swap";
+  if (workcode === "B" || workcode === "S")      return kind !== "swap";
+  return true;
+}
+
+/** workcode 에 따른 초기 selectedKind */
+function defaultKind(workcode) {
+  if (workcode === "X")                          return "swap";
+  if (workcode === "B" || workcode === "S")      return "outer";
+  return "swap";
 }
 
 function TwoLineTitle({ top, bottom }) {
@@ -126,24 +83,26 @@ function TwoLineTitle({ top, bottom }) {
 export default function PaintItemsPopup() {
   const ctx = useUrlContextSnapshot({
     storageKey: "PaintItemsCtx",
-    keys: ["est_serial", "carno", "carname", "pntcot_code", "pnt_m"],
+    keys: ["est_serial", "carno", "carname", "pntcot_code", "pnt_m",
+           "paint", "pntkind", "codecar", "workcode"],
     cleanPath: "/paint-items",
   });
 
   const hydratedRef = useRef(false);
 
-  const [estSerial, setEstSerial] = useState(() => ctx.est_serial || "");
-  const [carNo, setCarNo] = useState(() => ctx.carno || "");
-  const [carName, setCarName] = useState(() => ctx.carname || "");
+  const [estSerial,   setEstSerial]   = useState(() => ctx.est_serial  || "");
+  const [carNo,       setCarNo]       = useState(() => ctx.carno       || "");
+  const [carName,     setCarName]     = useState(() => ctx.carname     || "");
+  const [pntcotCode,  setPntcotCode]  = useState(() => ctx.pntcot_code || "");
+  const [paintSolvent, setPaintSolvent] = useState(() => solventFromPntM(ctx.pnt_m) || "pnt");
 
-  // 도장코트: master.pntcot_code
-  const [pntcotCode, setPntcotCode] = useState(() => ctx.pntcot_code || "");
+  // API 파라미터
+  const [paint,   setPaint]   = useState(() => ctx.paint   || "");
+  const [pntkind, setPntkind] = useState(() => ctx.pntkind || "");
+  const [codecar, setCodecar] = useState(() => ctx.codecar || "");
 
-  // 도장도료: pnt_m (표시만)
-  const [paintSolvent, setPaintSolvent] = useState(() => {
-    return solventFromPntM(ctx.pnt_m) || "pnt"; 
-
-  });
+  // 주체 workcode: 교환(X) vs 판금/수리(B/S) 구분용
+  const [workcode, setWorkcode] = useState(() => ctx.workcode || "");
 
   // ---- 팝업 ctx 저장(F5) + 최초 hydration ----
   useEffect(() => {
@@ -151,11 +110,15 @@ export default function PaintItemsPopup() {
       sessionStorage.setItem(
         "PaintItemsCtx",
         JSON.stringify({
-          est_serial: ctx.est_serial || "",
-          carno: ctx.carno || "",
-          carname: ctx.carname || "",
+          est_serial:  ctx.est_serial  || "",
+          carno:       ctx.carno       || "",
+          carname:     ctx.carname     || "",
           pntcot_code: ctx.pntcot_code || "",
-          pnt_m: ctx.pnt_m ?? "",
+          pnt_m:       ctx.pnt_m       ?? "",
+          paint:       ctx.paint       || "",
+          pntkind:     ctx.pntkind     || "",
+          codecar:     ctx.codecar     || "",
+          workcode:    ctx.workcode    || "",
         })
       );
     } catch { /* empty */ }
@@ -163,48 +126,58 @@ export default function PaintItemsPopup() {
     if (hydratedRef.current) return;
     hydratedRef.current = true;
 
-    if (ctx.est_serial && !estSerial) setEstSerial(ctx.est_serial);
-    if (ctx.carno && !carNo) setCarNo(ctx.carno);
-    if (ctx.carname && !carName) setCarName(ctx.carname);
+    if (ctx.est_serial  && !estSerial)  setEstSerial(ctx.est_serial);
+    if (ctx.carno       && !carNo)      setCarNo(ctx.carno);
+    if (ctx.carname     && !carName)    setCarName(ctx.carname);
     if (ctx.pntcot_code && !pntcotCode) setPntcotCode(ctx.pntcot_code);
-    
+    if (ctx.paint       && !paint)      setPaint(ctx.paint);
+    if (ctx.pntkind     && !pntkind)    setPntkind(ctx.pntkind);
+    if (ctx.codecar     && !codecar)    setCodecar(ctx.codecar);
+    if (ctx.workcode    !== undefined)  setWorkcode(ctx.workcode || "");
+
     const byPntM = solventFromPntM(ctx.pnt_m);
     if (byPntM) setPaintSolvent(byPntM);
-    
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctx.est_serial, ctx.carno, ctx.carname, ctx.pntcot_code, ctx.pnt_m]);
 
-  // ---- 부모 창에서 ctx 갱신 메시지 받을 수 있게(공임항목 방식) ----
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ctx.est_serial, ctx.carno, ctx.carname, ctx.pntcot_code, ctx.pnt_m,
+      ctx.paint, ctx.pntkind, ctx.codecar, ctx.workcode]);
+
+  // ---- 부모 창에서 ctx 갱신 메시지 ----
   useEffect(() => {
     const onMsg = (e) => {
       if (e.origin !== window.location.origin) return;
       const { type, payload } = e.data || {};
       if (type !== "PAINT_ITEMS_SET_CTX") return;
 
-      if (payload?.est_serial != null) setEstSerial(payload.est_serial || "");
-      if (payload?.carno != null) setCarNo(payload.carno || "");
-      if (payload?.carname != null) setCarName(payload.carname || "");
-
+      if (payload?.est_serial  != null) setEstSerial(payload.est_serial   || "");
+      if (payload?.carno       != null) setCarNo(payload.carno            || "");
+      if (payload?.carname     != null) setCarName(payload.carname        || "");
       if (payload?.pntcot_code != null) setPntcotCode(payload.pntcot_code || "");
+      if (payload?.paint       != null) setPaint(payload.paint            || "");
+      if (payload?.pntkind     != null) setPntkind(payload.pntkind        || "");
+      if (payload?.codecar     != null) setCodecar(payload.codecar        || "");
+      if (payload?.workcode    != null) setWorkcode(payload.workcode      || "");
 
       if (payload?.pnt_m != null) {
         const byPntM = solventFromPntM(payload.pnt_m);
         if (byPntM) setPaintSolvent(byPntM);
       }
-      
 
       try {
         sessionStorage.setItem(
           "PaintItemsCtx",
           JSON.stringify({
-            est_serial: payload?.est_serial || "",
-            carno: payload?.carno || "",
-            carname: payload?.carname || "",
+            est_serial:  payload?.est_serial  || "",
+            carno:       payload?.carno       || "",
+            carname:     payload?.carname     || "",
             pntcot_code: payload?.pntcot_code || "",
-            pnt_m: payload?.pnt_m ?? "",
+            pnt_m:       payload?.pnt_m       ?? "",
+            paint:       payload?.paint       || "",
+            pntkind:     payload?.pntkind     || "",
+            codecar:     payload?.codecar     || "",
+            workcode:    payload?.workcode    || "",
           })
         );
-
       } catch { /* empty */ }
     };
 
@@ -212,35 +185,51 @@ export default function PaintItemsPopup() {
     return () => window.removeEventListener("message", onMsg);
   }, []);
 
-  // ---- Data / Filter ----
-  const [items] = useState(makeDemoRows);
+  // ---- API fetch ----
+  const { fetchCodepnt } = useCodepnt();
+  const [paints, setPaints] = useState([]);
+
+  useEffect(() => {
+    if (!paint && !pntkind && !codecar) return;
+    fetchCodepnt({ carcode: paint, paykind: pntkind, ocarcode: codecar })
+      .then((json) => {
+        if (json?.result === "OK") setPaints(json.dataset ?? []);
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paint, pntkind, codecar]);
+
+  // ---- Filter ----
   const [q, setQ] = useState("");
 
   const [selectedPayno, setSelectedPayno] = useState("");
-  const [selectedKind, setSelectedKind] = useState("swap"); // swap|outer|surface|front
+
+  // selectedKind: workcode 변경 시 기본값 재설정
+  const [selectedKind, setSelectedKind] = useState(() => defaultKind(ctx.workcode || ""));
+  useEffect(() => {
+    setSelectedKind(defaultKind(workcode));
+  }, [workcode]);
 
   const filtered = useMemo(() => {
     const coat = String(pntcotCode || "").trim();
-    const qq = String(q || "").trim().toLowerCase();
+    const qq   = String(q         || "").trim().toLowerCase();
 
-    return items
+    return paints
       .filter((r) => (!coat ? true : String(r.pntcot) === coat))
-      .filter((r) => (!qq ? true : String(r.payname || "").toLowerCase().includes(qq)));
-  }, [items, pntcotCode, q]);
+      .filter((r) => (!qq   ? true : String(r.payname || "").toLowerCase().includes(qq)));
+  }, [paints, pntcotCode, q]);
 
   const rows = useMemo(() => filtered, [filtered]);
 
   // ---- Close ----
   const onClose = useCallback(() => {
-    try {
-      window.close();
-    } catch { /* empty */ }
+    try { window.close(); } catch { /* empty */ }
   }, []);
 
-  // ---- Columns (중요: FixedHeadTable 규격 render(val,row,idx)) ----
+  // ---- Columns ----
   const columns = useMemo(() => {
     const mk = (kind, label, sub) => ({
-      key: `${kind}_${sub}`, // row에 필드가 없어도 render로 표시 가능
+      key: `${kind}_${sub}`,
       title: <TwoLineTitle top={label} bottom={sub === "m" ? "재료비" : "지수"} />,
       width: sub === "m" ? "9%" : "7%",
       align: "right",
@@ -251,24 +240,21 @@ export default function PaintItemsPopup() {
     });
 
     return [
-      { key: "pntcot_nm", title: "코트", width: "7%", align: "left", render: (val) => val || "" },
-      { key: "payname", title: "도장항목", width: "20%", align: "left", render: (val) => val || "" },
+      { key: "pntcot_nm", title: "코트",     width: "7%",  align: "left", render: (val) => val || "" },
+      { key: "payname",   title: "도장항목", width: "20%", align: "left", render: (val) => val || "" },
 
-      mk("swap", "교환도장", "m"),
-      mk("swap", "교환도장", "h"),
-
-      mk("outer", "외측판금", "m"),
-      mk("outer", "외측판금", "h"),
-
-      mk("surface", "표면판금", "m"),
-      mk("surface", "표면판금", "h"),
-
-      mk("front", "전면판금", "m"),
-      mk("front", "전면판금", "h"),
+      mk("swap",    "교환도장",  "m"),
+      mk("swap",    "교환도장",  "h"),
+      mk("outer",   "외측판금",  "m"),
+      mk("outer",   "외측판금",  "h"),
+      mk("surface", "표면판금",  "m"),
+      mk("surface", "표면판금",  "h"),
+      mk("front",   "전면판금",  "m"),
+      mk("front",   "전면판금",  "h"),
     ];
   }, [paintSolvent]);
 
-  // ---- rowRenderer로 “셀 클릭(kind 선택)” + “노란 강조” 구현 ----
+  // ---- rowRenderer ----
   const rowRenderer = useCallback(
     ({ row, idx, trProps }) => {
       const isSelRow = row?.payno === selectedPayno;
@@ -278,13 +264,47 @@ export default function PaintItemsPopup() {
         setSelectedKind(kind);
       };
 
-      const tdBase = "px-3 py-2 align-middle whitespace-nowrap truncate";
-      const tdAlign = (align) => (align === "right" ? "text-right tabular-nums" : align === "center" ? "text-center" : "text-left");
+      const tdBase  = "px-3 py-2 align-middle whitespace-nowrap truncate";
+      const tdAlign = (align) =>
+        align === "right"  ? "text-right tabular-nums" :
+        align === "center" ? "text-center" : "text-left";
 
       const onRowDblClick = () => {
         if (!row?.payno) return;
+
+        const isSubseq2 = String(row.subseq ?? "") === "2";
+
+        // 교환(X) → 항상 swap / 판금·수리(B/S) → 선택한 kind
+        const kind     = workcode === "X" ? "swap" : selectedKind;
+        // subseq='2': subpayno = row.payno, b_level = carcode 6번째 문자
+        const subpayno = isSubseq2 ? String(row.payno) : "";
+        const b_level  = isSubseq2 ? (String(row.carcode ?? "").charAt(5) || "0.00") : "0.00";
+
+        // subseq='2': 삽입 위치 기준 payno 결정
+        //   1순위: 같은 category + subseq='1' 부모 행
+        //   2순위: category < 선택row.category 중 가장 큰 category의 subseq='1' 행
+        let insertPayno = "";
+        if (isSubseq2) {
+          const s1Rows = paints.filter((p) => String(p.subseq ?? "") === "1");
+          // 1순위: 동일 category
+          const exactParent = s1Rows.find((p) => p.category === row.category);
+          if (exactParent) {
+            insertPayno = exactParent.payno ?? "";
+          } else {
+            // 2순위: category < 선택row.category 중 최대 category 행
+            const candidates = s1Rows.filter((p) => p.category < row.category);
+            if (candidates.length > 0) {
+              const closest = candidates.reduce((best, cur) =>
+                cur.category > best.category ? cur : best
+              );
+              insertPayno = closest.payno ?? "";
+            }
+          }
+        }
+
         window.opener?.postMessage(
-          { type: "PAINT_ITEMS_PICK", payload: { ...row, paintSolvent, selectedKind } },
+          { type: "PAINT_ITEMS_PICK",
+            payload: { ...row, paintSolvent, selectedKind: kind, subpayno, b_level, insertPayno } },
           window.location.origin
         );
       };
@@ -293,20 +313,17 @@ export default function PaintItemsPopup() {
         <tr {...trProps} onDoubleClick={onRowDblClick}>
           {columns.map((c) => {
             const kind =
-              c.key.startsWith("swap_")
-                ? "swap"
-                : c.key.startsWith("outer_")
-                ? "outer"
-                : c.key.startsWith("surface_")
-                ? "surface"
-                : c.key.startsWith("front_")
-                ? "front"
-                : null;
+              c.key.startsWith("swap_")    ? "swap"    :
+              c.key.startsWith("outer_")   ? "outer"   :
+              c.key.startsWith("surface_") ? "surface" :
+              c.key.startsWith("front_")   ? "front"   : null;
 
-            const isKindCell = !!kind;
-            const isSelKind = isSelRow && isKindCell && selectedKind === kind;
+            const isKindCell  = !!kind;
+            const canClick    = isKindCell && canClickKind(kind, workcode);
+            const isDimmed    = isKindCell && !canClick;
+            const isSelKind   = isSelRow && canClick && selectedKind === kind;
 
-            const val = row[c.key];
+            const val     = row[c.key];
             const content = c.render ? c.render(val, row, idx) : val;
 
             return (
@@ -316,11 +333,12 @@ export default function PaintItemsPopup() {
                   tdBase,
                   tdAlign(c.align),
                   c.className || "",
-                  isKindCell ? "cursor-pointer" : "",
-                  isSelKind ? "!bg-yellow-100 font-semibold" : "",
+                  canClick   ? "cursor-pointer" : "",
+                  isDimmed   ? "opacity-30"     : "",
+                  isSelKind  ? "!bg-yellow-100 font-semibold" : "",
                 ].join(" ")}
                 onClick={(e) => {
-                  if (!isKindCell) return; // 기본 셀은 row click 그대로
+                  if (!canClick) return;
                   e.preventDefault();
                   e.stopPropagation();
                   onCellPick(kind);
@@ -334,13 +352,13 @@ export default function PaintItemsPopup() {
         </tr>
       );
     },
-    [columns, selectedPayno, selectedKind]
+    [columns, selectedPayno, selectedKind, workcode, paintSolvent]
   );
 
   return (
     <div className="h-screen bg-zinc-50 overflow-hidden flex flex-col">
 
-      {/* Header (공임항목 스타일) */}
+      {/* Header */}
       <div className="sticky top-0 z-20 border-b border-zinc-200 bg-white">
         <div className="px-4 py-3">
           <div className="flex items-start gap-3">
@@ -364,10 +382,13 @@ export default function PaintItemsPopup() {
                   <span className="rounded-md bg-zinc-100 px-2 py-1 text-zinc-800">
                     도장도료: <span className="font-semibold">{solventLabel(paintSolvent)}</span>
                   </span>
-
+                  {workcode && (
+                    <span className="rounded-md bg-blue-50 px-2 py-1 text-blue-800 text-xs">
+                      {workcode === "X" ? "교환" : workcode === "B" ? "판금" : workcode === "S" ? "수리" : workcode}
+                    </span>
+                  )}
                 </div>
               </div>
-
             </div>
 
             <div className="ml-auto">
@@ -405,7 +426,6 @@ export default function PaintItemsPopup() {
               rows={rows}
               columns={columns}
               rowSize="md"
-              // height="calc(80vh - 190px)"
               height="100%"
               rowKey={(r) => r.payno}
               selectedKey={selectedPayno}
@@ -415,11 +435,10 @@ export default function PaintItemsPopup() {
               rowRenderer={rowRenderer}
             />
           </div>
-          
         </div>
       </div>
 
-      {/* Footer Buttons (배치만) */}
+      {/* Footer Buttons */}
       <div className="sticky bottom-0 z-20 border-t border-zinc-200 bg-white">
         <div className="flex items-center gap-2 px-4 py-3">
           <button type="button" className="h-9 rounded-md bg-zinc-900 px-3 text-sm font-semibold text-white hover:bg-zinc-800">

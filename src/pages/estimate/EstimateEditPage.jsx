@@ -332,20 +332,45 @@ export default function EstimateEditPage() {
     const carno = master?.carno || "";
     const pntcot_code = master?.pntcot_code || "";
     const pnt_m = master?.pnt_m || "";
+    const paint   = master?.paint   || "";
+    const pntkind = master?.pntkind || "";
+    const codecar = master?.codecar || "";
+
+    // 선택 Row의 주체(paykind='1') workcode: 교환(X) vs 판금/수리(B/S) 판별용
+    let workcode = "";
+    const _selRow = rows.find((r) => r.estb_orgseqno === selectedOrgSeq);
+    if (_selRow) {
+      if (String(_selRow.paykind) === "1") {
+        workcode = _selRow.workcode || "";
+      } else {
+        const _workRow = rows.find(
+          (r) => String(r.paykind) === "1" && String(r.payno) === String(_selRow.payno)
+        );
+        workcode = _workRow?.workcode || "";
+      }
+    }
 
     const safePntM = pnt_m === 1 || pnt_m === 2 ? pnt_m : 2;
 
     const url =
       `/paint-items?est_serial=${encodeURIComponent(estSerial)}` +
       `&carno=${encodeURIComponent(carno)}` +
-      `&pntcot_code=${encodeURIComponent(pntcot_code)}`+
-      `&pnt_m=${encodeURIComponent(safePntM)}`;
+      `&pntcot_code=${encodeURIComponent(pntcot_code)}` +
+      `&pnt_m=${encodeURIComponent(safePntM)}` +
+      `&paint=${encodeURIComponent(paint)}` +
+      `&pntkind=${encodeURIComponent(pntkind)}` +
+      `&codecar=${encodeURIComponent(codecar)}` +
+      `&workcode=${encodeURIComponent(workcode)}`;
 
     const payload = {
       est_serial: estSerial,
       carno,
       pntcot_code,
       pnt_m: safePntM,
+      paint,
+      pntkind,
+      codecar,
+      workcode,
     };
 
     // 이미 열려 있으면 재사용 + ctx만 갱신
@@ -845,13 +870,16 @@ export default function EstimateEditPage() {
         // 1. 중복 체크
         if (currentRows.some((r) => r.payno === payno && r.workcode === "P")) return;
 
-        // 2. 견적내역 동일 payno workcode 로 coatKind 결정
+        // 2. coatKind 결정
+        //    - 교환(X) Row 존재 시 → swap 강제
+        //    - 판금/수리(B/S) Row 존재 시 → swap 선택이면 outer 로 변환
+        //    - 그 외 → 팝업에서 선택한 kind 사용
         const sameRows = currentRows.filter((r) => String(r.payno) === String(payno));
         let coatKind = selectedKind ?? "swap";
         if (sameRows.some((r) => r.workcode === "X")) {
           coatKind = "swap";
         } else if (sameRows.some((r) => r.workcode === "B" || r.workcode === "S")) {
-          coatKind = "outer";
+          if (coatKind === "swap") coatKind = "outer";
         }
 
         // 3. solvent × coatKind → hour / partsum
@@ -869,9 +897,11 @@ export default function EstimateEditPage() {
         const pntPart = Number(paintRow[pntPartField] ?? 0);
 
         // 4. 삽입 위치
+        // subseq='2' 는 부모(subseq='1', 같은 category) payno 기준으로 위치 결정
+        const _insertPno = paintRow.insertPayno || payno;
         let insertIdx = currentRows.length;
         for (let i = currentRows.length - 1; i >= 0; i--) {
-          if (String(currentRows[i].payno) === String(payno)) { insertIdx = i + 1; break; }
+          if (String(currentRows[i].payno) === String(_insertPno)) { insertIdx = i + 1; break; }
         }
 
         const comcode   = masterRef.current?.comcode ?? getComcode();
@@ -884,7 +914,7 @@ export default function EstimateEditPage() {
           estb_seqno:     String(insertIdx + 1).padStart(3, "0"),
           paykind:        "6",
           payno,
-          subpayno:       "",
+          subpayno:       String(paintRow.subpayno ?? ""),
           payname,
           workcode:       "P",
           workcodename:   "도장",
@@ -904,7 +934,7 @@ export default function EstimateEditPage() {
           ts_payno:       "",
           update_id:      getUserid(),
           paykindname:    "도장",
-          b_level:        "0.00",
+          b_level:        String(paintRow.b_level ?? "0.00"),
           b_area:         "0",
           pnt_reduce:     "0",
           body_panel:     String(paintRow.body_panel ?? ""),
@@ -912,8 +942,10 @@ export default function EstimateEditPage() {
         };
 
         // 5. 범퍼 자동 추가행: payname에 '범퍼' 포함 AND state='1'
+        //    단, subseq='2' 인 행은 이미 부가항목이므로 자동 추가 제외
         let extraRow = null;
-        if (String(payname).includes("범퍼") && state === "1") {
+        const isSubseq2 = String(paintRow.subseq ?? "") === "2";
+        if (String(payname).includes("범퍼") && state === "1" && !isSubseq2) {
           const tbEntry = (wrk34CodesRef.current ?? []).find((c) => c.value === "9");
           if (tbEntry) {
             const qty = String(Number(tbEntry.def_value ?? 0) / 100);

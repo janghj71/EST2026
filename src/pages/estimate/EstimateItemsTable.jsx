@@ -111,6 +111,10 @@ function canEditQty(row) {
   if (!["1", "2", "3", "4", "5", "6"].includes(pk(row))) return false;
   // workcode T,G,W: 시간 입력 불가 (인풋 미표시)
   if (pk(row) === "4" && ["T", "G", "W"].includes(wc(row))) return false;
+  // paykind='6' + payno=subpayno + b_level>0 (subseq='2' 부가항목): 시간 수정 불가
+  if (pk(row) === "6" &&
+      String(row.payno ?? "") === String(row.subpayno ?? "") &&
+      parseFloat(row.b_level ?? "0") > 0) return false;
   return true;
 }
 
@@ -707,7 +711,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
           const editable = canEditQty(row);
           const id = `cell-${row.estb_orgseqno}-qty`;
           // T/G/W(세차·구난·견인)는 qty 미사용 → 빈 칸 표시
-          if (!editable) return <div className="h-8 flex items-center justify-end">{["T","G","W"].includes(wc(row)) ? "" : fmtQty(row.qty)}</div>;
+          if (!editable) return <div className="h-8 flex items-center justify-end pr-1">{["T","G","W"].includes(wc(row)) ? "" : fmtQty(row.qty)}</div>;
           return (
             <div className={CELL_WRAP}>
               <input
@@ -979,7 +983,11 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
             (rowPk === "4" || rowPk === "6") &&
             String(row.pnt_extr ?? "") === "" &&
             row.workcode === "P" &&
-            String(row.state ?? "") !== "2";
+            String(row.state ?? "") !== "2" &&
+            // paykind='6' + payno=subpayno + b_level>0 → subseq='2' 부가항목: 드롭다운 제외
+            !(rowPk === "6" &&
+              String(row.payno ?? "") === String(row.subpayno ?? "") &&
+              parseFloat(row.b_level ?? "0") > 0);
           return (
             <div className="h-8 flex items-center">
               {canPntExtr ? (
