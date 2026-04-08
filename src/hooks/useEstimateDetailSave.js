@@ -87,6 +87,7 @@ export function useEstimateDetailSave(setRows) {
   const saveDetail = useCallback(
     async (newRow) => {
       try {
+        let resolved = null;
         await withLoading(async () => {
           const json = await saveReq({ masterestimateb: [toApiRow(newRow)] });
           apiOk(json, "견적항목 저장");
@@ -99,10 +100,13 @@ export function useEstimateDetailSave(setRows) {
                   : r
               )
             );
+            resolved = { tempId: newRow.estb_orgseqno, newserial };
           }
         });
+        return resolved; // { tempId, newserial } | null
       } catch (e) {
         warning(e.message || "견적항목 저장 실패");
+        return null;
       }
     },
     [saveReq, withLoading, setRows, warning]

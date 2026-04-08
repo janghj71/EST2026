@@ -255,7 +255,7 @@ export default function EstimateItemsTable({
   }, [master?.paint, master?.pntkind, master?.codecar]);
 
   const [popover, setPopover] = useState(null);
-  // popover: { type: "workcodename"|"ts_payno"|"statename", anchorRect, rowOrgSeq }
+  // popover: { type: "workcodename"|"ts_payno"|"statename"|"pntextr", anchorRect, rowOrgSeq }
   const [paintSubRect, setPaintSubRect] = useState(null); // 도장 서브패널 앵커
 
   // 신규 row 삽입 후 payname 포커스 대기용 ref
@@ -972,11 +972,30 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
         title: "상태",
         width: "140px",
         className: "px-2 py-0",
-        render: (_val, row) => (
-          <div className="h-8 flex items-center">
-            {computeStatename(row, master, wrk34Codes, pyk02Codes)}
-          </div>
-        ),
+        render: (_val, row) => {
+          // paykind in ('4','6') AND pnt_extr='' AND workcode='P' → 드롭다운 버튼
+          const rowPk = String(row.paykind ?? "");
+          const canPntExtr =
+            (rowPk === "4" || rowPk === "6") &&
+            String(row.pnt_extr ?? "") === "" &&
+            row.workcode === "P" &&
+            String(row.state ?? "") !== "2";
+          return (
+            <div className="h-8 flex items-center">
+              {canPntExtr ? (
+                <button
+                  type="button"
+                  className="w-full text-left hover:underline"
+                  onClick={(e) => openPopover(e, "pntextr", row)}
+                >
+                  {computeStatename(row, master, wrk34Codes, pyk02Codes)}
+                </button>
+              ) : (
+                computeStatename(row, master, wrk34Codes, pyk02Codes)
+              )}
+            </div>
+          );
+        },
       },
     ];
   }, [openPopover, setCell, moveFocusUpDown, focusPrevAcrossRows, focusNextAcrossRows, calcPaysum]);
@@ -1110,7 +1129,21 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
       // ⑤ 선택 Row · 포커스 대기 · 서버 저장 — 모두 동기 실행 (savedRow 패턴 제거)
       setSelectedOrgSeq?.("");
       pendingFocusSeqRef.current = newRow.estb_seqno;
-      onInsertDetail?.(newRow);
+      const _tempId = newRow.estb_orgseqno;
+      onInsertDetail?.(newRow)?.then?.((result) => {
+        // 서버 저장 후 tempId → newserial 로 selectedOrgSeq 갱신
+        // (현재 선택이 tempId인 경우에만 교체 — 그 사이 다른 행 선택 시 유지)
+        if (result?.newserial) {
+          setSelectedOrgSeq?.((prev) =>
+            prev === _tempId ? result.newserial : prev
+          );
+          // 로딩바 해제 시 포커스가 사라지므로 재설정
+          // (다른 행을 이미 클릭했으면 _tempId와 달라 setSelectedOrgSeq도 no-op이므로 포커스도 이동 안 함)
+          requestAnimationFrame(() => {
+            focusById(`cell-${result.newserial}-payname`);
+          });
+        }
+      });
     },
     [setRows, selectedOrgSeq, setSelectedOrgSeq, master, onInsertDetail, rows]
   );
@@ -1291,8 +1324,11 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
           anchorRect={popover.anchorRect}
           onClose={closePopover}
           placement={popover.type === "workcodename" ? "right-top" : "bottom-left"}
-          minWidth={popover.type === "workcodename" ? "100px" : "360px"}
-          noTitle={popover.type === "workcodename"}
+          minWidth={
+            popover.type === "workcodename" ? "100px" :
+            popover.type === "pntextr"      ? "140px" : "360px"
+          }
+          noTitle={popover.type === "workcodename" || popover.type === "pntextr"}
           title={
             popover.type === "ts_payno" ? "국토부" : "상태"
           }
@@ -1435,9 +1471,11 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                           }
 
                           // ── 캐스케이드: 같은 payno 도장(P) 행 ──
+                          // pnt_extr 있는 행(서페이스 도장 등)은 캐스케이드 제외
                           if ((anyToBS || anyToX) &&
                               r.workcode === "P" &&
-                              String(r.payno) === String(mainRow.payno)) {
+                              String(r.payno) === String(mainRow.payno) &&
+                              String(r.pnt_extr ?? "") === "") {
                             let targetState, targetCoat;
                             if      (anyToBS && r.state !== "3") { targetState = "3"; targetCoat = "outer"; }
                             else if (anyToX  && r.state !== "1") { targetState = "1"; targetCoat = "swap";  }
@@ -1494,6 +1532,107 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                 );
               })}
             </div>
+            );
+          })()
+          : popover.type === "pntextr" ? (() => {
+            // WRK34 / state='1' 목록 → 투톤, 서페이서 등
+            const selRow    = rows.find((r) => r.estb_orgseqno === popover.rowOrgSeq);
+            const extrItems = wrk34Codes.filter((c) => String(c.state) === "1");
+            const isBumper  = String(selRow?.payname ?? "").includes("범퍼");
+            return (
+              <div className="p-1 flex flex-col gap-0.5">
+                {extrItems.map((item) => {
+                  const isSerf    = item.label.includes("서페이서");
+                  const disabled  = isSerf && !isBumper;
+                  return (
+                    <button
+                      key={item.value}
+                      type="button"
+                      disabled={disabled}
+                      className={`text-left rounded px-2 py-1 text-sm whitespace-nowrap
+                        ${disabled
+                          ? "text-zinc-300 cursor-not-allowed"
+                          : "hover:bg-zinc-50"}`}
+                      onClick={disabled ? undefined : () => {
+                        if (!selRow) { closePopover(); return; }
+                        // 중복 체크: payno + subpayno + pnt_extr
+                        const isDup = rows.some((r) =>
+                          String(r.payno)    === String(selRow.payno) &&
+                          String(r.subpayno) === String(selRow.subpayno) &&
+                          String(r.pnt_extr) === String(item.value)
+                        );
+                        if (isDup) {
+                          alertInfo("이미 추가된 항목입니다.");
+                          closePopover();
+                          return;
+                        }
+                        // qty = def_value / 100
+                        const qty = String(parseFloat(item.def_value ?? "0") / 100);
+                        const ps  = calcPaysum("P", qty);
+                        const newRow = {
+                          comcode:        selRow.comcode     ?? getComcode(),
+                          est_serial:     selRow.est_serial  ?? master?.est_serial ?? "",
+                          estb_orgseqno:  "_new_" + Date.now(),
+                          estb_seqno:     selRow.estb_seqno,
+                          paykind:        "6",
+                          payno:          selRow.payno,
+                          subpayno:       selRow.subpayno,
+                          payname:        selRow.payname + "-" + item.label,
+                          pnt_extr:       item.value,
+                          pnt_m:          selRow.pnt_m,
+                          pntcot:         selRow.pntcot,
+                          state:          selRow.state,
+                          statename:      selRow.statename ?? "",
+                          workcode:       "P",
+                          workcodename:   "도장",
+                          qty,
+                          oqty:           qty,
+                          paysum:         ps ?? "0",
+                          partsum:        "0",
+                          price:          "",
+                          part_makercode: "",
+                          pnt_hour:       "0",
+                          pnt_part:       "0",
+                          ts_payno:       selRow.ts_payno    ?? "",
+                          update_id:      getUserid(),
+                          paykindname:    paykindLabel("6"),
+                          b_level:        "0.00",
+                          b_area:         "0",
+                          pnt_reduce:     "0",
+                          body_panel:     selRow.body_panel  ?? "",
+                          pay_orderno:    selRow.pay_orderno,
+                        };
+                        const _tempId = newRow.estb_orgseqno;
+                        // 선택 Row 바로 다음에 삽입
+                        setRows((prev) => {
+                          const idx = prev.findIndex((r) => r.estb_orgseqno === selRow.estb_orgseqno);
+                          const at  = idx >= 0 ? idx + 1 : prev.length;
+                          return [
+                            ...prev.slice(0, at),
+                            newRow,
+                            ...prev.slice(at),
+                          ].map((r, i) => ({ ...r, estb_seqno: String(i + 1).padStart(3, "0") }));
+                        });
+                        closePopover();
+                        setSelectedOrgSeq?.(_tempId);
+                        focusById(`cell-${_tempId}-payname`);
+                        onInsertDetail?.(newRow)?.then?.((result) => {
+                          if (result?.newserial) {
+                            setSelectedOrgSeq?.((prev) =>
+                              prev === _tempId ? result.newserial : prev
+                            );
+                            requestAnimationFrame(() =>
+                              focusById(`cell-${result.newserial}-payname`)
+                            );
+                          }
+                        });
+                      }}
+                    >
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
             );
           })()
           : (

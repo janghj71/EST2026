@@ -1320,7 +1320,8 @@ export default function EstimateEditPage() {
               const { orgSeqs } = pendingDelete;
               const seqSet = new Set(orgSeqs);
 
-              // 삭제 대상 row 의 payno 수집 (도장 row 한정)
+              // 삭제 대상 row 의 payno 수집 (도장 부모 row 한정: pnt_extr='' 인 경우만)
+              // pnt_extr≠'' 인 child row(투톤/서페이서) 단독 삭제 시에는 cascade 제외
               const deletedPaynos = new Set(
                 rows
                   .filter(
@@ -1329,7 +1330,8 @@ export default function EstimateEditPage() {
                       r.workcode === "P" &&
                       (r.paykind === "6" || r.paykind === "4") &&
                       r.subpayno !== "99990" &&
-                      r.subpayno !== "99991"
+                      r.subpayno !== "99991" &&
+                      String(r.pnt_extr ?? "") === ""
                   )
                   .map((r) => r.payno)
               );
