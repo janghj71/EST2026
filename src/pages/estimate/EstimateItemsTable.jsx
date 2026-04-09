@@ -3,7 +3,7 @@ import React, { useMemo, useCallback, useState, useRef, useEffect } from "react"
 
 import FixedHeadTable from "../../components/FixedHeadTable";
 import IconBtn from "../../components/IconBtn";
-import Field from "../../components/Field";
+
 import MoneyInput from "../../components/MoneyInput";
 import { formatNumber } from "../../utils/numberFormat";
 import { focusById } from "../../utils/focusUtils";
@@ -361,7 +361,9 @@ export default function EstimateItemsTable({
     row.subpayno === "99990" ||
     row.subpayno === "99991" ||
     (row.pnt_extr ?? "") !== "" ||
-    String(row.payno ?? "").startsWith("SS");
+    String(row.payno ?? "").startsWith("SS") ||
+    String(row.payno ?? "") === "adlP001" ||
+    String(row.payno ?? "") === "adlP002";
 
   const openPopover = useCallback((e, type, row) => {
     // 컬러매칭/가열건조비/도장부가/우수기술료 Row는 [작업] 팝업 차단
@@ -1216,13 +1218,6 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
             <div className="absolute left-0 top-full mt-1 z-50 min-w-[110px] rounded-md border border-zinc-200 bg-white shadow-lg py-1 text-sm">
               <button
                 type="button"
-                className="w-full px-3 py-2 text-left hover:bg-zinc-100 active:bg-zinc-200"
-                onClick={() => { setDeleteMenuOpen(false); onDeleteAll?.(); }}
-              >
-                전체삭제
-              </button>
-              <button
-                type="button"
                 disabled={selectedOrgSeqs.size === 0 && selectedOrgSeq == null}
                 className="w-full px-3 py-2 text-left hover:bg-zinc-100 active:bg-zinc-200 disabled:text-zinc-300 disabled:cursor-not-allowed"
                 onClick={() => {
@@ -1236,6 +1231,16 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
               >
                 선택삭제
               </button>
+
+              <button
+                type="button"
+                className="w-full px-3 py-2 text-left hover:bg-zinc-100 active:bg-zinc-200"
+                onClick={() => { setDeleteMenuOpen(false); onDeleteAll?.(); }}
+              >
+                전체삭제
+              </button>
+              
+              
             </div>
           )}
         </div>

@@ -254,6 +254,32 @@ export default function PaintItemsPopup() {
     ];
   }, [paintSolvent]);
 
+  // ---- 견적항목 대상 도장입력 (일괄) ----
+  const onBatchPick = useCallback(() => {
+    window.opener?.postMessage(
+      { type: "PAINT_ITEMS_BATCH", payload: { paints, paintSolvent } },
+      window.location.origin
+    );
+  }, [paints, paintSolvent]);
+
+  // ---- 도장 컬러매칭 ----
+  const onColorMatchPick = useCallback(() => {
+    window.opener?.postMessage(
+      { type: "PAINT_COLOR_MATCH_ADD", payload: { paintSolvent } },
+      window.location.origin
+    );
+  }, [paintSolvent]);
+
+  // ---- 차체 마스킹 ----
+  const onMaskingPick = useCallback((maskPayno) => {
+    const paintRow = paints.find((p) => String(p.payno) === maskPayno);
+    if (!paintRow) return;
+    window.opener?.postMessage(
+      { type: "PAINT_MASKING_PICK", payload: { paintRow, paintSolvent } },
+      window.location.origin
+    );
+  }, [paints, paintSolvent]);
+
   // ---- rowRenderer ----
   const rowRenderer = useCallback(
     ({ row, idx, trProps }) => {
@@ -441,16 +467,16 @@ export default function PaintItemsPopup() {
       {/* Footer Buttons */}
       <div className="sticky bottom-0 z-20 border-t border-zinc-200 bg-white">
         <div className="flex items-center gap-2 px-4 py-3">
-          <button type="button" className="h-9 rounded-md bg-zinc-900 px-3 text-sm font-semibold text-white hover:bg-zinc-800">
+          <button type="button" onClick={onBatchPick} className="h-9 rounded-md bg-zinc-900 px-3 text-sm font-semibold text-white hover:bg-zinc-800">
             견적항목 대상 도장입력
           </button>
-          <button type="button" className="h-9 rounded-md border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-800 hover:bg-zinc-50">
+          <button type="button" onClick={() => onMaskingPick("adlP001")} className="h-9 rounded-md border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-800 hover:bg-zinc-50">
             차체 마스킹(전체)
           </button>
-          <button type="button" className="h-9 rounded-md border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-800 hover:bg-zinc-50">
+          <button type="button" onClick={() => onMaskingPick("adlP002")} className="h-9 rounded-md border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-800 hover:bg-zinc-50">
             차체 마스킹(탈착작업)
           </button>
-          <button type="button" className="ml-auto h-9 rounded-md bg-blue-600 px-3 text-sm font-semibold text-white hover:bg-blue-700">
+          <button type="button" onClick={onColorMatchPick} className="ml-auto h-9 rounded-md bg-blue-600 px-3 text-sm font-semibold text-white hover:bg-blue-700">
             도장 컬러매칭
           </button>
         </div>

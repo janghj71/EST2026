@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import FixedHeadTable from "../../components/FixedHeadTable";
 import { Search, X } from "lucide-react";
 import { useUrlContextSnapshot } from "../../hooks/useUrlContextSnapshot";
+import { useFetchMaterials } from "../../hooks/useChemicalItems";
 
 /**
  * ChemicalItemsPage.jsx 기반(필드 매핑 동일)
@@ -12,18 +13,8 @@ import { useUrlContextSnapshot } from "../../hooks/useUrlContextSnapshot";
  * 단가 : price
  * 작업시간 : hour2
  * 비고 : descr
+ * key : material_seqno
  */
-
-function makeDemoRows() {
-  // 기존 ChemicalItemsPage도 demo였으므로 일단 동일하게 유지
-  return [
-    { material_cd: "744475", material_nm: "폴리우레탄 실리콘 310ml", unit: "개", price: 1000, hour2: 0.55, descr: "차체밀봉(방음/방청)" },
-    { material_cd: "286272", material_nm: "멀티 실러드 300ml(MS 9320 회색/검정)", unit: "개", price: 50000, hour2: 0.45, descr: "차체밀봉(방음/방청/언더코팅)" },
-    { material_cd: "286273", material_nm: "파워 실러드 300ml(MS 9320 회색/검정)", unit: "개", price: 0, hour2: 0.45, descr: "차체밀봉(방음/방청/방진)" },
-    { material_cd: "794224", material_nm: "캐비티 이너왁스 500ml(WX215)", unit: "개", price: 12000, hour2: 0.45, descr: "차체부식방지" },
-    { material_cd: "739358", material_nm: "캐비티 이너왁스 1ℓ(350-1리터)", unit: "개", price: 0, hour2: 0.65, descr: "차체부식방지" },
-  ];
-}
 
 function fmtMoney(n) {
   const x = Number(n ?? 0);
@@ -46,11 +37,21 @@ export default function ChemicalItemsPopup() {
     };
   }, [snapshotCtx, ctxOverride]);
 
-  const rows = useMemo(() => makeDemoRows(), []);
+  const { fetchMaterials } = useFetchMaterials();
+  const [materials, setMaterials] = useState([]);
+
+  useEffect(() => {
+    fetchMaterials({ material_gubun: "1" })
+      .then((json) => {
+        if (json?.result === "OK") setMaterials(json.dataset ?? []);
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [q, setQ] = useState("");
   const [selectedId, setSelectedId] = useState(null);
 
-  
   // 부모창에서 ctx 갱신
   useEffect(() => {
     const onMsg = (e) => {
@@ -65,23 +66,20 @@ export default function ChemicalItemsPopup() {
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
-    if (!s) return rows;
-    return rows.filter((r) => (
+    if (!s) return materials;
+    return materials.filter((r) => (
       String(r.material_cd ?? "").toLowerCase().includes(s) ||
       String(r.material_nm ?? "").toLowerCase().includes(s) ||
       String(r.descr ?? "").toLowerCase().includes(s)
     ));
-  }, [rows, q]);
-
+  }, [materials, q]);
 
   const effectiveSelectedId = useMemo(() => {
     if (filtered.length === 0) return null;
-    // 아직 아무것도 선택 안 했거나, 필터로 인해 선택이 사라졌으면 첫 행을 선택된 것으로 "간주"
-    if (!selectedId) return filtered[0].material_cd;
-    if (!filtered.some((r) => r.material_cd === selectedId)) return filtered[0].material_cd;
+    if (!selectedId) return filtered[0].material_seqno;
+    if (!filtered.some((r) => r.material_seqno === selectedId)) return filtered[0].material_seqno;
     return selectedId;
   }, [filtered, selectedId]);
-
 
   const close = () => window.close();
 
@@ -95,7 +93,6 @@ export default function ChemicalItemsPopup() {
         },
         window.location.origin
       );
-      window.close(); // ✅ 도장항목 팝업처럼 선택하면 닫기
     } catch {
       // ignore
     }
@@ -103,12 +100,12 @@ export default function ChemicalItemsPopup() {
 
   const moveSel = useCallback((dir) => {
     if (filtered.length === 0) return;
-    const currentId = effectiveSelectedId ?? filtered[0].material_cd;
-    const idx = filtered.findIndex((r) => r.material_cd === currentId);
+    const currentId = effectiveSelectedId ?? filtered[0].material_seqno;
+    const idx = filtered.findIndex((r) => r.material_seqno === currentId);
     const nextIdx = Math.min(Math.max((idx < 0 ? 0 : idx) + dir, 0), filtered.length - 1);
-    setSelectedId(filtered[nextIdx].material_cd);
+    setSelectedId(filtered[nextIdx].material_seqno);
   }, [filtered, effectiveSelectedId]);
-  
+
   const onKeyDown = (e) => {
     if (e.key === "Escape") {
       e.preventDefault();
@@ -128,7 +125,7 @@ export default function ChemicalItemsPopup() {
     if (e.key === "Enter") {
       e.preventDefault();
       const id = effectiveSelectedId;
-      const row = filtered.find((r) => r.material_cd === id);
+      const row = filtered.find((r) => r.material_seqno === id);
       if (row) pick(row);
     }
   };
@@ -212,12 +209,12 @@ export default function ChemicalItemsPopup() {
           <div className="min-w-0">
             <div className="text-xl font-extrabold text-zinc-900">케미칼 항목</div>
             <div className="mt-1 text-sm text-zinc-500">
-              견적번호: <span className="text-zinc-900 font-semibold">{ctx?.est_serial || "-"}</span>
-              <span className="mx-2 text-zinc-300">/</span>
+              {/* 견적번호: <span className="text-zinc-900 font-semibold">{ctx?.est_serial || "-"}</span>
+              <span className="mx-2 text-zinc-300">/</span> */}
               차량번호: <span className="text-zinc-900 font-semibold">{ctx?.carno || "-"}</span>
             </div>
           </div>
-  
+
           <button
             type="button"
             className="ml-auto inline-flex items-center gap-2 rounded-md bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
@@ -228,7 +225,7 @@ export default function ChemicalItemsPopup() {
           </button>
         </div>
       </div>
-  
+
       <div className="px-5 pt-4">
         <div className="flex items-center gap-3">
           <div className="relative flex-1">
@@ -240,10 +237,9 @@ export default function ChemicalItemsPopup() {
               onChange={(e) => setQ(e.target.value)}
             />
           </div>
-          
         </div>
       </div>
-  
+
       {/* 테이블 */}
       <div className="min-h-0 flex-1 px-5 pb-5 pt-3">
         <div className="h-full rounded-md border border-zinc-200 bg-white overflow-hidden">
@@ -251,9 +247,9 @@ export default function ChemicalItemsPopup() {
             columns={columns}
             rows={filtered}
             rowSize="sm"
-            rowKey={(row) => row.material_cd}
-            selectedKey={effectiveSelectedId}  
-            onRowClick={(row) => setSelectedId(row.material_cd)}
+            rowKey={(row) => row.material_seqno}
+            selectedKey={effectiveSelectedId}
+            onRowClick={(row) => setSelectedId(row.material_seqno)}
             onRowDoubleClick={(row) => pick(row)}
             emptyText="케미칼 항목이 없습니다."
           />
@@ -261,6 +257,4 @@ export default function ChemicalItemsPopup() {
       </div>
     </div>
   );
-  
-
 }

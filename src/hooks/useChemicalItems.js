@@ -3,6 +3,23 @@ import { useCallback } from "react";
 import { useApi } from "./useApi";
 import { apiOk } from "../api/apiOk";
 
+/** 케미칼 목록 (lazy): est_material_s.aspx */
+export function useFetchMaterials() {
+  const { refetch } = useApi({
+    path: "/est_material_s.aspx",
+    method: "POST",
+    bodyType: "form",
+    immediate: false,
+  });
+
+  const fetchMaterials = useCallback(
+    ({ material_gubun }) => refetch({ material_gubun }),
+    [refetch]
+  );
+
+  return { fetchMaterials };
+}
+
 /** 조회 응답 → 케미칼 항목 배열 */
 function mapItems(json) {
   apiOk(json, "케미칼 항목 조회");
