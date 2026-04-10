@@ -1791,6 +1791,7 @@ export default function EstimateEditPage() {
                 selectedOrgSeqs={selectedOrgSeqs}
                 setSelectedOrgSeqs={setSelectedOrgSeqs}
                 workTimes={workTimes}
+                sidePanelOpen={sidePanelOpen}
               />
               
             </div>

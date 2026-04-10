@@ -246,6 +246,7 @@ export default function EstimateItemsTable({
   selectedOrgSeqs = new Set(),
   setSelectedOrgSeqs,
   workTimes = [],
+  sidePanelOpen = false,
 }) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } })
@@ -639,7 +640,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
       {
         key: "kind",
         title: "구분",
-        width: "58px",
+        width: "70px",
         className: "px-2  py-0 text-zinc-700",
         render: (_val, row) => (
           <div className="h-8 flex items-center text-zinc-700">
@@ -651,7 +652,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
       {
         key: "payname",
         title: "작업내용",
-        width: "260px",
+        width: "360px",
         className: "px-2 py-0",
         render: (_val, row) => {
           const editable = canEditPayName(row);
@@ -693,7 +694,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
       {
         key: "workcodename",
         title: "작업",
-        width: "75px",
+        width: "80px",
         className: "px-2 py-0",
         render: (_val, row) => {
           const editable = canEditWorkcode(row);
@@ -718,7 +719,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
       {
         key: "qty",
         title: "시간",
-        width: "75px",
+        width: "80px",
         align: "right",
         className: "px-2 py-0",
         render: (_val, row) => {
@@ -988,7 +989,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
       {
         key: "statename",
         title: "상태",
-        width: "140px",
+        width: "160px",
         className: "px-2 py-0",
         render: (_val, row) => {
           // paykind in ('4','6') AND pnt_extr='' AND workcode='P' → 도장부가 드롭다운
@@ -1312,7 +1313,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
               rows={rows}
               rowKey={(r) => r.estb_orgseqno}
               rowSize="sm"
-              enableHorizontalScroll
+              enableHorizontalScroll={sidePanelOpen}
               selectedKey={selectedOrgSeq}
               selectedKeys={selectedOrgSeqs}
               onRowClick={(row, _idx, e) => {

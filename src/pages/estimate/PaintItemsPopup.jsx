@@ -345,9 +345,7 @@ export default function PaintItemsPopup() {
               c.key.startsWith("front_")   ? "front"   : null;
 
             const isKindCell  = !!kind;
-            const canClick    = isKindCell && canClickKind(kind, workcode);
-            const isDimmed    = isKindCell && !canClick;
-            const isSelKind   = isSelRow && canClick && selectedKind === kind;
+            const isSelKind   = isSelRow && isKindCell && selectedKind === kind;
 
             const val     = row[c.key];
             const content = c.render ? c.render(val, row, idx) : val;
@@ -359,12 +357,11 @@ export default function PaintItemsPopup() {
                   tdBase,
                   tdAlign(c.align),
                   c.className || "",
-                  canClick   ? "cursor-pointer" : "",
-                  isDimmed   ? "opacity-30"     : "",
+                  isKindCell ? "cursor-pointer" : "",
                   isSelKind  ? "!bg-yellow-100 font-semibold" : "",
                 ].join(" ")}
                 onClick={(e) => {
-                  if (!canClick) return;
+                  if (!isKindCell) return;
                   e.preventDefault();
                   e.stopPropagation();
                   onCellPick(kind);
@@ -378,7 +375,7 @@ export default function PaintItemsPopup() {
         </tr>
       );
     },
-    [columns, selectedPayno, selectedKind, workcode, paintSolvent]
+    [columns, selectedPayno, selectedKind, workcode, paintSolvent, paints]
   );
 
   return (

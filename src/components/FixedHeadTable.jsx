@@ -230,6 +230,14 @@ export default function FixedHeadTable({
     }
   },  [wheelSelect, rows, selectedKey, onRowClick, rowKey, wheelSelectStep]);
 
+  // enableHorizontalScroll 해제 시 헤더/바디 scrollLeft 리셋 — 정렬 틀어짐 방지
+  useEffect(() => {
+    if (!enableHorizontalScroll) {
+      if (bodyWrapRef.current) bodyWrapRef.current.scrollLeft = 0;
+      if (headWrapRef.current) headWrapRef.current.scrollLeft = 0;
+    }
+  }, [enableHorizontalScroll]);
+
   // wheelSelect: passive:false로 wheel 이벤트를 직접 연결 (preventDefault 가능)
   useEffect(() => {
     const el = bodyWrapRef.current;
