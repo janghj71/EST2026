@@ -151,7 +151,7 @@ function canEditWorkcode(row) {
  * 견적 row의 [상태] 표시 텍스트 계산
  * workcode='P' AND substring(payno,4,1)<>'P' AND paykind='3' 인 경우
  */
-function computeStatename(row, master, wrk34Codes, pyk02Codes) {
+function computeStatename(row, master, wrk34Codes, pyk02Codes, wrk03Codes) {
   const payno    = String(row.payno    ?? "");
   const subpayno = String(row.subpayno ?? "");
 
@@ -193,6 +193,17 @@ function computeStatename(row, master, wrk34Codes, pyk02Codes) {
       if (st === "5") return "전면판금도장";
     }
   }
+
+  // paykind='5' or '3': WRK03/subcode=state 조회
+  const rowPk = String(row.paykind ?? "");
+  if (rowPk === "5" || rowPk === "3") {
+    const st = String(row.state ?? "");
+    if (st) {
+      const tbEntry = (wrk03Codes ?? []).find((c) => c.value === st);
+      if (tbEntry) return tbEntry.label;
+    }
+  }
+
   return row.statename || "";
 }
 
@@ -242,6 +253,7 @@ export default function EstimateItemsTable({
 
   const { codes: wrk34Codes } = useTbCode("WRK34");
   const { codes: pyk02Codes } = useTbCode("PYK02");
+  const { codes: wrk03Codes } = useTbCode("WRK03");
 
   const { fetchCodepnt } = useCodepnt();
   const [pntRows, setPntRows] = useState([]);
@@ -627,7 +639,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
       {
         key: "kind",
         title: "구분",
-        width: "70px",
+        width: "58px",
         className: "px-2  py-0 text-zinc-700",
         render: (_val, row) => (
           <div className="h-8 flex items-center text-zinc-700">
@@ -639,7 +651,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
       {
         key: "payname",
         title: "작업내용",
-        width: "360px",
+        width: "260px",
         className: "px-2 py-0",
         render: (_val, row) => {
           const editable = canEditPayName(row);
@@ -681,7 +693,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
       {
         key: "workcodename",
         title: "작업",
-        width: "80px",
+        width: "75px",
         className: "px-2 py-0",
         render: (_val, row) => {
           const editable = canEditWorkcode(row);
@@ -706,7 +718,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
       {
         key: "qty",
         title: "시간",
-        width: "80px",
+        width: "75px",
         align: "right",
         className: "px-2 py-0",
         render: (_val, row) => {
@@ -916,7 +928,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
       {
         key: "part_makercode",
         title: "부품코드",
-        width: "140px",
+        width: "130px",
         className: "px-2 py-0",
         render: (_val, row) => {
           const editable = canEditPartCode(row);
@@ -959,7 +971,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
       {
         key: "ts_payno",
         title: "국토부",
-        width: "90px",
+        width: "70px",
         className: "px-2 py-0",
         render: (_val, row) => (
           <div className="h-8 flex items-center">
@@ -979,7 +991,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
         width: "140px",
         className: "px-2 py-0",
         render: (_val, row) => {
-          // paykind in ('4','6') AND pnt_extr='' AND workcode='P' → 드롭다운 버튼
+          // paykind in ('4','6') AND pnt_extr='' AND workcode='P' → 도장부가 드롭다운
           const rowPk = String(row.paykind ?? "");
           const canPntExtr =
             (rowPk === "4" || rowPk === "6") &&
@@ -990,6 +1002,8 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
             !(rowPk === "6" &&
               String(row.payno ?? "") === String(row.subpayno ?? "") &&
               parseFloat(row.b_level ?? "0") > 0);
+          // paykind in ('5','3') → WRK03 상태 드롭다운
+          const canWrk03State = rowPk === "5" || rowPk === "3";
           return (
             <div className="h-8 flex items-center">
               {canPntExtr ? (
@@ -998,10 +1012,18 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                   className="w-full text-left hover:underline"
                   onClick={(e) => openPopover(e, "pntextr", row)}
                 >
-                  {computeStatename(row, master, wrk34Codes, pyk02Codes)}
+                  {computeStatename(row, master, wrk34Codes, pyk02Codes, wrk03Codes)}
+                </button>
+              ) : canWrk03State ? (
+                <button
+                  type="button"
+                  className="w-full text-left hover:underline"
+                  onClick={(e) => openPopover(e, "wrk03state", row)}
+                >
+                  {computeStatename(row, master, wrk34Codes, pyk02Codes, wrk03Codes)}
                 </button>
               ) : (
-                computeStatename(row, master, wrk34Codes, pyk02Codes)
+                computeStatename(row, master, wrk34Codes, pyk02Codes, wrk03Codes)
               )}
             </div>
           );
@@ -1339,9 +1361,10 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
           placement={popover.type === "workcodename" ? "right-top" : "bottom-left"}
           minWidth={
             popover.type === "workcodename" ? "100px" :
-            popover.type === "pntextr"      ? "140px" : "360px"
+            popover.type === "pntextr"      ? "140px" :
+            popover.type === "wrk03state"   ? "140px" : "360px"
           }
-          noTitle={popover.type === "workcodename" || popover.type === "pntextr"}
+          noTitle={popover.type === "workcodename" || popover.type === "pntextr" || popover.type === "wrk03state"}
           title={
             popover.type === "ts_payno" ? "국토부" : "상태"
           }
@@ -1545,6 +1568,33 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                 );
               })}
             </div>
+            );
+          })()
+          : popover.type === "wrk03state" ? (() => {
+            // WRK03 / state='1' 목록 → paykind 5/3 상태 선택
+            const selRow    = rows.find((r) => r.estb_orgseqno === popover.rowOrgSeq);
+            const stateItems = wrk03Codes.filter((c) => String(c.state) === "1");
+            return (
+              <div className="p-1 flex flex-col gap-0.5">
+                {stateItems.map((item) => (
+                  <button
+                    key={item.value}
+                    type="button"
+                    className="text-left rounded px-2 py-1 text-sm whitespace-nowrap hover:bg-zinc-50"
+                    onClick={() => {
+                      if (!selRow) { closePopover(); return; }
+                      const updated = { ...selRow, state: item.value };
+                      setRows((prev) =>
+                        prev.map((r) => r.estb_orgseqno === selRow.estb_orgseqno ? updated : r)
+                      );
+                      closePopover();
+                      onValueCommit?.(updated);
+                    }}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
             );
           })()
           : popover.type === "pntextr" ? (() => {

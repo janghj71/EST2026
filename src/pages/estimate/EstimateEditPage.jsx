@@ -127,6 +127,10 @@ export default function EstimateEditPage() {
   // 최신 master/rows를 stale closure 없이 접근하기 위한 ref
   const masterRef = useRef(master);
   const rowsRef = useRef(rows);
+  const saveRef = useRef(save);
+  const saveClaimRef = useRef(saveClaim);
+  const sidePanelOpenRef = useRef(sidePanelOpen);
+  const sideActiveRef = useRef(sideActive);
 
   // render phase 외부(commit 후)에서 ref 동기화 — "Cannot access refs during render" 방지
   useLayoutEffect(() => {
@@ -135,6 +139,10 @@ export default function EstimateEditPage() {
     rowsRef.current            = rows;
     laborSettingsRef.current   = laborSettings;
     selectedOrgSeqRef.current  = selectedOrgSeq;
+    saveRef.current            = save;
+    saveClaimRef.current       = saveClaim;
+    sidePanelOpenRef.current   = sidePanelOpen;
+    sideActiveRef.current      = sideActive;
   });
 
   // 청구처 M/H 단가 변경(blur) 시 견적내역 paysum 일괄 재계산
@@ -1582,9 +1590,25 @@ export default function EstimateEditPage() {
   useEffect(() => {
     const onBeforeUnload = () => {
       closeAllChildWins();
-      if (rowsRef.current?.length > 0) {
-        saveAllDetails(rowsRef.current).catch(() => {});
+      const mst    = masterRef.current;
+      const serial = mst?.est_serial ?? "";
+      const _rows  = rowsRef.current ?? [];
+
+      // beforeunload는 동기 핸들러 → await 금지
+      // 세 저장을 즉시 동시에 시작해 모두 in-flight 상태로 만들어야 완료됨
+
+      // 1. 접수(마스터) 저장
+      if (serial) saveRef.current(serial, mst).catch(() => {});
+
+      // 2. 청구처 저장 — 사이드패널 open + claim 탭 활성 시에만
+      if (sidePanelOpenRef.current && sideActiveRef.current === "claim") {
+        const claims = Array.isArray(mst?.claims) ? mst.claims : [];
+        claims.forEach((claim) => saveClaimRef.current(serial, claim).catch(() => {}));
+        claimDirtyRef.current = false;
       }
+
+      // 3. 견적내역 저장
+      if (_rows.length > 0) saveAllDetails(_rows).catch(() => {});
     };
     const onUnload = () => closeAllChildWins();
   
