@@ -20,6 +20,40 @@ export function useFetchMaterials() {
   return { fetchMaterials };
 }
 
+/** 사용자 부품 이력 목록 (lazy): est_upart_hist_s.aspx */
+export function useFetchPartHistory() {
+  const { refetch } = useApi({
+    path: "/est_upart_hist_s.aspx",
+    method: "POST",
+    bodyType: "form",
+    immediate: false,
+  });
+
+  const fetchPartHistory = useCallback(
+    ({ comcode, carcode }) => refetch({ comcode, carcode }),
+    [refetch]
+  );
+
+  return { fetchPartHistory };
+}
+
+/** 제작사 부품 검색 (lazy): neoservice/epc_cdm_ptno_s.aspx */
+export function useFetchNeoPart() {
+  const { refetch } = useApi({
+    path: "/neoservice/epc_cdm_ptno_s.aspx",
+    method: "POST",
+    bodyType: "form",
+    immediate: false,
+  });
+
+  const fetchNeoPart = useCallback(
+    ({ scdptno }) => refetch({ scdptno }),
+    [refetch]
+  );
+
+  return { fetchNeoPart };
+}
+
 /** 조회 응답 → 케미칼 항목 배열 */
 function mapItems(json) {
   apiOk(json, "케미칼 항목 조회");

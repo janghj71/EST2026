@@ -495,13 +495,17 @@ export default function EstimateEditPage() {
   const openPartLookupPopup = async () => {
     await saveClaimIfActive();
     const estSerial = est_serial || "";
-    const carno = master?.carno || "";
-  
+    const carno   = master?.carno    || "";
+    const comcode = master?.comcode  || getComcode();
+    const codecar = master?.codecar  || "";
+
     const url =
       `/part-lookup?est_serial=${encodeURIComponent(estSerial)}` +
-      `&carno=${encodeURIComponent(carno)}`;
-  
-    const payload = { est_serial: estSerial, carno };
+      `&carno=${encodeURIComponent(carno)}` +
+      `&comcode=${encodeURIComponent(comcode)}` +
+      `&codecar=${encodeURIComponent(codecar)}`;
+
+    const payload = { est_serial: estSerial, carno, comcode, codecar };
   
     // 이미 열려 있으면 재사용 + ctx만 갱신
     if (partLookupWinRef.current && !partLookupWinRef.current.closed) {
@@ -688,12 +692,19 @@ export default function EstimateEditPage() {
         ].map((r, i) => ({ ...r, estb_seqno: String(i + 1).padStart(3, "0") }));
         rowsRef.current = combined;   // 연속 메시지 처리 시 stale ref 방지
         setRows(combined);
+        setSelectedOrgSeq(newRow.estb_orgseqno);
         recalcPaysum();
 
         // 5. 서버 저장 — toApiRow에서 "_new_" prefix → null 변환
         //    응답 newserial로 estb_orgseqno 교체 (saveDetail 내부)
         const _row = newRow;  // closure 캡처
-        saveQueueRef.current = saveQueueRef.current.then(() => saveDetail(_row));
+        const _tempId = newRow.estb_orgseqno;
+        saveQueueRef.current = saveQueueRef.current.then(async () => {
+          const result = await saveDetail(_row);
+          if (result?.newserial) {
+            setSelectedOrgSeq((prev) => prev === _tempId ? result.newserial : prev);
+          }
+        });
         return;
       }
 
@@ -855,11 +866,18 @@ export default function EstimateEditPage() {
         ].map((r, i) => ({ ...r, estb_seqno: String(i + 1).padStart(3, "0") }));
         rowsRef.current = combined;
         setRows(combined);
+        setSelectedOrgSeq(newRow.estb_orgseqno);
         recalcPaysum();
 
         // 6. 서버 저장 (직렬 큐)
         const _row = newRow;
-        saveQueueRef.current = saveQueueRef.current.then(() => saveDetail(_row));
+        const _tempId = newRow.estb_orgseqno;
+        saveQueueRef.current = saveQueueRef.current.then(async () => {
+          const result = await saveDetail(_row);
+          if (result?.newserial) {
+            setSelectedOrgSeq((prev) => prev === _tempId ? result.newserial : prev);
+          }
+        });
         if (extraRow) {
           const _extra = extraRow;
           saveQueueRef.current = saveQueueRef.current.then(() => saveDetail(_extra));
@@ -1027,10 +1045,17 @@ export default function EstimateEditPage() {
         ].map((r, i) => ({ ...r, estb_seqno: String(i + 1).padStart(3, "0") }));
         rowsRef.current = combined;
         setRows(combined);
+        setSelectedOrgSeq(newRow.estb_orgseqno);
         recalcPaysum();
 
         const _row = newRow;
-        saveQueueRef.current = saveQueueRef.current.then(() => saveDetail(_row));
+        const _tempId = newRow.estb_orgseqno;
+        saveQueueRef.current = saveQueueRef.current.then(async () => {
+          const result = await saveDetail(_row);
+          if (result?.newserial) {
+            setSelectedOrgSeq((prev) => prev === _tempId ? result.newserial : prev);
+          }
+        });
         if (extraRow) {
           const _extra = extraRow;
           saveQueueRef.current = saveQueueRef.current.then(() => saveDetail(_extra));
@@ -1136,9 +1161,16 @@ export default function EstimateEditPage() {
         ].map((r, i) => ({ ...r, estb_seqno: String(i + 1).padStart(3, "0") }));
         rowsRef.current = combined;
         setRows(combined);
+        setSelectedOrgSeq(newRow.estb_orgseqno);
 
         const _row = newRow;
-        saveQueueRef.current = saveQueueRef.current.then(() => saveDetail(_row));
+        const _tempId = newRow.estb_orgseqno;
+        saveQueueRef.current = saveQueueRef.current.then(async () => {
+          const result = await saveDetail(_row);
+          if (result?.newserial) {
+            setSelectedOrgSeq((prev) => prev === _tempId ? result.newserial : prev);
+          }
+        });
         return;
       }
 
@@ -1568,18 +1600,127 @@ export default function EstimateEditPage() {
 
         rowsRef.current = combined;
         setRows(combined);
+        setSelectedOrgSeq(row4.estb_orgseqno);
 
         const _r4 = combined.find((r) => r.estb_orgseqno === row4.estb_orgseqno) ?? row4;
         const _r5 = combined.find((r) => r.estb_orgseqno === row5.estb_orgseqno) ?? row5;
+        const _tempId4 = row4.estb_orgseqno;
         saveQueueRef.current = saveQueueRef.current
-          .then(() => saveDetail(_r4))
+          .then(async () => {
+            const result = await saveDetail(_r4);
+            if (result?.newserial) {
+              setSelectedOrgSeq((prev) => prev === _tempId4 ? result.newserial : prev);
+            }
+          })
           .then(() => saveDetail(_r5));
+        return;
+      }
+
+      if (type === "PART_LOOKUP_PICK") {
+        const { part_makercode, payname, price, _gubun } = payload ?? {};
+
+        // 제작사 부품은 VAT 포함가(price)에서 공급가(÷1.1 반올림)로 환산
+        const resolvedPrice = _gubun === "제작사"
+          ? Math.round(Number(price ?? 0) / 1.1)
+          : Number(price ?? 0);
+
+        const currentRows = rowsRef.current;
+        const selOrgSeq   = selectedOrgSeqRef.current;
+
+        // 현재 선택된 Row 인덱스 (없으면 -1)
+        const selIdx = selOrgSeq
+          ? currentRows.findIndex((r) => r.estb_orgseqno === selOrgSeq)
+          : -1;
+
+        // 선택 Row에서 payno / subpayno 상속
+        const selRow   = selIdx !== -1 ? currentRows[selIdx] : null;
+        const payno    = selRow?.payno    ?? "";
+        const subpayno = selRow?.subpayno ?? "";
+
+        // payno 없으면 알럿 후 중단
+        if (!payno) { alertInfo("견적 항목을 선택하세요."); return; }
+
+        // paykind 가 1·2·3·4·5 인 경우만 인서트
+        if (!["1","2","3","4","5"].includes(String(selRow?.paykind ?? ""))) {
+          alertInfo("선택한 견적내용에 부품을 추가할 수 없습니다.");
+          return;
+        }
+
+        // 중복 체크: 같은 payno + subpayno + part_makercode 이미 존재하면 스킵
+        if (currentRows.some((r) =>
+          String(r.payno          ?? "") === String(payno)          &&
+          String(r.subpayno       ?? "") === String(subpayno)       &&
+          String(r.part_makercode ?? "") === String(part_makercode ?? "")
+        )) return;
+
+        // 삽입 위치: 선택된 Row 바로 아래, 없으면 맨 끝
+        let insertIdx = selIdx !== -1 ? selIdx + 1 : currentRows.length;
+
+        // 도장컬러매칭(99990) / 가열건조비(99991) 보다 앞에 인서트
+        { const _si = currentRows.findIndex((r) => r.subpayno === "99990" || r.subpayno === "99991");
+          if (_si !== -1 && insertIdx > _si) insertIdx = _si; }
+
+        const comcode   = masterRef.current?.comcode ?? getComcode();
+        const estSerial = masterRef.current?.est_serial ?? est_serial ?? "";
+
+        const newRow = {
+          comcode,
+          est_serial:     estSerial,
+          estb_orgseqno:  newTempId(),
+          estb_seqno:     String(insertIdx + 1).padStart(3, "0"),
+          paykind:        "5",
+          payno,
+          subpayno,
+          payname:        payname ?? "",
+          workcode:       "",
+          workcodename:   "",
+          price:          String(resolvedPrice),
+          qty:            "1",
+          oqty:           "1",
+          partsum:        String(resolvedPrice),
+          paysum:         "0",
+          part_makercode: part_makercode ?? "",
+          state:          "A",
+          statename:      "",
+          pnt_extr:       "",
+          pnt_hour:       "",
+          pnt_part:       "0",
+          pnt_m:          "",
+          pntcot:         "",
+          ts_payno:       selRow?.ts_payno ?? "",
+          update_id:      getUserid(),
+          paykindname:    "#부품",
+          b_level:        "0.00",
+          b_area:         "0",
+          pnt_reduce:     "0",
+          body_panel:     "",
+          pay_orderno:    "",
+        };
+
+        const combined = [
+          ...currentRows.slice(0, insertIdx),
+          newRow,
+          ...currentRows.slice(insertIdx),
+        ].map((r, i) => ({ ...r, estb_seqno: String(i + 1).padStart(3, "0") }));
+        rowsRef.current = combined;
+        setRows(combined);
+        setSelectedOrgSeq(newRow.estb_orgseqno);
+        recalcPaysum();
+
+        const _row    = newRow;
+        const _tempId = newRow.estb_orgseqno;
+        saveQueueRef.current = saveQueueRef.current.then(async () => {
+          const result = await saveDetail(_row);
+          if (result?.newserial) {
+            setSelectedOrgSeq((prev) => prev === _tempId ? result.newserial : prev);
+          }
+        });
         return;
       }
 
       console.log(`[${type}]`, payload);
     };
-  }, [est_serial, saveDetail, setRows, recalcPaysum, buildSpecialRows, alertInfo]);
+  }, [est_serial, saveDetail, setRows, setSelectedOrgSeq, recalcPaysum, buildSpecialRows, alertInfo]);
 
   useEffect(() => {
     const handler = (e) => onMsgHandlerRef.current?.(e);

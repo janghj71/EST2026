@@ -17,7 +17,15 @@ export async function request(
   if (/^https?:\/\//i.test(path)) {
     url = path
   } else if (isDev) {
-    url = `/api${path}`;
+    if (
+      path.startsWith('/neoservice') ||
+      path.startsWith('/axservice') ||
+      path.startsWith('/ivservice')
+    ) {
+      url = path; // Vite proxy가 직접 처리
+    } else {
+      url = `/api${path}`;
+    }
 
   } else {
     if (path.startsWith('/neoservice')) {

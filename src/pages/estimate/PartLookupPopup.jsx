@@ -4,21 +4,15 @@ import FixedHeadTable from "../../components/FixedHeadTable";
 import { X, Search } from "lucide-react";
 import { formatNumber } from "../../utils/numberFormat";
 import { useUrlContextSnapshot } from "../../hooks/useUrlContextSnapshot";
-
-function makeDemoRows() {
-  return [
-    { cdptno: "865403T000", pnlgkr: "카바 전범퍼", itpric: 121000 },
-    { cdptno: "865313T000", pnlgkr: "그릴 어셈블리", itpric: 98000 },
-    { cdptno: "924013T000", pnlgkr: "헤드램프(좌)", itpric: 265000 },
-    { cdptno: "924023T000", pnlgkr: "헤드램프(우)", itpric: 265000 },
-    { cdptno: "863503T000", pnlgkr: "엠블럼", itpric: 18000 },
-  ];
-}
+import { useFetchPartHistory, useFetchNeoPart } from "../../hooks/useChemicalItems";
+import { getComcode } from "../../api/config";
+import { useLoading } from "../../loading/useLoading";
+import { useAlert } from "../../alerts/useAlert";
 
 export default function PartLookupPopup() {
   const snapshotCtx = useUrlContextSnapshot({
     storageKey: "PART_LOOKUP_CTX",
-    keys: ["est_serial", "carno"],
+    keys: ["est_serial", "carno", "comcode", "codecar"],
     cleanPath: "/part-lookup",
   });
 
@@ -33,10 +27,16 @@ export default function PartLookupPopup() {
   const [qInput, setQInput] = useState("");
   const [q, setQ] = useState("");
 
-  const rows = useMemo(() => makeDemoRows(), []);
+  const { fetchPartHistory } = useFetchPartHistory();
+  const { fetchNeoPart }     = useFetchNeoPart();
+  const { withLoading }      = useLoading();
+  const { error: alertError } = useAlert();
+  const [parts, setParts]       = useState([]);   // 사용자 이력
+  const [neoParts, setNeoParts] = useState([]);   // 제작사 검색 결과
+  const [searchMode, setSearchMode] = useState("user"); // "user" | "neo"
   const [selectedId, setSelectedId] = useState(null);
 
-  // ctx 수신 (케미칼 팝업과 동일한 패턴)
+  // ctx 수신
   useEffect(() => {
     const onMsg = (e) => {
       if (e.origin !== window.location.origin) return;
@@ -48,58 +48,82 @@ export default function PartLookupPopup() {
     return () => window.removeEventListener("message", onMsg);
   }, []);
 
+  // API 호출
+  useEffect(() => {
+    const comcode = ctx?.comcode || getComcode();
+    const carcode = ctx?.codecar || "";   // ctx key: codecar, API param: carcode
+    if (!carcode) return;
+    fetchPartHistory({ comcode, carcode })
+      .then((json) => {
+        if (json?.result === "OK") setParts(json.dataset ?? []);
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ctx?.comcode, ctx?.codecar]);
 
+  // searchMode에 따라 소스 분리: "user"=사용자 이력, "neo"=제작사 결과
   const filtered = useMemo(() => {
+    const source = searchMode === "neo"
+      ? neoParts.map((r) => ({ ...r, _gubun: "제작사" }))
+      : parts.map((r)    => ({ ...r, _gubun: "사용자" }));
     const s = q.trim().toLowerCase();
-    if (!s) return rows;
-    return rows.filter((r) => {
-      const a = String(r.cdptno ?? "").toLowerCase();
-      const b = String(r.pnlgkr ?? "").toLowerCase();
+    if (!s) return source;
+    return source.filter((r) => {
+      const a = String(r.part_makercode ?? "").toLowerCase();
+      const b = String(r.payname ?? "").toLowerCase();
       return a.includes(s) || b.includes(s);
     });
-  }, [rows, q]);
+  }, [searchMode, parts, neoParts, q]);
 
   const effectiveSelectedId = useMemo(() => {
     if (filtered.length === 0) return null;
-    if (!selectedId) return filtered[0].cdptno;
-    if (!filtered.some((r) => r.cdptno === selectedId)) return filtered[0].cdptno;
+    if (!selectedId) return filtered[0].part_makercode;
+    if (!filtered.some((r) => r.part_makercode === selectedId)) return filtered[0].part_makercode;
     return selectedId;
   }, [filtered, selectedId]);
-
 
   const columns = useMemo(
     () => [
       {
-        key: "cdptno",
+        key: "_gubun",
+        title: "구분",
+        width: "10%",
+        className: "px-2 py-0",
+        render: (_val, row) => (
+          <div className="h-8 flex items-center text-zinc-500">{row._gubun || "사용자"}</div>
+        ),
+      },
+      {
+        key: "part_makercode",
         title: "부품코드",
-        width: "25%",
+        width: "20%",
         className: "px-2 py-0",
         render: (_val, row) => (
-          <div className="h-8 flex items-center truncate" title={row.cdptno}>
-            {row.cdptno}
+          <div className="h-8 flex items-center truncate" title={row.part_makercode}>
+            {row.part_makercode}
           </div>
         ),
       },
       {
-        key: "pnlgkr",
+        key: "payname",
         title: "부품명",
-        width: "55%",
+        width: "50%",
         className: "px-2 py-0",
         render: (_val, row) => (
-          <div className="h-8 flex items-center truncate" title={row.pnlgkr}>
-            {row.pnlgkr}
+          <div className="h-8 flex items-center truncate" title={row.payname}>
+            {row.payname}
           </div>
         ),
       },
       {
-        key: "itpric",
+        key: "price",
         title: "판매단가",
         width: "20%",
         align: "right",
         className: "px-2 py-0",
         render: (_val, row) => (
           <div className="h-8 flex items-center justify-end tabular-nums pr-1">
-            {formatNumber(row.itpric)}
+            {formatNumber(row.price)}
           </div>
         ),
       },
@@ -110,8 +134,32 @@ export default function PartLookupPopup() {
   const close = () => window.close();
 
   const onSearch = useCallback(() => {
+    setSearchMode("user");
     setQ(qInput);
   }, [qInput]);
+
+  const onNeoSearch = useCallback(async () => {
+    const scdptno = qInput.trim();
+    if (!scdptno) return;
+    try {
+      await withLoading(async () => {
+        const json = await fetchNeoPart({ scdptno });
+        if (json?.result === "OK") {
+          // 응답 필드 매핑: cdptno→part_makercode, pnlgkr→payname, itpric→price
+          const mapped = (json.epc_tepcdmpf ?? []).map((r) => ({
+            part_makercode: r.cdptno  ?? "",
+            payname:        r.pnlgkr  ?? "",
+            price:          r.itpric  ?? "0",
+          }));
+          setNeoParts(mapped);
+          setSearchMode("neo");
+          setQ(scdptno);
+        }
+      });
+    } catch (e) {
+      alertError(e.message || "제작사 부품 검색 실패");
+    }
+  }, [qInput, fetchNeoPart, withLoading, alertError]);
 
   const pickRow = (r) => {
     try {
@@ -120,7 +168,6 @@ export default function PartLookupPopup() {
         window.location.origin
       );
     } catch { /* empty */ }
-    window.close();
   };
 
   return (
@@ -172,6 +219,14 @@ export default function PartLookupPopup() {
           >
             검색
           </button>
+
+          <button
+            type="button"
+            className="h-10 rounded-md border border-blue-500 bg-blue-50 px-5 text-sm font-semibold text-blue-700 hover:bg-blue-100 whitespace-nowrap"
+            onClick={onNeoSearch}
+          >
+            제작사 부품 검색
+          </button>
         </div>
       </div>
 
@@ -179,18 +234,18 @@ export default function PartLookupPopup() {
       <div className="px-4 py-3 min-h-0 flex-1 flex flex-col">
         <div className="min-h-0 flex-1 rounded-md border border-zinc-200 bg-white overflow-hidden">
           <FixedHeadTable
-            rows={rows}
+            rows={filtered}
             columns={columns}
-            rowKey={(r) => r.cdptno}
+            rowKey={(r) => r.part_makercode}
             selectedKey={effectiveSelectedId}
-            onRowClick={(r) => setSelectedId(r.cdptno)}
+            onRowClick={(r) => setSelectedId(r.part_makercode)}
             onRowDoubleClick={(r) => pickRow(r)}
             rowSize="sm"
           />
         </div>
 
         <div className="mt-2 text-xs text-zinc-500">
-          * 더블클릭하면 선택 후 자동으로 닫힙니다.
+          * 더블클릭하면 견적에 부품이 추가됩니다.
         </div>
       </div>
     </div>
