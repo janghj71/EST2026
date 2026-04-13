@@ -1,5 +1,5 @@
 // src/api/request.js
-import { API_ESTSERVICE, API_NEOSERVICE, API_AXSERVICE, API_IVSERVICE, getServiceKey } from './config'
+import { API_ESTSERVICE, API_NEOSERVICE, API_AXSERVICE, API_IVSERVICE, API_TSSERVICE, getServiceKey } from './config'
 
 /**
  * bodyType: 'form' | 'json' | 'raw'
@@ -20,7 +20,8 @@ export async function request(
     if (
       path.startsWith('/neoservice') ||
       path.startsWith('/axservice') ||
-      path.startsWith('/ivservice')
+      path.startsWith('/ivservice') ||
+      path.startsWith('/tsservice')
     ) {
       url = path; // Vite proxy가 직접 처리
     } else {
@@ -34,6 +35,8 @@ export async function request(
       url = `${API_AXSERVICE}${path.replace('/axservice', '')}`;
     } else if (path.startsWith('/ivservice')) {
       url = `${API_IVSERVICE}${path.replace('/ivservice', '')}`;
+    } else if (path.startsWith('/tsservice')) {
+      url = `${API_TSSERVICE}${path.replace('/tsservice', '')}`;
     } else {
       url = `${API_ESTSERVICE}${path}`;
     }

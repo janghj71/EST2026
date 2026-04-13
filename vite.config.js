@@ -37,6 +37,11 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/ivservice/, ""),
         },
+        "/tsservice": {
+          target: env.VITE_TSSERVICE || "http://dev-ts.intravan.co.kr",
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/tsservice/, ""),
+        },
       },
     },
   };

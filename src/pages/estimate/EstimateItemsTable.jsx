@@ -10,6 +10,7 @@ import { focusById } from "../../utils/focusUtils";
 import { getUserid, getComcode } from "../../api/config";
 import { useTbCode } from "../../hooks/useTbCode";
 import { useCodepnt } from "../../hooks/useLaborItems";
+import { useTs_repart } from "../../hooks/useTs_Repair";
 import { useAlert } from "../../alerts";
 
 import {
@@ -258,6 +259,9 @@ export default function EstimateItemsTable({
 
   const { fetchCodepnt } = useCodepnt();
   const [pntRows, setPntRows] = useState([]);
+  const [pntAccRows, setPntAccRows] = useState([]); // 악세사리 목록 캐시 (carcode='', paykind='0')
+  const { fetchTsPayno } = useTs_repart();
+  const [tsPaynoRows, setTsPaynoRows] = useState([]); // 국토부 ts_payno 목록 캐시
   const { info: alertInfo } = useAlert();
 
   // master 변경 시 도장 목록 1회 fetch → pntRows 캐시
@@ -271,9 +275,30 @@ export default function EstimateItemsTable({
       .catch(() => {});
   }, [master?.paint, master?.pntkind, master?.codecar]);
 
+  // 악세사리 목록 마운트 시 1회 fetch → pntAccRows 캐시
+  useEffect(() => {
+    fetchCodepnt({ carcode: "", paykind: "0" })
+      .then((json) => {
+        console.log("[pntAcc] dataset:", json?.dataset);
+        if (json?.result === "OK") setPntAccRows(json.dataset ?? []);
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 국토부 ts_payno 목록 마운트 시 1회 fetch → tsPaynoRows 캐시
+  useEffect(() => {
+    fetchTsPayno()
+      .then((json) => { if (json?.result === "OK") setTsPaynoRows(json.ts_payno ?? []); })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [popover, setPopover] = useState(null);
-  // popover: { type: "workcodename"|"ts_payno"|"statename"|"pntextr", anchorRect, rowOrgSeq }
+  // popover: { type: "workcodename"|"ts_payno"|"statename"|"pntextr"|"state_pntacc", anchorRect, rowOrgSeq }
   const [paintSubRect, setPaintSubRect] = useState(null); // 도장 서브패널 앵커
+  const [pntAccItems, setPntAccItems] = useState([]); // 악세사리 상태 드롭다운 목록
+  const [tsPaynoSubRect, setTsPaynoSubRect] = useState(null); // 국토부 대분류 플라이아웃 앵커 { rect, kind }
 
   // 신규 row 삽입 후 payname 포커스 대기용 ref
   // saveDetail이 newserial로 estb_orgseqno를 확정하면 포커스 실행
@@ -393,7 +418,18 @@ export default function EstimateItemsTable({
   const closePopover = useCallback(() => {
     setPopover(null);
     setPaintSubRect(null);
+    setTsPaynoSubRect(null);
   }, []);
+
+  const openPntAccPopover = useCallback((e, row) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pntcot = String(master?.pntcot_code ?? "");
+    const filtered = pntAccRows.filter(
+      (item) => item.payno === row.payno && item.pntcot === pntcot
+    );
+    setPntAccItems(filtered);
+    setPopover({ type: "state_pntacc", anchorRect: rect, rowOrgSeq: row.estb_orgseqno });
+  }, [pntAccRows, master]);
 
   const onDragEnd = useCallback((event) => {
     const { active, over } = event;
@@ -981,7 +1017,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
               className="w-full text-left hover:underline"
               onClick={(e) => openPopover(e, "ts_payno", row)}
             >
-              {row.ts_payno || ""}
+              {row.ts_payno || <span className="text-zinc-400">선택</span>}
             </button>
           </div>
         ),
@@ -994,20 +1030,31 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
         render: (_val, row) => {
           // paykind in ('4','6') AND pnt_extr='' AND workcode='P' → 도장부가 드롭다운
           const rowPk = String(row.paykind ?? "");
+          // 악세사리 케이스: workcode='P' AND payno=subpayno AND b_level>0
+          const isPntAcc =
+            row.workcode === "P" &&
+            String(row.payno ?? "") !== "" &&
+            String(row.payno ?? "") === String(row.subpayno ?? "") &&
+            parseFloat(row.b_level ?? "0") > 0;
           const canPntExtr =
+            !isPntAcc &&
             (rowPk === "4" || rowPk === "6") &&
             String(row.pnt_extr ?? "") === "" &&
             row.workcode === "P" &&
-            String(row.state ?? "") !== "2" &&
-            // paykind='6' + payno=subpayno + b_level>0 → subseq='2' 부가항목: 드롭다운 제외
-            !(rowPk === "6" &&
-              String(row.payno ?? "") === String(row.subpayno ?? "") &&
-              parseFloat(row.b_level ?? "0") > 0);
+            String(row.state ?? "") !== "2";
           // paykind in ('5','3') → WRK03 상태 드롭다운
           const canWrk03State = rowPk === "5" || rowPk === "3";
           return (
             <div className="h-8 flex items-center">
-              {canPntExtr ? (
+              {isPntAcc ? (
+                <button
+                  type="button"
+                  className="w-full text-left hover:underline"
+                  onClick={(e) => openPntAccPopover(e, row)}
+                >
+                  {computeStatename(row, master, wrk34Codes, pyk02Codes, wrk03Codes)}
+                </button>
+              ) : canPntExtr ? (
                 <button
                   type="button"
                   className="w-full text-left hover:underline"
@@ -1058,18 +1105,26 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
         String(row.payno || "") !== "" &&
         firstPaynoOrgSeqs.has(row.estb_orgseqno)
       : true; // 자유: 모든 row
+    const isSelected =
+      selectedOrgSeq === row.estb_orgseqno || selectedOrgSeqs.has(row.estb_orgseqno);
+    const paintRowClass =
+      !isSelected && k === "6" ? "bg-[#F3F4E6] hover:bg-[#ECEED8]" : "";
+    const mergedTrProps = {
+      ...trProps,
+      className: `${paintRowClass} ${trProps?.className ?? ""}`.trim(),
+    };
 
     return (
       <SortableTr
         key={key}
         id={row.estb_orgseqno}
-        trProps={trProps}
+        trProps={mergedTrProps}
         dragEnabled={dragEnabled}
         isMultiSel={selectedOrgSeqs.has(row.estb_orgseqno)}
         cells={cells}
       />
     );
-  }, [sortMode, selectedOrgSeqs, firstPaynoOrgSeqs]);
+  }, [sortMode, selectedOrgSeq, selectedOrgSeqs, firstPaynoOrgSeqs]);
 
   // summary — paysum/partsum 편집 중이면 focus 시점 원본값 사용 (타이핑 중 불변)
   const { sumLabor, sumPart, sumSupply, sumVat, sumTotal } = useMemo(() => {
@@ -1361,11 +1416,12 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
           onClose={closePopover}
           placement={popover.type === "workcodename" ? "right-top" : "bottom-left"}
           minWidth={
-            popover.type === "workcodename" ? "100px" :
-            popover.type === "pntextr"      ? "140px" :
-            popover.type === "wrk03state"   ? "140px" : "360px"
+            popover.type === "workcodename"  ? "100px" :
+            popover.type === "pntextr"       ? "140px" :
+            popover.type === "wrk03state"    ? "140px" :
+            popover.type === "state_pntacc"  ? "160px" : "360px"
           }
-          noTitle={popover.type === "workcodename" || popover.type === "pntextr" || popover.type === "wrk03state"}
+          noTitle={popover.type === "workcodename" || popover.type === "pntextr" || popover.type === "wrk03state" || popover.type === "state_pntacc"}
           title={
             popover.type === "ts_payno" ? "국토부" : "상태"
           }
@@ -1696,6 +1752,37 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                     </button>
                   );
                 })}
+              </div>
+            );
+          })()
+          : popover.type === "state_pntacc" ? (() => {
+            const selRow = rows.find((r) => r.estb_orgseqno === popover.rowOrgSeq);
+            return (
+              <div className="p-1 flex flex-col gap-0.5">
+                {pntAccItems.length === 0 ? (
+                  <div className="text-sm text-zinc-500 py-2 px-2">데이터 없음</div>
+                ) : (
+                  pntAccItems.map((item, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      className="text-left rounded px-2 py-1 text-sm whitespace-nowrap hover:bg-zinc-50"
+                      onClick={() => {
+                        if (!selRow) { closePopover(); return; }
+                        const b_level = item.carcode ? String(item.carcode).charAt(5) : selRow.b_level;
+                        const partsum = Number(item.oilpnt_m) || 0;
+                        const updated = { ...selRow, b_level, partsum, statename: item.info };
+                        setRows((prev) =>
+                          prev.map((r) => r.estb_orgseqno === selRow.estb_orgseqno ? updated : r)
+                        );
+                        closePopover();
+                        onValueCommit?.(updated);
+                      }}
+                    >
+                      {item.info}
+                    </button>
+                  ))
+                )}
               </div>
             );
           })()

@@ -131,6 +131,9 @@ export default function EstimateEditPage() {
   const saveClaimRef = useRef(saveClaim);
   const sidePanelOpenRef = useRef(sidePanelOpen);
   const sideActiveRef = useRef(sideActive);
+  const [selectedOrgSeq, setSelectedOrgSeq] = useState(null);
+  const [selectedOrgSeqs, setSelectedOrgSeqs] = useState(new Set());
+  const selectedOrgSeqRef = useRef(null);
 
   // render phase 외부(commit 후)에서 ref 동기화 — "Cannot access refs during render" 방지
   useLayoutEffect(() => {
@@ -226,9 +229,6 @@ export default function EstimateEditPage() {
   const { deleteBySeqs, deleteAll } = useEstimateDetailDelete();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(null); // null | { type:"all" } | { type:"selected", orgSeqs:string[] }
-  const [selectedOrgSeq, setSelectedOrgSeq] = useState(null);
-  const [selectedOrgSeqs, setSelectedOrgSeqs] = useState(new Set());
-  const selectedOrgSeqRef = useRef(selectedOrgSeq);
 
   const laborWinRef = useRef(null);
   const [laborWinOpen, setLaborWinOpen] = useState(false);
