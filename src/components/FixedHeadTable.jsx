@@ -41,6 +41,7 @@ export default function FixedHeadTable({
   wheelSelectStep = 1,   
   rowRenderer,
   enableHorizontalScroll = false,
+  getGutterRowClass,             // (key) => className — 행별 gutter 배경색 (optional)
 }) {
   const headWrapRef = useRef(null);
   const bodyWrapRef = useRef(null);
@@ -356,12 +357,15 @@ export default function FixedHeadTable({
                 const rawCustom = getRowClassName ? getRowClassName(row, idx) : "";
                 // 문자열이면 기본적으로 bg/hover:bg 제거
                 let customClass = stripBgClasses(rawCustom);
+                // 행별 hover 클래스 override (미지정 시 기본 rowHoverClass 사용)
+                let effectiveHoverClass = rowHoverClass;
 
                 // (선택) 배경 override를 허용하고 싶으면 getRowClassName이 객체로 리턴하게 지원
-                // ex) return { className: "bg-red-100 hover:bg-red-200", allowBg: true };
+                // ex) return { className: "bg-red-100", allowBg: true, hoverClass: "hover:bg-red-100" };
                 if (rawCustom && typeof rawCustom === "object" && !Array.isArray(rawCustom)) {
-                  const { className, allowBg } = rawCustom;
+                  const { className, allowBg, hoverClass } = rawCustom;
                   customClass = allowBg ? (className || "") : stripBgClasses(className || "");
+                  if (!isSel && hoverClass !== undefined) effectiveHoverClass = hoverClass;
                 }
 
                 //2026-01-16 추가건 
@@ -388,7 +392,7 @@ export default function FixedHeadTable({
                   className: [
                     "select-none",
                     "border-b border-zinc-100",
-                    isSel ? rowSelectedClass : rowHoverClass,
+                    isSel ? rowSelectedClass : effectiveHoverClass,
                     customClass,
                     rowProps?.className || "",
                   ].join(" "),
@@ -465,15 +469,16 @@ export default function FixedHeadTable({
               const isMultiSel = !isSel && selectedKeys != null && selectedKeys.has(key);
               const isHover = hoverKey != null && key === hoverKey;
 
+              const gutterCustom = (!isSel && !isHover && getGutterRowClass) ? getGutterRowClass(key) : "";
               return (
                 <div
                   key={key}
                   className={[
                     "border-b border-zinc-100 box-border",
-                    isSel ? gutterSelectedClass : "",
-                    !isSel && isHover ? gutterHoverClass : "",
+                    isSel         ? gutterSelectedClass : "",
+                    !isSel && isHover ? gutterHoverClass  : "",
+                    gutterCustom,
                   ].join(" ")}
-                  // style={{ height: rowH }}
                   style={{ position: "absolute", top, height, left: 0, right: 0 }}
                 />
               );

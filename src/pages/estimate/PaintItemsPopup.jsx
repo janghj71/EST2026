@@ -204,6 +204,21 @@ export default function PaintItemsPopup() {
 
   const [selectedPayno, setSelectedPayno] = useState("");
 
+  // 견적내역에 이미 추가된 항목(paykind=6) payno Set — 부모 창에서 postMessage로 수신
+  const [existingPaynos, setExistingPaynos] = useState(new Set());
+
+  useEffect(() => {
+    const handle = (e) => {
+      if (e.origin !== window.location.origin) return;
+      const { type, payload } = e.data || {};
+      if (type === "PAINT_ITEMS_EXISTING_ROWS") {
+        setExistingPaynos(new Set(payload?.existing_paynos ?? []));
+      }
+    };
+    window.addEventListener("message", handle);
+    return () => window.removeEventListener("message", handle);
+  }, []);
+
   // selectedKind: workcode 변경 시 기본값 재설정
   const [selectedKind, setSelectedKind] = useState(() => defaultKind(ctx.workcode || ""));
   useEffect(() => {
@@ -456,6 +471,11 @@ export default function PaintItemsPopup() {
               rowHoverClass="hover:!bg-zinc-50"
               rowSelectedClass="!bg-blue-100 hover:!bg-blue-100"
               rowRenderer={rowRenderer}
+              getRowClassName={(row) =>
+                existingPaynos.has(row.payno)
+                  ? { className: "bg-yellow-50", allowBg: true, hoverClass: "hover:bg-yellow-100" }
+                  : ""
+              }
             />
           </div>
         </div>

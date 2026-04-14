@@ -20,6 +20,7 @@ export default function EstimateHeaderBar({
   onOpenPaintItems,
   onOpenChemicalItems,
   onOpenPartLookup,
+  onDuplicateCheck,
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -27,8 +28,8 @@ export default function EstimateHeaderBar({
       <IconBtn icon={Paintbrush} label="도장항목" onClick={onOpenPaintItems} />
       <IconBtn icon={FlaskConical} label="케미칼항목" onClick={onOpenChemicalItems} />
       <IconBtn icon={Search} label="부품조회" onClick={onOpenPartLookup} />
-      
-      <IconBtn icon={CheckCircle} label="중복/견적점검" onClick={() => alert("TODO")} />
+
+      <IconBtn icon={CheckCircle} label="중복체크" onClick={onDuplicateCheck} />
 
       <div className="ml-auto flex items-center gap-2">
         <IconBtn icon={ImageIcon} label="차량사진" onClick={() => alert("TODO")} />

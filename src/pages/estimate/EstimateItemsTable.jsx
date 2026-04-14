@@ -153,6 +153,9 @@ function canEditWorkcode(row) {
  * workcode='P' AND substring(payno,4,1)<>'P' AND paykind='3' 인 경우
  */
 function computeStatename(row, master, wrk34Codes, pyk02Codes, wrk03Codes) {
+  // 중복체크: state='O' → '중복' 표기 (최우선)
+  if (String(row.state ?? "") === "O") return "중복";
+
   const payno    = String(row.payno    ?? "");
   const subpayno = String(row.subpayno ?? "");
 
@@ -1107,12 +1110,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
       : true; // 자유: 모든 row
     const isSelected =
       selectedOrgSeq === row.estb_orgseqno || selectedOrgSeqs.has(row.estb_orgseqno);
-    const paintRowClass =
-      !isSelected && k === "6" ? "bg-[#F3F4E6] hover:bg-[#ECEED8]" : "";
-    const mergedTrProps = {
-      ...trProps,
-      className: `${paintRowClass} ${trProps?.className ?? ""}`.trim(),
-    };
+    const mergedTrProps = { ...trProps };
 
     return (
       <SortableTr
@@ -1385,6 +1383,15 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                 }
               }}
               rowRenderer={rowRenderer}
+              getRowClassName={(row) =>
+                String(row?.paykind) === "6"
+                  ? { className: "bg-[#f8f8ee]", allowBg: true, hoverClass: "" }
+                  : ""
+              }
+              getGutterRowClass={(key) => {
+                const r = rows.find((row) => row.estb_orgseqno === key);
+                return String(r?.paykind) === "6" ? "bg-[#f8f8ee]" : "";
+              }}
             />
           </SortableContext>
         </DndContext>
@@ -1419,9 +1426,10 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
             popover.type === "workcodename"  ? "100px" :
             popover.type === "pntextr"       ? "140px" :
             popover.type === "wrk03state"    ? "140px" :
-            popover.type === "state_pntacc"  ? "160px" : "360px"
+            popover.type === "state_pntacc"  ? "160px" :
+            popover.type === "ts_payno"      ? "140px" : "360px"
           }
-          noTitle={popover.type === "workcodename" || popover.type === "pntextr" || popover.type === "wrk03state" || popover.type === "state_pntacc"}
+          noTitle={popover.type === "workcodename" || popover.type === "pntextr" || popover.type === "wrk03state" || popover.type === "state_pntacc" || popover.type === "ts_payno"}
           title={
             popover.type === "ts_payno" ? "국토부" : "상태"
           }
@@ -1786,6 +1794,40 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
               </div>
             );
           })()
+          : popover.type === "ts_payno" ? (() => {
+            const kinds = [...new Set(tsPaynoRows.map((r) => r.payno_kind_nm))];
+            return (
+              <div className="p-1 flex flex-col gap-0.5">
+                {/* 빈값(초기화) */}
+                <button
+                  type="button"
+                  className="text-left rounded px-2 py-1 text-sm hover:bg-zinc-50 text-zinc-400"
+                  onClick={() => {
+                    const selRow = rows.find((r) => r.estb_orgseqno === popover.rowOrgSeq);
+                    if (!selRow) { closePopover(); return; }
+                    const updated = { ...selRow, ts_payno: "" };
+                    setRows((prev) => prev.map((r) => r.estb_orgseqno === selRow.estb_orgseqno ? updated : r));
+                    closePopover();
+                    onValueCommit?.(updated);
+                  }}
+                >
+                  (없음)
+                </button>
+                {/* 대분류 목록 */}
+                {kinds.map((kind) => (
+                  <button
+                    key={kind}
+                    type="button"
+                    className="text-left rounded px-2 py-1 text-sm hover:bg-zinc-50 flex justify-between items-center gap-4"
+                    onClick={(e) => setTsPaynoSubRect({ rect: e.currentTarget.getBoundingClientRect(), kind })}
+                  >
+                    <span>{kind}</span>
+                    <span className="text-zinc-400">▶</span>
+                  </button>
+                ))}
+              </div>
+            );
+          })()
           : (
             <div className="text-sm text-zinc-600">
               TODO: {popover.type} 옵션 목록
@@ -1906,6 +1948,43 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                 {opt.label}
               </button>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* 국토부(ts_payno) 소분류 플라이아웃 — z-51 */}
+      {tsPaynoSubRect && popover?.type === "ts_payno" && (
+        <div
+          className="fixed rounded-md border border-zinc-200 bg-white shadow-lg z-[51] overflow-y-auto"
+          style={{
+            top: Math.min(tsPaynoSubRect.rect.top, window.innerHeight - 320),
+            left: tsPaynoSubRect.rect.right + 4,
+            maxHeight: "300px",
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="p-1 flex flex-col gap-0.5">
+            {tsPaynoRows
+              .filter((r) => r.payno_kind_nm === tsPaynoSubRect.kind)
+              .map((item) => (
+                <button
+                  key={item.payno}
+                  type="button"
+                  className="text-left rounded px-2 py-1 text-sm whitespace-nowrap hover:bg-zinc-50"
+                  onClick={() => {
+                    const selRow = rows.find((r) => r.estb_orgseqno === popover.rowOrgSeq);
+                    if (!selRow) { closePopover(); return; }
+                    const updated = { ...selRow, ts_payno: item.payno };
+                    setRows((prev) => prev.map((r) => r.estb_orgseqno === selRow.estb_orgseqno ? updated : r));
+                    setTsPaynoSubRect(null);
+                    closePopover();
+                    onValueCommit?.(updated);
+                  }}
+                >
+                  {item.payno_name}
+                </button>
+              ))
+            }
           </div>
         </div>
       )}

@@ -48,7 +48,7 @@ export default function EstimateEditPage() {
   const navigate = useNavigate();
   const { est_serial } = useParams();
 
-  const { fetchMasterById, fetchDetails } = useEstimate();
+  const { fetchMasterById, fetchDetails, fetchOverlap } = useEstimate();
   const { save, saving } = useMasterEstimateSave();
   const { saveClaim } = useEstimateClaimSave();
   const { fetchClaims } = useEstimateClaims();
@@ -264,6 +264,20 @@ export default function EstimateEditPage() {
     return () => clearInterval(id);
   }, [laborWinOpen]);
 
+  // 견적내역 rows 변경 시 공임팝업에 기존 항목(paykind 1/2) payno 목록 전달
+  useEffect(() => {
+    if (!laborWinOpen || !laborWinRef.current || laborWinRef.current.closed) return;
+    const filtered = rows.filter((r) => String(r.paykind) === "1" || String(r.paykind) === "2");
+    const existingPaynos = filtered.map((r) => r.payno);
+    const existingRowsData = filtered.map((r) => ({ payno: r.payno, workcode: r.workcode ?? "" }));
+    try {
+      laborWinRef.current.postMessage(
+        { type: "LABOR_ITEMS_EXISTING_ROWS", payload: { existing_paynos: existingPaynos, existing_rows: existingRowsData } },
+        window.location.origin
+      );
+    } catch { /* empty */ }
+  }, [rows, laborWinOpen]);
+
   // 도장항목 팝업 닫힘 감지 (500ms 폴링)
   useEffect(() => {
     if (!paintWinOpen) return;
@@ -274,6 +288,20 @@ export default function EstimateEditPage() {
     }, 500);
     return () => clearInterval(id);
   }, [paintWinOpen]);
+
+  // 견적내역 rows 변경 시 도장팝업에 기존 항목(paykind=6) payno 목록 전달
+  useEffect(() => {
+    if (!paintWinOpen || !paintWinRef.current || paintWinRef.current.closed) return;
+    const existingPaynos = rowsRef.current
+      .filter((r) => String(r.paykind) === "6")
+      .map((r) => r.payno);
+    try {
+      paintWinRef.current.postMessage(
+        { type: "PAINT_ITEMS_EXISTING_ROWS", payload: { existing_paynos: existingPaynos } },
+        window.location.origin
+      );
+    } catch { /* empty */ }
+  }, [rows, paintWinOpen]);
   
   const openLaborItemsPopup = async () => {
     await saveClaimIfActive();
@@ -309,11 +337,31 @@ export default function EstimateEditPage() {
     const payload = { est_serial: estSerial, carno, codecar, est_codecar, carname,
                       paykind, paint, outday, carkind, pntkind, pntcot_code, pnt_m, modelcode };
 
+    const getExistingPaynos = () => {
+      const filtered = rowsRef.current.filter((r) => String(r.paykind) === "1" || String(r.paykind) === "2");
+      return {
+        existing_paynos: filtered.map((r) => r.payno),
+        existing_rows:   filtered.map((r) => ({ payno: r.payno, workcode: r.workcode ?? "" })),
+      };
+    };
+
+    const sendExistingRows = (win) => {
+      try {
+        if (win && !win.closed) {
+          win.postMessage(
+            { type: "LABOR_ITEMS_EXISTING_ROWS", payload: getExistingPaynos() },
+            window.location.origin
+          );
+        }
+      } catch { /* empty */ }
+    };
+
     // 이미 열려 있으면 재사용 + ctx만 갱신
     if (laborWinRef.current && !laborWinRef.current.closed) {
       try {
         laborWinRef.current.focus();
         laborWinRef.current.postMessage({ type: "LABOR_ITEMS_SET_CTX", payload }, window.location.origin);
+        sendExistingRows(laborWinRef.current);
         registerChildWin(laborWinRef.current);
         setLaborWinOpen(true);
         return;
@@ -330,19 +378,21 @@ export default function EstimateEditPage() {
     laborWinRef.current = win;
     registerChildWin(win);
     setLaborWinOpen(true);
-  
+
     setTimeout(() => {
       try {
         if (win && !win.closed) {
           win.postMessage({ type: "LABOR_ITEMS_SET_CTX", payload }, window.location.origin);
+          sendExistingRows(win);
         }
       } catch { /* empty */ }
     }, 200);
-  
+
     setTimeout(() => {
       try {
         if (win && !win.closed) {
           win.postMessage({ type: "LABOR_ITEMS_SET_CTX", payload }, window.location.origin);
+          sendExistingRows(win);
         }
       } catch { /* empty */ }
     }, 700);
@@ -395,11 +445,28 @@ export default function EstimateEditPage() {
       workcode,
     };
 
+    const getPaintExistingPaynos = () =>
+      rowsRef.current
+        .filter((r) => String(r.paykind) === "6")
+        .map((r) => r.payno);
+
+    const sendPaintExistingRows = (win) => {
+      try {
+        if (win && !win.closed) {
+          win.postMessage(
+            { type: "PAINT_ITEMS_EXISTING_ROWS", payload: { existing_paynos: getPaintExistingPaynos() } },
+            window.location.origin
+          );
+        }
+      } catch { /* empty */ }
+    };
+
     // 이미 열려 있으면 재사용 + ctx만 갱신
     if (paintWinRef.current && !paintWinRef.current.closed) {
       try {
         paintWinRef.current.focus();
         paintWinRef.current.postMessage({ type: "PAINT_ITEMS_SET_CTX", payload }, window.location.origin);
+        sendPaintExistingRows(paintWinRef.current);
         registerChildWin(paintWinRef.current);
         setPaintWinOpen(true);
         return;
@@ -422,6 +489,7 @@ export default function EstimateEditPage() {
       try {
         if (win && !win.closed) {
           win.postMessage({ type: "PAINT_ITEMS_SET_CTX", payload }, window.location.origin);
+          sendPaintExistingRows(win);
         }
       } catch { /* empty */ }
     }, 200);
@@ -430,6 +498,7 @@ export default function EstimateEditPage() {
       try {
         if (win && !win.closed) {
           win.postMessage({ type: "PAINT_ITEMS_SET_CTX", payload }, window.location.origin);
+          sendPaintExistingRows(win);
         }
       } catch { /* empty */ }
     }, 700);
@@ -1859,6 +1928,44 @@ export default function EstimateEditPage() {
   }, [est_serial, master, rows, sidePanelOpen, sideActive,
       save, saveClaim, saveAllDetails, withLoading, navigate, alertError]);
 
+  const handleDuplicateCheck = useCallback(async () => {
+    await withLoading(async () => {
+      // 1. 마스터 저장
+      await save(est_serial, master);
+      // 2. 청구처 저장 (사이드패널 open + claim 탭 활성 시만)
+      if (sidePanelOpen && sideActive === "claim") {
+        const claims = Array.isArray(master?.claims) ? master.claims : [];
+        for (const claim of claims) {
+          await saveClaim(est_serial, claim);
+        }
+        claimDirtyRef.current = false;
+      }
+      // 3. 견적내역 저장
+      await saveAllDetails(rows);
+      // 4. 중복체크 API
+      await fetchOverlap(est_serial);
+      // 5. 견적내역 새로고침
+      const detailJson = await fetchDetails(est_serial);
+      const newRows = detailJson?.dataset ?? [];
+      setRows(newRows);
+      // 6. state='O' rows 선택
+      const overlapSeqs = newRows
+        .filter((r) => String(r.state) === "O")
+        .map((r) => r.estb_orgseqno);
+      if (overlapSeqs.length > 0) {
+        setSelectedOrgSeqs(new Set(overlapSeqs));
+        setSelectedOrgSeq(overlapSeqs[0]);
+      }
+      // 7. 견적정산 탭 새로고침
+      if (sidePanelOpen && sideActive === "settle") {
+        setSettleRefreshKey((k) => k + 1);
+      }
+    }, "중복체크 중...");
+  }, [est_serial, master, rows, sidePanelOpen, sideActive,
+      save, saveClaim, saveAllDetails, fetchOverlap, fetchDetails,
+      setRows, setSelectedOrgSeqs, setSelectedOrgSeq, setSettleRefreshKey,
+      claimDirtyRef, withLoading]);
+
   const handleSaveAndList = useCallback(async () => {
     // 저장 시 오더 재부여(델파이 방식)
     const seqReNumbered = rows.map((r, i) => ({ ...r, estb_seqno: i + 1 }));
@@ -1901,6 +2008,7 @@ export default function EstimateEditPage() {
               onOpenPaintItems={openPaintItemsPopup}
               onOpenChemicalItems={openChemicalItemsPopup}
               onOpenPartLookup={openPartLookupPopup}
+              onDuplicateCheck={handleDuplicateCheck}
             />
           </div>
         </div>

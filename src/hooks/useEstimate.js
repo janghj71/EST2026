@@ -114,6 +114,19 @@ export function useEstimate() {
     [detailRefetch]
   );
 
+  // ── 중복체크 (est_serial) ──
+  const { refetch: overlapRefetch } = useApi({
+    path: "/est_overlap_s.aspx",
+    method: "POST",
+    bodyType: "form",
+    immediate: false,
+  });
+
+  const fetchOverlap = useCallback(
+    (est_serial) => overlapRefetch({ est_serial }),
+    [overlapRefetch]
+  );
+
   return {
     // 견적목록
     estimates: estimates ?? [],
@@ -139,5 +152,8 @@ export function useEstimate() {
     detailLoading,
     detailError,
     fetchDetails,
+
+    // 중복체크
+    fetchOverlap,
   };
 }

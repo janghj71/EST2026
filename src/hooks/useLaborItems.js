@@ -79,3 +79,20 @@ export function useCodepayHour() {
 
   return { fetchCodepayHour };
 }
+
+/** 견적점검: est_checkpayno_s.aspx */
+export function useCheckPayno() {
+  const { refetch } = useApi({
+    path: "/est_checkpayno_s.aspx",
+    method: "POST",
+    bodyType: "form",
+    immediate: false,
+  });
+
+  const fetchCheckPayno = useCallback(
+    ({ paykind }) => refetch({ paykind }),
+    [refetch]
+  );
+
+  return { fetchCheckPayno };
+}

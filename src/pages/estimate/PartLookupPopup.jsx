@@ -214,7 +214,7 @@ export default function PartLookupPopup() {
 
           <button
             type="button"
-            className="h-10 rounded-md border border-zinc-200 bg-white px-5 text-sm font-semibold text-zinc-800 hover:bg-zinc-50"
+            className="h-10 rounded-md border border-zinc-200 bg-white px-5 text-sm font-semibold text-zinc-800 hover:bg-zinc-200"
             onClick={onSearch}
           >
             검색
@@ -222,7 +222,7 @@ export default function PartLookupPopup() {
 
           <button
             type="button"
-            className="h-10 rounded-md border border-blue-500 bg-blue-50 px-5 text-sm font-semibold text-blue-700 hover:bg-blue-100 whitespace-nowrap"
+            className="h-10 rounded-md border border-zinc-400 bg-zinc-100 px-5 text-sm font-semibold text-zinc-800 hover:bg-zinc-200 whitespace-nowrap"
             onClick={onNeoSearch}
           >
             제작사 부품 검색

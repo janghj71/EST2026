@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import FixedHeadTable from "../../components/FixedHeadTable";
 import { useUrlContextSnapshot } from "../../hooks/useUrlContextSnapshot";
-import { X, Wrench } from "lucide-react";
+import { X, Wrench, ClipboardCheck } from "lucide-react";
 import IconBtn from "../../components/IconBtn";
-import { useCodepay, useCodepayHour, useCodepnt, useCodepart } from "../../hooks/useLaborItems";
+import { useCodepay, useCodepayHour, useCodepnt, useCodepart, useCheckPayno } from "../../hooks/useLaborItems";
 import { useEstimateClaims } from "../../hooks/useEstimateClaims";
 import { formatLocaleNumber } from "../../utils/numberFormat";
 import { useLoading } from "../../loading/useLoading";
@@ -244,6 +244,7 @@ export default function LaborItemsPopup() {
   const { fetchCodepayHour } = useCodepayHour();
   const { fetchCodepnt }     = useCodepnt();
   const { fetchCodepart }    = useCodepart();
+  const { fetchCheckPayno }  = useCheckPayno();
   const { fetchClaims }      = useEstimateClaims();
   const { withLoading }      = useLoading();
   const [workItems, setWorkItems] = useState([]);
@@ -251,6 +252,26 @@ export default function LaborItemsPopup() {
   const [paints,    setPaints]    = useState([]);
   const [parts,     setParts]     = useState([]);
   const [claims,    setClaims]    = useState([]);
+
+  // 견적내역에 이미 추가된 항목(paykind 1/2) — 부모 창에서 postMessage로 수신
+  const [existingPaynos, setExistingPaynos] = useState(new Set());
+  const [existingRows,   setExistingRows]   = useState([]); // { payno, workcode }[]
+
+  // 견적점검 결과: null=비활성, Set=활성(해당 payno만 표시)
+  const [checkMissingPaynos, setCheckMissingPaynos] = useState(null);
+
+  useEffect(() => {
+    const handle = (e) => {
+      if (e.origin !== window.location.origin) return;
+      const { type, payload } = e.data || {};
+      if (type === "LABOR_ITEMS_EXISTING_ROWS") {
+        setExistingPaynos(new Set(payload?.existing_paynos ?? []));
+        setExistingRows(payload?.existing_rows ?? []);
+      }
+    };
+    window.addEventListener("message", handle);
+    return () => window.removeEventListener("message", handle);
+  }, []);
 
   // 팝업 오픈 시 1회 호출 — carcode 확정 후 실행
   useEffect(() => {
@@ -385,6 +406,62 @@ export default function LaborItemsPopup() {
 
 
 
+  // ── 견적점검 ──────────────────────────────────────────────────────────
+  const runCheckPayno = useCallback(async () => {
+    // 활성 상태면 초기화(토글)
+    if (checkMissingPaynos !== null) {
+      setCheckMissingPaynos(null);
+      return;
+    }
+    await withLoading(async () => {
+      const json = await fetchCheckPayno({ paykind });
+      if (json?.result !== "OK") return;
+      const dataset = json.dataset ?? [];
+
+      // console.log("[견적점검] existingRows (paykind 1/2):", existingRows);
+      // console.log("[견적점검] existingRows count:", existingRows.length);
+      // console.log("[견적점검] dataset:", dataset);
+
+      // Filter A: kind='A', 응답.payno=견적행.payno, 견적행.workcode ∈ 응답.workgroup
+      const checkPaynoSet = new Set();
+      const filterAMatched = [];
+      dataset
+        .filter((r) => r.kind === "A")
+        .forEach((r) => {
+          const matched = existingRows.find(
+            (er) => er.payno === r.payno && String(r.workgroup ?? "").includes(er.workcode)
+          );
+          if (matched) {
+            checkPaynoSet.add(r.check_payno);
+            filterAMatched.push({ api: r, 견적행: matched });
+          }
+        });
+      // console.log("[Filter A] checkPaynoSet:", [...checkPaynoSet]);
+      // console.log("[Filter A] matched rows:", filterAMatched);
+
+      // 현재 견적 payno Set
+      const existingPaynoSet = new Set(existingRows.map((er) => er.payno));
+      // WorkItems payno Set
+      const workItemPaynoSet = new Set(workItems.map((wi) => wi.payno));
+
+      // Filter B: kind='B', check_payno ∈ checkPaynoSet, payno ∉ 견적, payno ∈ workItems
+      const missing = new Set();
+      const filterBRows = dataset.filter((r) => r.kind === "B" && checkPaynoSet.has(r.check_payno));
+      // console.log("[Filter B] kind=B & check_payno 매칭:", filterBRows);
+      filterBRows.forEach((r) => {
+        const inEstimate   = existingPaynoSet.has(r.payno);
+        const inWorkItems  = workItemPaynoSet.has(r.payno);
+        // console.log(`[Filter B] payno=${r.payno} | 견적포함=${inEstimate} | WorkItems포함=${inWorkItems}`);
+        if (!inEstimate && inWorkItems) {
+          missing.add(r.payno);
+        }
+      });
+      // console.log("[Filter B] missingPaynoSet:", [...missing]);
+
+      setCheckMissingPaynos(missing);
+    }, "견적점검 중...");
+  }, [checkMissingPaynos, fetchCheckPayno, paykind, existingRows, workItems, withLoading]);
+
   const filteredWorkItems = useMemo(() => {
     const q = workSearch.trim().toLowerCase();
     const byOrdno = (a, b) => String(a.orderno ?? "").localeCompare(String(b.orderno ?? ""));
@@ -400,6 +477,11 @@ export default function LaborItemsPopup() {
         return true;
       });
     };
+
+    // 0) 견적점검 모드: missingPaynoSet 기준 필터
+    if (checkMissingPaynos !== null) {
+      return workItems.filter((x) => checkMissingPaynos.has(x.payno));
+    }
 
     // 1) 검색이 있으면: "전체"에서 검색 (영역 무시)
     if (q) {
@@ -421,7 +503,7 @@ export default function LaborItemsPopup() {
 
     // 3) 아무 필터 없으면: 전체
     return dedupe([...workItems].sort(byOrdno));
-  }, [workItems, selectedSec, workSearch]);
+  }, [workItems, selectedSec, workSearch, checkMissingPaynos]);
   
     
   const effectivePayno = useMemo(() => {
@@ -652,6 +734,28 @@ export default function LaborItemsPopup() {
         workname: timeRow.workname,
         hour:     timeRow.hour,
       });
+
+      // 에이밍 항목 자동 추가: adl0700 → adl0710+adl0720, adl0701 → adl0711+adl0720
+      const relPaynos = AUTO_INSERT_MAP[payno];
+      if (relPaynos) {
+        relPaynos.forEach((relPayno) => {
+          const relItem = workItems.find((x) => x.payno === relPayno);
+          const relTime = workTimes.find((x) => x.payno === relPayno && x.workcode === "A");
+          if (!relItem || !relTime) return;
+          postPick({
+            type:     "workTime",
+            payno:    relPayno,
+            payname:  relItem.payname  ?? "",
+            paykind:  relTime.paykind  ?? timeRow.paykind ?? "4",
+            subpayno: relItem.subpayno ?? "",
+            ts_payno: relItem.ts_payno ?? "",
+            orderno:  relItem.orderno  ?? "",
+            workcode: relTime.workcode,
+            workname: relTime.workname,
+            hour:     relTime.hour,
+          });
+        });
+      }
     }
 
     // 도장 인서트: workTimes 중 'X' 가 있을 때만
@@ -698,7 +802,7 @@ export default function LaborItemsPopup() {
         });
       }
     }
-  }, [postPick, workTimes, paints, paykind, pntcotCode, pntM, paintSolvent, coatKind, getPaintMH]);
+  }, [postPick, workItems, workTimes, paints, paykind, pntcotCode, pntM, paintSolvent, coatKind, getPaintMH]);
 
   // ── 경미손상 팝업 열기 ─────────────────────────────────────────────
   const openSuriModal = useCallback((row) => {
@@ -1003,8 +1107,26 @@ export default function LaborItemsPopup() {
           </div>
 
           <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              onClick={runCheckPayno}
+              className={[
+                "inline-flex items-center justify-center gap-2 h-9 px-3 text-sm rounded-md border font-semibold active:scale-[0.98]",
+                checkMissingPaynos !== null
+                  ? "border-amber-500 bg-amber-500 text-white hover:bg-amber-400"
+                  : "border-amber-300 bg-amber-100 text-zinc-800 hover:bg-amber-200 hover:border-amber-400",
+              ].join(" ")}
+            >
+              <ClipboardCheck size={16} strokeWidth={2} className="shrink-0" />
+              {/* 긴 텍스트(점검초기화)로 너비 고정, 실제 텍스트는 absolute로 전환 */}
+              <span className="relative">
+                <span className="invisible">점검초기화</span>
+                <span className="absolute inset-0 flex items-center justify-center">
+                  {checkMissingPaynos !== null ? "점검초기화" : "견적점검"}
+                </span>
+              </span>
+            </button>
             <IconBtn icon={X} label="닫기" variant="primary" onClick={() => window.close()} />
-            
           </div>
         </div>
       </div>
@@ -1170,6 +1292,11 @@ export default function LaborItemsPopup() {
                   selectedKey={effectivePayno}
                   onRowClick={(row) => setSelectedPayno(row.payno)}
                   onRowDoubleClick={(row) => insertWorkItemRow(row)}
+                  getRowClassName={(row) =>
+                    existingPaynos.has(row.payno)
+                      ? { className: "bg-yellow-50", allowBg: true, hoverClass: "hover:bg-yellow-100" }
+                      : ""
+                  }
                 />
               </div>
             </div>
