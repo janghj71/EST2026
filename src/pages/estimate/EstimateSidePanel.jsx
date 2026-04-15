@@ -354,8 +354,8 @@ function LaborPanel({
         >
           <option value="1">1 코트</option>
           <option value="2">2 코트</option>
-          <option value="3">3 코트</option>
-          <option value="4">4 코트</option>
+          <option value="4">3 코트</option>
+          <option value="5">4 코트</option>
         </select>
       </FormRow>
 

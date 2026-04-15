@@ -1860,10 +1860,28 @@ export default function EstimateEditPage() {
     setDeleteOpen(true);
   }, []);
 
+  // rows 합계 → master 필드 반영 (저장 직전 호출)
+  const masterWithSums = useCallback((targetRows = rows) => {
+    const sumLabor  = targetRows.reduce((a, r) => a + (Number(r.paysum)  || 0), 0);
+    const sumPart   = targetRows.reduce((a, r) => a + (Number(r.partsum) || 0), 0);
+    const supply    = sumLabor + sumPart;
+    const sumVat    = Math.round(supply * 0.1);
+    const sumTotal  = supply + sumVat;
+    return {
+      ...master,
+      paysum:    String(sumLabor),
+      partsum:   String(sumPart),
+      vat:       String(sumVat),
+      saletotal: String(sumTotal),
+    };
+  }, [master, rows]);
+
   const movePaintToBottom = useCallback(() => {
-    const paint = rows.filter((r) => r.paykind === "6");
-    const others = rows.filter((r) => r.paykind !== "6");
-    setRows([...others, ...paint].map((r, i) => ({ ...r, estb_seqno: i + 1 })));
+    // 컬러매칭(99990), 가열건조비(99991)는 맨 뒤 고정
+    const fixed  = rows.filter((r) => r.subpayno === "99990" || r.subpayno === "99991");
+    const paint  = rows.filter((r) => r.paykind === "6" && r.subpayno !== "99990" && r.subpayno !== "99991");
+    const others = rows.filter((r) => r.paykind !== "6" && r.subpayno !== "99990" && r.subpayno !== "99991");
+    setRows([...others, ...paint, ...fixed].map((r, i) => ({ ...r, estb_seqno: i + 1 })));
   }, [rows]);
 
   // 청구처 탭 이탈 시 호출 (EstimateEditPage 레벨 → useApi abort 없이 정상 동작)
@@ -1909,8 +1927,8 @@ export default function EstimateEditPage() {
   const handleClose = useCallback(async () => {
     try {
       await withLoading(async () => {
-        // 1. 접수(마스터) 저장 — 항상
-        await save(est_serial, master);
+        // 1. 접수(마스터) 저장 — 항상 (rows 합계 반영)
+        await save(est_serial, masterWithSums());
         // 2. 청구처 저장 — 사이드패널 open + claim 탭 활성 시에만
         if (sidePanelOpen && sideActive === "claim") {
           const claims = Array.isArray(master?.claims) ? master.claims : [];
@@ -1926,7 +1944,7 @@ export default function EstimateEditPage() {
     } catch (err) {
       alertError(err?.message ?? "저장 실패");
     }
-  }, [est_serial, master, rows, sidePanelOpen, sideActive,
+  }, [est_serial, master, masterWithSums, rows, sidePanelOpen, sideActive,
       save, saveClaim, saveAllDetails, withLoading, navigate, alertError]);
 
   const handleDuplicateCheck = useCallback(async () => {
@@ -1970,21 +1988,43 @@ export default function EstimateEditPage() {
   // [공유견적] 선택 시 — 가져온 detail rows를 현재 견적 끝에 추가
   const handleSharedEstimateSelect = useCallback((detailRows) => {
     if (!detailRows?.length) return;
+    const claim0 = masterRef.current?.claims?.[0];
     setRows((prev) => {
-      const added = detailRows.map((r, i) => ({
-        ...r,
-        estb_orgseqno: Date.now() + i,
-        estb_seqno: prev.length + i + 1,
-      }));
+      const added = detailRows.map((r, i) => {
+        // est_serial, estb_orgseqno, update_id 는 공유 row 값 사용 안 함
+        const { est_serial: _s, estb_orgseqno: _o, update_id: _u, ...rest } = r;
+
+        // paysum 재계산 — 현재 견적 청구처[0] 단가 기준
+        let paysum = rest.paysum;
+        if (claim0 && rest.workcode && rest.qty && rest.subpayno !== "99991") {
+          const qty = parseFloat(rest.qty);
+          if (!isNaN(qty)) {
+            let rate = null;
+            if ("SB".includes(rest.workcode))        rate = parseFloat(claim0.bpay);
+            else if (rest.workcode === "P")          rate = parseFloat(claim0.ppay);
+            else if ("RXOA".includes(rest.workcode)) rate = parseFloat(claim0.xpay);
+            if (rate != null && !isNaN(rate)) paysum = String(Math.round(rate * qty));
+          }
+        }
+
+        return {
+          ...rest,
+          est_serial,                      // 현재 견적번호
+          estb_orgseqno: newTempId(),        // 신규 임시 키 (_new_ prefix → INSERT)
+          estb_seqno: prev.length + i + 1,
+          update_id: getUserid(),          // 현재 로그인 사용자
+          paysum,
+        };
+      });
       return [...prev, ...added];
     });
-  }, [setRows]);
+  }, [setRows, est_serial]);
 
   const handleSaveAndList = useCallback(async () => {
     try {
       await withLoading(async () => {
-        // 1. 마스터 저장 (항상)
-        await save(est_serial, master);
+        // 1. 마스터 저장 (항상, rows 합계 반영)
+        await save(est_serial, masterWithSums());
         // 2. 청구처 저장 (사이드패널 open + claim 탭 활성 시만)
         if (sidePanelOpen && sideActive === "claim") {
           const claims = Array.isArray(master?.claims) ? master.claims : [];
@@ -1999,7 +2039,7 @@ export default function EstimateEditPage() {
     } catch (err) {
       alertError(err?.message ?? "저장 실패");
     }
-  }, [est_serial, master, rows, sidePanelOpen, sideActive,
+  }, [est_serial, masterWithSums, rows, sidePanelOpen, sideActive,
       save, saveClaim, saveAllDetails, claimDirtyRef, withLoading, alertError]);
 
   return (

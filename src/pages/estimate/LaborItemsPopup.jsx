@@ -1488,7 +1488,7 @@ export default function LaborItemsPopup() {
               {/* 도료 타입은 “둘 중 하나만” 표시 */}
               <div className="ml-2 text-xs font-semibold text-zinc-600">
                 {paintSolvent === "oil" ? "유용성" : "수용성"}
-                {pntcotCode ? ` - ${pntcotCode} 코트` : ""}
+                {pntcotCode ? ` - ${{ "1":"1", "2":"2", "4":"3", "5":"4" }[pntcotCode] ?? pntcotCode} 코트` : ""}
               </div>
 
               <div className="ml-auto flex items-center gap-2">

@@ -5,6 +5,7 @@ import { Share2, X, Search, Loader2 } from "lucide-react";
 import FixedHeadTable from "../../components/FixedHeadTable";
 import { useEstimate } from "../../hooks/useEstimate";
 import { useLoading } from "../../loading/useLoading";
+import { useAlert } from "../../alerts/useAlert";
 import { formatNumber } from "../../utils/numberFormat";
 
 // ── 목록 A 컬럼 ──────────────────────────────────────────────
@@ -20,10 +21,29 @@ const COLS_A = [
   },
 ];
 
+// ── 도장 부가정보 포맷 ────────────────────────────────────────
+const PNT_M_MAP   = { "1": "유성", "2": "수성" };
+const PNT_COT_MAP = { "1": "1코트", "2": "2코트", "4": "3코트", "5": "4코트" };
+
 // ── 목록 B 컬럼 ──────────────────────────────────────────────
 const COLS_B = [
   { key: "payname",      title: "작업내용", width: "200px" },
-  { key: "workcodename", title: "작업",     width: "70px"  },
+  {
+    key: "workcodename",
+    title: "작업",
+    width: "80px",
+    render: (val, row) => {
+      const m = PNT_M_MAP[row.pnt_m];
+      const c = PNT_COT_MAP[row.pntcot];
+      const paint = [m, c].filter(Boolean).join("·");
+      return (
+        <span>
+          {val}
+          {paint && <span className="ml-1 text-[10px] text-zinc-400">{paint}</span>}
+        </span>
+      );
+    },
+  },
   { key: "qty",          title: "시간",     width: "70px", align: "right" },
   {
     key: "paysum",
@@ -59,6 +79,7 @@ export default function SharedEstimateModal({
 
   const { fetchSharedEstimates, fetchDetails } = useEstimate();
   const { withLoading } = useLoading();
+  const alert = useAlert();
 
   // ── acc_scope 파싱 → 필터 버튼 옵션 ─────────────────────────
   const scopeOptions = useMemo(() => {
@@ -92,6 +113,8 @@ export default function SharedEstimateModal({
     try {
       const json = await fetchDetails(row.est_serial);
       setListBRows(json?.dataset ?? []);
+    } catch (err) {
+      alert.error(`견적 상세 조회 오류\n${err?.message ?? err}`);
     } finally {
       setLoadingB(false);
     }
@@ -113,6 +136,8 @@ export default function SharedEstimateModal({
       setListARows(rows);
       setSelectedScopes(new Set());
       if (rows.length > 0) await loadDetailFor(rows[0]);
+    } catch (err) {
+      alert.error(`견적 목록 조회 오류\n${err?.message ?? err}`);
     } finally {
       setLoadingSearch(false);
     }
@@ -126,17 +151,32 @@ export default function SharedEstimateModal({
     setListBRows([]);
     setSelectedA(null);
     const init = async () => {
-      await withLoading(async () => {
-        const json = await fetchSharedEstimates({ est_serial, isestopen: "1" });
-        const rows = json?.dataset ?? [];
-        setListARows(rows);
-        setSelectedScopes(new Set());
-        if (rows.length > 0) await loadDetailFor(rows[0]);
-      }, "견적 목록 조회 중...");
+      try {
+        await withLoading(async () => {
+          const json = await fetchSharedEstimates({ est_serial, isestopen: "1" });
+          const rows = json?.dataset ?? [];
+          setListARows(rows);
+          setSelectedScopes(new Set());
+          if (rows.length > 0) await loadDetailFor(rows[0]);
+        }, "견적 목록 조회 중...");
+      } catch (err) {
+        alert.error(`견적 목록 조회 오류\n${err?.message ?? err}`);
+      }
     };
     init();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // ── 필터 변경 시 첫 번째 Row 자동 선택 ──────────────────────
+  useEffect(() => {
+    if (filteredARows.length > 0) {
+      loadDetailFor(filteredARows[0]);
+    } else {
+      setSelectedA(null);
+      setListBRows([]);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedScopes]);
 
   // ── 목록 A 행 클릭 → B 조회 ───────────────────────────────
   const handleSelectA = useCallback(async (row) => {
@@ -211,7 +251,7 @@ export default function SharedEstimateModal({
               onClick={() => setSelectedScopes(new Set())}
               className={`w-[84px] py-1 rounded-full text-xs font-semibold border transition text-center truncate
                 ${selectedScopes.size === 0
-                  ? "bg-zinc-800 text-white border-zinc-800"
+                  ? "bg-orange-100 text-orange-700 border-orange-300"
                   : "bg-white text-zinc-600 border-zinc-300 hover:bg-zinc-50"}`}
             >
               전체
@@ -229,7 +269,7 @@ export default function SharedEstimateModal({
                 }
                 className={`w-[84px] py-1 rounded-full text-xs font-semibold border transition text-center truncate
                   ${selectedScopes.has(opt)
-                    ? "bg-zinc-800 text-white border-zinc-800"
+                    ? "bg-orange-100 text-orange-700 border-orange-300"
                     : "bg-white text-zinc-600 border-zinc-300 hover:bg-zinc-50"}`}
               >
                 {opt}

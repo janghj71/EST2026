@@ -415,7 +415,7 @@ export default function PaintItemsPopup() {
 
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="rounded-md bg-zinc-100 px-2 py-1 text-zinc-800">
-                    도장코트: <span className="font-semibold">{pntcotCode ? `${pntcotCode}코트` : "-"}</span>
+                    도장코트: <span className="font-semibold">{pntcotCode ? `${{ "1":"1", "2":"2", "4":"3", "5":"4" }[pntcotCode] ?? pntcotCode}코트` : "-"}</span>
                   </span>
                   <span className="rounded-md bg-zinc-100 px-2 py-1 text-zinc-800">
                     도장도료: <span className="font-semibold">{solventLabel(paintSolvent)}</span>

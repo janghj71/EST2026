@@ -1143,7 +1143,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
       return a + (Number(r.partsum) || 0);
     }, 0);
     const supply = labor + part;
-    const vat    = Math.floor(supply * 0.1);
+    const vat    = Math.round(supply * 0.1);
     return { sumLabor: labor, sumPart: part, sumSupply: supply, sumVat: vat, sumTotal: supply + vat };
   }, [rows, paysumEditingOrgSeq, paysumBeforeEdit, partsumEditingOrgSeq, partsumBeforeEdit]);
 
