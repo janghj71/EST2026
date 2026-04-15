@@ -9,6 +9,7 @@ import EstimateSidePanel from "./EstimateSidePanel";
 import EstimateItemsTable from "./EstimateItemsTable";
 
 import AlertModal from "../../components/AlertModal";
+import { ArrowLeft } from "lucide-react";
 import { openCenteredWindow } from "../../utils/popup";
 import { formatNumber } from "../../utils/numberFormat";
 import { useEstimate } from "../../hooks/useEstimate";
@@ -1966,19 +1967,40 @@ export default function EstimateEditPage() {
       setRows, setSelectedOrgSeqs, setSelectedOrgSeq, setSettleRefreshKey,
       claimDirtyRef, withLoading]);
 
-  const handleSaveAndList = useCallback(async () => {
-    // 저장 시 오더 재부여(델파이 방식)
-    const seqReNumbered = rows.map((r, i) => ({ ...r, estb_seqno: i + 1 }));
-    setRows(seqReNumbered);
+  // [공유견적] 선택 시 — 가져온 detail rows를 현재 견적 끝에 추가
+  const handleSharedEstimateSelect = useCallback((detailRows) => {
+    if (!detailRows?.length) return;
+    setRows((prev) => {
+      const added = detailRows.map((r, i) => ({
+        ...r,
+        estb_orgseqno: Date.now() + i,
+        estb_seqno: prev.length + i + 1,
+      }));
+      return [...prev, ...added];
+    });
+  }, [setRows]);
 
+  const handleSaveAndList = useCallback(async () => {
     try {
-      await save(est_serial, master);
+      await withLoading(async () => {
+        // 1. 마스터 저장 (항상)
+        await save(est_serial, master);
+        // 2. 청구처 저장 (사이드패널 open + claim 탭 활성 시만)
+        if (sidePanelOpen && sideActive === "claim") {
+          const claims = Array.isArray(master?.claims) ? master.claims : [];
+          for (const claim of claims) {
+            await saveClaim(est_serial, claim);
+          }
+          claimDirtyRef.current = false;
+        }
+        // 3. 견적내역 저장 (항상)
+        await saveAllDetails(rows);
+      }, "저장 중...");
     } catch (err) {
       alertError(err?.message ?? "저장 실패");
-      return;
     }
-    
-  }, [rows, master, est_serial, save,alertError]);
+  }, [est_serial, master, rows, sidePanelOpen, sideActive,
+      save, saveClaim, saveAllDetails, claimDirtyRef, withLoading, alertError]);
 
   return (
     <div className="h-screen bg-zinc-50 flex flex-col overflow-hidden">
@@ -1992,10 +2014,11 @@ export default function EstimateEditPage() {
             <div className="ml-auto">
               <button
                 type="button"
-                className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-50"
+                className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-50"
                 onClick={handleClose}
               >
-                목록
+                <ArrowLeft size={15} strokeWidth={2.5} />
+                견적목록으로 가기
               </button>
             </div>
           </div>
@@ -2041,6 +2064,8 @@ export default function EstimateEditPage() {
                 setSelectedOrgSeqs={setSelectedOrgSeqs}
                 workTimes={workTimes}
                 sidePanelOpen={sidePanelOpen}
+                est_serial={est_serial}
+                onSharedEstimateSelect={handleSharedEstimateSelect}
               />
               
             </div>

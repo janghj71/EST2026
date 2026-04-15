@@ -21,38 +21,20 @@ export default function AppLayout() {
 
   const menus = useMemo(
     () => [
-      {
-        key: "estimate",
-        label: "견적 관리",
-        items: [
-          { label: "일반 견적", path: "/estimate/normal" },
-          { label: "보험 견적", path: "/estimate/insurance" },
-        ],
-      },
+      { key: "estimate-normal",    label: "일반견적", path: "/estimate/normal" },
+      { key: "estimate-insurance", label: "보험견적", path: "/estimate/insurance" },
       {
         key: "send",
-        label: "전송 / 발송",
+        label: "문자발송",
         items: [
           { label: "문자 발송 내역", path: "/send/history" },
           { label: "견적서 문자 발송", path: "/send/estimate" },
           { label: "명세서 문자 발송", path: "/send/statement" },
-          { label: "국토부 정비이력 전송", path: "/send/repair" },
         ],
       },
-      {
-        key: "data",
-        label: "데이터 관리",
-        items: [
-          { label: "케미칼 항목 설정", path: "/chemical" },
-        ],
-      },
-      {
-        key: "settings",
-        label: "설정",
-        items: [
-          { label: "기초 설정", path: "/settings/basic" },
-        ],
-      },
+      { key: "mol",      label: "국토부 정비이력", path: "/send/repair" },
+      { key: "chemical", label: "케미칼 설정",     path: "/chemical" },
+      { key: "settings", label: "기초설정",         path: "/settings/basic" },
     ],
     []
   );
@@ -88,21 +70,32 @@ export default function AppLayout() {
             {/* 오른쪽: 메뉴 */}
             <div className="flex items-center gap-2" ref={menuWrapRef}>
               
-              {menus.map((m) => (
-                <Dropdown
-                  key={m.key}
-                  label={m.label}
-                  open={openMenu === m.key}
-                  onToggle={() =>
-                    setOpenMenu((p) => (p === m.key ? null : m.key))
-                  }
-                  items={m.items}
-                  onPick={(path) => {
-                    setOpenMenu(null);
-                    navigate(path);
-                  }}
-                />
-              ))}
+              {menus.map((m) =>
+                m.path ? (
+                  <button
+                    key={m.key}
+                    type="button"
+                    onClick={() => { setOpenMenu(null); navigate(m.path); }}
+                    className="h-9 px-3 rounded-md text-sm font-medium transition text-gray-700 hover:bg-gray-100"
+                  >
+                    {m.label}
+                  </button>
+                ) : (
+                  <Dropdown
+                    key={m.key}
+                    label={m.label}
+                    open={openMenu === m.key}
+                    onToggle={() =>
+                      setOpenMenu((p) => (p === m.key ? null : m.key))
+                    }
+                    items={m.items}
+                    onPick={(path) => {
+                      setOpenMenu(null);
+                      navigate(path);
+                    }}
+                  />
+                )
+              )}
             </div>
           </div>
         </div>

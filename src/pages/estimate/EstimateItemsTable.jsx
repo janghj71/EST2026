@@ -40,6 +40,7 @@ import {
 } from "lucide-react";
 
 import SimplePopover from "./SimplePopover";
+import SharedEstimateModal from "./SharedEstimateModal";
 
 const WORK_OPTIONS = [
   { code: "R", label: "탈착" },
@@ -251,6 +252,8 @@ export default function EstimateItemsTable({
   setSelectedOrgSeqs,
   workTimes = [],
   sidePanelOpen = false,
+  est_serial,
+  onSharedEstimateSelect,
 }) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } })
@@ -262,6 +265,7 @@ export default function EstimateItemsTable({
 
   const { fetchCodepnt } = useCodepnt();
   const [pntRows, setPntRows] = useState([]);
+  const [sharedEstOpen, setSharedEstOpen] = useState(false);
   const [pntAccRows, setPntAccRows] = useState([]); // 악세사리 목록 캐시 (carcode='', paykind='0')
   const { fetchTsPayno } = useTs_repart();
   const [tsPaynoRows, setTsPaynoRows] = useState([]); // 국토부 ts_payno 목록 캐시
@@ -1353,7 +1357,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
 
           <IconBtn icon={ArrowDownWideNarrow} label="도장 하단정렬" onClick={onMovePaintToBottom} />
           <IconBtn icon={Send} label="정비이력전송" onClick={() => alert("TODO")} />
-          <IconBtn icon={Share2} label="공유견적" onClick={() => alert("TODO")} />
+          <IconBtn icon={Share2} label="공유견적" onClick={() => setSharedEstOpen(true)} />
         </div>
       </div>
 
@@ -1383,11 +1387,17 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                 }
               }}
               rowRenderer={rowRenderer}
-              getRowClassName={(row) =>
-                String(row?.paykind) === "6"
-                  ? { className: "bg-[#f8f8ee]", allowBg: true, hoverClass: "" }
-                  : ""
-              }
+              getRowClassName={(row) => {
+                const isOverlap = String(row?.state) === "O";
+                const isPaint   = String(row?.paykind) === "6";
+                if (isOverlap && isPaint)
+                  return { className: "text-red-600 bg-[#f8f8ee]", allowBg: true, hoverClass: "" };
+                if (isOverlap)
+                  return { className: "text-red-600", allowBg: false };
+                if (isPaint)
+                  return { className: "bg-[#f8f8ee]", allowBg: true, hoverClass: "" };
+                return "";
+              }}
               getGutterRowClass={(key) => {
                 const r = rows.find((row) => row.estb_orgseqno === key);
                 return String(r?.paykind) === "6" ? "bg-[#f8f8ee]" : "";
@@ -1988,6 +1998,18 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
           </div>
         </div>
       )}
+
+      {/* 공유견적 모달 */}
+      <SharedEstimateModal
+        open={sharedEstOpen}
+        onClose={() => setSharedEstOpen(false)}
+        est_serial={est_serial}
+        carname={master?.carname ?? ""}
+        onSelect={(detailRows) => {
+          onSharedEstimateSelect?.(detailRows);
+          setSharedEstOpen(false);
+        }}
+      />
     </div>
   );
 }

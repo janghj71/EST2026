@@ -114,6 +114,23 @@ export function useEstimate() {
     [detailRefetch]
   );
 
+  // ── 공유견적 목록 조회 (isestopen='1', carname 선택) ──
+  const { refetch: sharedEstRefetch } = useApi({
+    path: "/est_masterestimate_s.aspx",
+    method: "POST",
+    bodyType: "form",
+    immediate: false,
+  });
+
+  const fetchSharedEstimates = useCallback(
+    ({ est_serial, isestopen = "1", findtext } = {}) => {
+      const body = { est_serial, isestopen };
+      if (findtext?.trim()) body.findtext = findtext.trim();
+      return sharedEstRefetch(body);
+    },
+    [sharedEstRefetch]
+  );
+
   // ── 중복체크 (est_serial) ──
   const { refetch: overlapRefetch } = useApi({
     path: "/est_overlap_s.aspx",
@@ -155,5 +172,9 @@ export function useEstimate() {
 
     // 중복체크
     fetchOverlap,
+
+    // 공유견적 목록
+    fetchSharedEstimates,
   };
 }
+
