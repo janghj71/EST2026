@@ -41,6 +41,7 @@ import {
 
 import SimplePopover from "./SimplePopover";
 import SharedEstimateModal from "./SharedEstimateModal";
+import BasicMaintenanceMenu from "./BasicMaintenanceMenu";
 
 const WORK_OPTIONS = [
   { code: "R", label: "탈착" },
@@ -54,6 +55,9 @@ const WORK_OPTIONS = [
   { code: "G", label: "구난" },
   { code: "W", label: "세차" },
 ];
+
+// workcode → workcodename 빠른 조회
+const WC_NAME_MAP = Object.fromEntries(WORK_OPTIONS.map((o) => [o.code, o.label]));
 
 /** 도장(P) 소분류 — master.pntkind 별, state 포함 */
 const PAINT_OPTIONS = {
@@ -336,6 +340,19 @@ export default function EstimateItemsTable({
     document.addEventListener("mousedown", handle);
     return () => document.removeEventListener("mousedown", handle);
   }, [deleteMenuOpen]);
+
+  // ── 기본정비항목 드롭다운 ───────────────────────────────────────
+  const [basicMenuOpen, setBasicMenuOpen] = useState(false);
+  const basicMenuRef = useRef(null);
+
+  useEffect(() => {
+    if (!basicMenuOpen) return;
+    const handle = (e) => {
+      if (!basicMenuRef.current?.contains(e.target)) setBasicMenuOpen(false);
+    };
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [basicMenuOpen]);
 
   // ── 선택 드롭다운 ───────────────────────────────────────────────
   const [selectMenuOpen, setSelectMenuOpen] = useState(false);
@@ -1241,6 +1258,102 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
   // ref 항상 최신 함수로 동기화
   insertAfterSelectedRef.current = insertAfterSelected;
 
+  // ── 기본정비항목 소분류 클릭 → 공임 Row 삽입 ───────────────────
+  const handleBasicItemClick = useCallback((subItem) => {
+    // subItem: { value: subcode, label: codename, def_value, ... }
+    const subpayno  = String(subItem.value ?? "");
+    const workcode  = subpayno.substring(0, 1);
+    const workcodename = WC_NAME_MAP[workcode] ?? "";
+    const qty = subItem.def_value ?? "0";
+
+    // 중복 체크 — 같은 subpayno 가 이미 존재하면 삽입 불가
+    if (subpayno && rows.some((r) => r.subpayno === subpayno)) {
+      alertInfo(`이미 추가된 항목입니다.\n[${subItem.label}]`);
+      return;
+    }
+
+    // paysum 계산
+    const claim = master?.claims?.[0];
+    let paysum = "0";
+    if (claim && workcode && qty && qty !== "0") {
+      const qtyNum = parseFloat(qty);
+      if (!isNaN(qtyNum)) {
+        let rate = null;
+        if ("SB".includes(workcode))         rate = parseFloat(claim.bpay);
+        else if (workcode === "P")           rate = parseFloat(claim.ppay);
+        else if ("RXOA".includes(workcode))  rate = parseFloat(claim.xpay);
+        if (rate != null && !isNaN(rate)) paysum = String(Math.round(rate * qtyNum));
+      }
+    }
+
+    // 삽입 위치: 도장컬러매칭(99990) / 가열건조비(99991) 보다 항상 위
+    // ※ closure의 rows로 seqno를 미리 계산 → onInsertDetail에 올바른 값 전달
+    const fixedIdxNow = rows.findIndex(
+      (r) => r.subpayno === "99990" || r.subpayno === "99991"
+    );
+    const insertAtNow = fixedIdxNow >= 0 ? fixedIdxNow : rows.length;
+    const seqno = rows[insertAtNow]?.estb_seqno ?? String(insertAtNow + 1).padStart(3, "0");
+
+    const base = rows.length > 0 ? rows[rows.length - 1] : null;
+
+    const newRow = {
+      comcode:        base?.comcode    ?? getComcode(),
+      est_serial:     base?.est_serial ?? master?.est_serial ?? "",
+      estb_orgseqno:  "_new_" + Date.now(),
+      estb_seqno:     seqno,
+      paykind:        "4",
+      payno:          "99994",
+      subpayno,
+      payname:        subItem.label ?? "",
+      workcode,
+      workcodename,
+      qty,
+      oqty:           qty,
+      paysum,
+      partsum:        "0",
+      price:          "",
+      part_makercode: "",
+      state:          "",
+      statename:      "",
+      pnt_extr:       "",
+      pnt_hour:       "",
+      pnt_part:       "0",
+      pnt_m:          "",
+      pntcot:         "",
+      ts_payno:       "",
+      update_id:      getUserid(),
+      paykindname:    "#공임",
+      b_level:        "0.00",
+      b_area:         "0",
+      pnt_reduce:     "0",
+      body_panel:     "",
+    };
+
+    setRows((prev) => {
+      // prev 기준으로 insertAt 재계산 (batched update 대응)
+      const fixedIdx = prev.findIndex(
+        (r) => r.subpayno === "99990" || r.subpayno === "99991"
+      );
+      const insertAt = fixedIdx >= 0 ? fixedIdx : prev.length;
+      return [
+        ...prev.slice(0, insertAt),
+        newRow,                         // seqno는 이미 newRow에 반영됨
+        ...prev.slice(insertAt),
+      ];
+    });
+
+    const _tempId = newRow.estb_orgseqno;
+    setSelectedOrgSeq?.(_tempId);
+    onInsertDetail?.(newRow)?.then?.((result) => {
+      // 서버 저장 후 tempId → newserial 로 selectedOrgSeq 갱신
+      if (result?.newserial) {
+        setSelectedOrgSeq?.((prev) =>
+          prev === _tempId ? result.newserial : prev
+        );
+      }
+    });
+  }, [rows, setRows, setSelectedOrgSeq, master, onInsertDetail]);
+
   // ── 멀티선택 핸들러 ─────────────────────────────────────────────
   const handleSelectParts = useCallback(() => {
     const seqs = new Set(
@@ -1326,7 +1439,19 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
         </div>
         <IconBtn icon={Plus} label="공임추가" onClick={() => insertAfterSelected("4")} />
         <IconBtn icon={Plus} label="부품추가" onClick={() => insertAfterSelected("5")} />
-        <IconBtn icon={ListPlus} label="기본정비항목" onClick={() => alert("TODO")} />
+        {/* 기본정비항목 드롭다운 */}
+        <div className="relative" ref={basicMenuRef}>
+          <IconBtn
+            icon={ListPlus}
+            label="기본정비항목"
+            onClick={() => setBasicMenuOpen((v) => !v)}
+          />
+          <BasicMaintenanceMenu
+            open={basicMenuOpen}
+            onClose={() => setBasicMenuOpen(false)}
+            onItemClick={handleBasicItemClick}
+          />
+        </div>
 
         <div className="ml-auto flex items-center gap-2">
           <div className="flex items-center gap-2 rounded-md bg-zinc-50 px-2 py-1">
@@ -1832,7 +1957,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                     onClick={(e) => setTsPaynoSubRect({ rect: e.currentTarget.getBoundingClientRect(), kind })}
                   >
                     <span>{kind}</span>
-                    <span className="text-zinc-400">▶</span>
+                    <span className="text-zinc-400">{">"}</span>
                   </button>
                 ))}
               </div>

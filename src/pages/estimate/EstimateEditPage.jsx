@@ -890,7 +890,12 @@ export default function EstimateEditPage() {
         if (String(payname).includes("범퍼") && state === "1") {
           const tbEntry = (wrk34CodesRef.current ?? []).find((c) => c.value === "9");
           if (tbEntry) {
-            const qty = String(Number(tbEntry.def_value ?? 0) / 100);
+            const qty        = String(Number(tbEntry.def_value ?? 0) / 100);
+            const _ex_qty    = parseFloat(qty);
+            const _ex_ppay   = parseFloat(_pnt_claim0?.ppay ?? "0");
+            const _ex_paysum = (_pnt_claim0 && !isNaN(_ex_qty) && !isNaN(_ex_ppay))
+              ? String(Math.round(_ex_ppay * _ex_qty))
+              : "0";
             extraRow = {
               comcode,
               est_serial:     estSerial,
@@ -906,7 +911,7 @@ export default function EstimateEditPage() {
               qty,
               oqty:           qty,
               partsum:        "0",
-              paysum:         "0",
+              paysum:         _ex_paysum,
               part_makercode: "",
               state:          state ?? "",
               statename:      "",
@@ -1028,6 +1033,14 @@ export default function EstimateEditPage() {
         const comcode   = masterRef.current?.comcode ?? getComcode();
         const estSerial = masterRef.current?.est_serial ?? est_serial ?? "";
 
+        // paysum 즉시 계산 (도장행: ppay × hour)
+        const _pnt2_claim0 = masterRef.current?.claims?.[0];
+        const _pnt2_qty    = parseFloat(hour ?? "0");
+        const _pnt2_ppay   = parseFloat(_pnt2_claim0?.ppay ?? "0");
+        const _pnt2_paysum = (_pnt2_claim0 && !isNaN(_pnt2_qty) && !isNaN(_pnt2_ppay))
+          ? String(Math.round(_pnt2_ppay * _pnt2_qty))
+          : "0";
+
         const newRow = {
           comcode,
           est_serial:     estSerial,
@@ -1043,7 +1056,7 @@ export default function EstimateEditPage() {
           qty:            String(hour),
           oqty:           String(hour),
           partsum:        String(partsum),
-          paysum:         "0",
+          paysum:         _pnt2_paysum,
           part_makercode: "",
           state,
           statename:      "",
@@ -1069,7 +1082,13 @@ export default function EstimateEditPage() {
         if (String(payname).includes("범퍼") && state === "1" && !isSubseq2) {
           const tbEntry = (wrk34CodesRef.current ?? []).find((c) => c.value === "9");
           if (tbEntry) {
-            const qty = String(Number(tbEntry.def_value ?? 0) / 100);
+            const qty        = String(Number(tbEntry.def_value ?? 0) / 100);
+            const _ex2_claim0 = masterRef.current?.claims?.[0];
+            const _ex2_qty    = parseFloat(qty);
+            const _ex2_ppay   = parseFloat(_ex2_claim0?.ppay ?? "0");
+            const _ex2_paysum = (_ex2_claim0 && !isNaN(_ex2_qty) && !isNaN(_ex2_ppay))
+              ? String(Math.round(_ex2_ppay * _ex2_qty))
+              : "0";
             extraRow = {
               comcode,
               est_serial:     estSerial,
@@ -1085,7 +1104,7 @@ export default function EstimateEditPage() {
               qty,
               oqty:           qty,
               partsum:        "0",
-              paysum:         "0",
+              paysum:         _ex2_paysum,
               part_makercode: "",
               state,
               statename:      "",
@@ -1295,6 +1314,14 @@ export default function EstimateEditPage() {
           );
           const resolvedTsPayno = tsPaynoRow?.ts_payno ?? "";
 
+          // paysum 즉시 계산 (도장행: ppay × hour)
+          const _pnt3_claim0 = masterRef.current?.claims?.[0];
+          const _pnt3_qty    = parseFloat(hour ?? "0");
+          const _pnt3_ppay   = parseFloat(_pnt3_claim0?.ppay ?? "0");
+          const _pnt3_paysum = (_pnt3_claim0 && !isNaN(_pnt3_qty) && !isNaN(_pnt3_ppay))
+            ? String(Math.round(_pnt3_ppay * _pnt3_qty))
+            : "0";
+
           newRows.push({
             comcode,
             est_serial:     estSerial,
@@ -1310,7 +1337,7 @@ export default function EstimateEditPage() {
             qty:            String(hour),
             oqty:           String(hour),
             partsum:        String(partsum),
-            paysum:         "0",
+            paysum:         _pnt3_paysum,
             part_makercode: "",
             state,
             statename:      "",
@@ -1334,7 +1361,13 @@ export default function EstimateEditPage() {
           if (String(paintRow.payname ?? "").includes("범퍼") && state === "1" && !isSubseq2) {
             const tbEntry = (wrk34CodesRef.current ?? []).find((c) => c.value === "9");
             if (tbEntry) {
-              const qty = String(Number(tbEntry.def_value ?? 0) / 100);
+              const qty         = String(Number(tbEntry.def_value ?? 0) / 100);
+              const _ex3_claim0 = masterRef.current?.claims?.[0];
+              const _ex3_qty    = parseFloat(qty);
+              const _ex3_ppay   = parseFloat(_ex3_claim0?.ppay ?? "0");
+              const _ex3_paysum = (_ex3_claim0 && !isNaN(_ex3_qty) && !isNaN(_ex3_ppay))
+                ? String(Math.round(_ex3_ppay * _ex3_qty))
+                : "0";
               newRows.push({
                 comcode,
                 est_serial:     estSerial,
@@ -1350,7 +1383,7 @@ export default function EstimateEditPage() {
                 qty,
                 oqty:           qty,
                 partsum:        "0",
-                paysum:         "0",
+                paysum:         _ex3_paysum,
                 part_makercode: "",
                 state,
                 statename:      "",
@@ -1445,6 +1478,14 @@ export default function EstimateEditPage() {
         const comcode   = masterRef.current?.comcode ?? getComcode();
         const estSerial = masterRef.current?.est_serial ?? est_serial ?? "";
 
+        // paysum 즉시 계산 (도장행: ppay × hour)
+        const _pnt4_claim0 = masterRef.current?.claims?.[0];
+        const _pnt4_qty    = parseFloat(hour ?? "0");
+        const _pnt4_ppay   = parseFloat(_pnt4_claim0?.ppay ?? "0");
+        const _pnt4_paysum = (_pnt4_claim0 && !isNaN(_pnt4_qty) && !isNaN(_pnt4_ppay))
+          ? String(Math.round(_pnt4_ppay * _pnt4_qty))
+          : "0";
+
         const newRow = {
           comcode,
           est_serial:     estSerial,
@@ -1460,7 +1501,7 @@ export default function EstimateEditPage() {
           qty:            String(hour),
           oqty:           String(hour),
           partsum:        String(partsum),
-          paysum:         "0",
+          paysum:         _pnt4_paysum,
           part_makercode: "",
           state:          "1",
           statename:      "",
@@ -1917,11 +1958,15 @@ export default function EstimateEditPage() {
   const handleSettleEnter = useCallback(async () => {
     try {
       await saveAllDetails(rows);
+      // 저장 후 견적내역 리프레시 — _new_* 임시 ID를 실제 서버 ID로 갱신
+      const detailJson = await fetchDetails(est_serial);
+      const refreshed  = detailJson?.dataset ?? [];
+      setRows(refreshed);
       setSettleRefreshKey((k) => k + 1);
     } catch (err) {
       alertError(err?.message ?? "저장 실패");
     }
-  }, [rows, saveAllDetails, alertError]);
+  }, [rows, est_serial, saveAllDetails, fetchDetails, setRows, setSettleRefreshKey, alertError]);
 
   // [목록] 버튼: 전체 저장 후 이동
   const handleClose = useCallback(async () => {
@@ -2035,12 +2080,21 @@ export default function EstimateEditPage() {
         }
         // 3. 견적내역 저장 (항상)
         await saveAllDetails(rows);
+        // 4. 저장 후 견적내역 리프레시 — _new_* 임시 ID를 실제 서버 ID로 갱신
+        //    (미리프레시 시 재저장 시 _new_* 가 null 로 전송되어 중복 INSERT 발생)
+        const detailJson = await fetchDetails(est_serial);
+        const refreshed  = detailJson?.dataset ?? [];
+        setRows(refreshed);
+        if (sidePanelOpen && sideActive === "settle") {
+          setSettleRefreshKey((k) => k + 1);
+        }
       }, "저장 중...");
     } catch (err) {
       alertError(err?.message ?? "저장 실패");
     }
-  }, [est_serial, masterWithSums, rows, sidePanelOpen, sideActive,
-      save, saveClaim, saveAllDetails, claimDirtyRef, withLoading, alertError]);
+  }, [est_serial, master, masterWithSums, rows, sidePanelOpen, sideActive,
+      save, saveClaim, saveAllDetails, fetchDetails, setRows, setSettleRefreshKey,
+      claimDirtyRef, withLoading, alertError]);
 
   return (
     <div className="h-screen bg-zinc-50 flex flex-col overflow-hidden">
