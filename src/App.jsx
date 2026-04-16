@@ -30,6 +30,7 @@ import LaborItemsPopup from "./pages/estimate/LaborItemsPopup";
 import PaintItemsPopup from "./pages/estimate/PaintItemsPopup";
 import ChemicalItemsPopup from "./pages/estimate/ChemicalItemsPopup";
 import PartLookupPopup from "./pages/estimate/PartLookupPopup";
+import InspectionEstimatePrint from "./prints/InspectionEstimatePrint";
 
 export default function App() {
   return (
@@ -48,7 +49,7 @@ export default function App() {
         <Route path="paint-items" element={<PaintItemsPopup />} />
         <Route path="chemical-items" element={<ChemicalItemsPopup />} />
         <Route path="part-lookup" element={<PartLookupPopup />} />
-
+        <Route path="/print/inspection-estimate" element={<InspectionEstimatePrint />} />
 
         {/* 상단 고정 레이아웃 */}
         <Route element={<AppLayout />}>

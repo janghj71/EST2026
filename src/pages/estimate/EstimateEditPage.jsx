@@ -9,6 +9,7 @@ import EstimateSidePanel from "./EstimateSidePanel";
 import EstimateItemsTable from "./EstimateItemsTable";
 
 import AlertModal from "../../components/AlertModal";
+import ClaimSelectModal from "./ClaimSelectModal";
 import { ArrowLeft } from "lucide-react";
 import { openCenteredWindow } from "../../utils/popup";
 import { formatNumber } from "../../utils/numberFormat";
@@ -230,6 +231,7 @@ export default function EstimateEditPage() {
   const { deleteBySeqs, deleteAll } = useEstimateDetailDelete();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(null); // null | { type:"all" } | { type:"selected", orgSeqs:string[] }
+  const [claimSelectOpen, setClaimSelectOpen] = useState(false);
 
   const laborWinRef = useRef(null);
   const [laborWinOpen, setLaborWinOpen] = useState(false);
@@ -237,6 +239,7 @@ export default function EstimateEditPage() {
   const [paintWinOpen, setPaintWinOpen] = useState(false);
   const chemicalWinRef = useRef(null);
   const partLookupWinRef = useRef(null);
+  const photoWinRef = useRef(null);
 
   const childWinsRef = useRef(new Set());
   
@@ -304,6 +307,59 @@ export default function EstimateEditPage() {
     } catch { /* empty */ }
   }, [rows, paintWinOpen]);
   
+  const openPhotoViewerPopup = useCallback(() => {
+    const estId = est_serial || "";
+    const carNo = master?.carno || "";
+    const url =
+      `/photo-viewer?est_serial=${encodeURIComponent(estId)}` +
+      `&carno=${encodeURIComponent(carNo)}`;
+
+    // 이미 열려있으면 재사용 + ctx만 갱신
+    if (photoWinRef.current && !photoWinRef.current.closed) {
+      try {
+        photoWinRef.current.focus();
+        photoWinRef.current.postMessage(
+          { type: "PHOTO_VIEWER_SET_CTX", payload: { est_serial: estId, carno: carNo } },
+          window.location.origin
+        );
+        registerChildWin(photoWinRef.current);
+        return;
+      } catch {
+        photoWinRef.current = null;
+      }
+    }
+
+    // 없거나 닫혔으면 새로 열기 (window name 고정 → 브라우저 레벨 중복 방지)
+    const win = openCenteredWindow(url, "photoViewer", 1200, 800, {
+      scrollbars: "yes",
+      resizable: "yes",
+    });
+    photoWinRef.current = win;
+    registerChildWin(win);
+  }, [est_serial, master]);
+
+  const openInspectionPrint = useCallback((estbo_seqno) => {
+    const url =
+      `/print/inspection-estimate` +
+      `?est_serial=${encodeURIComponent(est_serial)}` +
+      `&estbo_seqno=${encodeURIComponent(estbo_seqno ?? "")}`;
+    openCenteredWindow(url, "inspectionEstimatePrint", 900, 1200, {
+      scrollbars: "yes",
+      resizable: "yes",
+    });
+  }, [est_serial]);
+
+  const handlePrint = useCallback((label) => {
+    if (label !== "점검정비 견적서") return;
+    const claimList = master?.claims ?? [];
+    if (claimList.length === 0) return;
+    if (claimList.length === 1) {
+      openInspectionPrint(claimList[0].estbo_seqno);
+    } else {
+      setClaimSelectOpen(true);
+    }
+  }, [master, openInspectionPrint]);
+
   const openLaborItemsPopup = async () => {
     await saveClaimIfActive();
     const estSerial   = est_serial || "";
@@ -2126,6 +2182,9 @@ export default function EstimateEditPage() {
               onOpenChemicalItems={openChemicalItemsPopup}
               onOpenPartLookup={openPartLookupPopup}
               onDuplicateCheck={handleDuplicateCheck}
+              onOpenPhotoViewer={openPhotoViewerPopup}
+              onPrint={handlePrint}
+              master={master}
             />
           </div>
         </div>
@@ -2183,6 +2242,17 @@ export default function EstimateEditPage() {
           />
         </div>
       </div>
+
+      {/* 청구처 선택 */}
+      <ClaimSelectModal
+        open={claimSelectOpen}
+        onClose={() => setClaimSelectOpen(false)}
+        claims={master?.claims ?? []}
+        onSelect={(estbo_seqno) => {
+          setClaimSelectOpen(false);
+          openInspectionPrint(estbo_seqno);
+        }}
+      />
 
       {/* 삭제 confirm */}
       <AlertModal
