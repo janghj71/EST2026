@@ -1,6 +1,8 @@
 // src/prints/InspectionEstimatePrint.jsx
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useEstimate } from "../hooks/useEstimate";
+import { useEstimateClaims } from "../hooks/useEstimateClaims";
+import { useMasterEstimateSave } from "../hooks/useMasterEstimateSave";
 import { useCompanyInfo } from "../hooks/useCompanyInfo";
 import { useSealImage } from "../hooks/useSealImage";
 import { useUserSettings } from "../hooks/useUserSettings";
@@ -33,25 +35,58 @@ export default function InspectionEstimatePrint() {
   const estbo_seqno = ctx?.estbo_seqno ?? "";
 
   const { fetchMasterById, fetchDetails } = useEstimate();
+  const { fetchClaims } = useEstimateClaims();
+  const { updateEstPrint } = useMasterEstimateSave();
   const { form: ci, loading: ciLoading }  = useCompanyInfo();
   const { companySeal, loading: sealLoading } = useSealImage();
   const { users, loading: usersLoading }  = useUserSettings();
 
-  const [master,     setMaster]     = useState(null);
-  const [rows,       setRows]       = useState([]);
-  const [writerSeal, setWriterSeal] = useState("");
+  const [master,       setMaster]       = useState(null);
+  const [rows,         setRows]         = useState([]);
+  const [writerSeal,   setWriterSeal]   = useState("");
+  const [claimName,    setClaimName]    = useState("");
+  const [confirmOpen,  setConfirmOpen]  = useState(false);  // 인쇄확인 모달
+  const estPrintRef = useRef(null);   // 최신 est_print 값 보관
 
-  // ── 마스터 + 상세 조회 ──────────────────────────────────────────
+
+  // ── 마스터 + 상세 + 청구처 조회 ────────────────────────────────
   useEffect(() => {
     if (!est_serial) return;
     Promise.all([
       fetchMasterById(est_serial),
       fetchDetails(est_serial, estbo_seqno || undefined),
-    ]).then(([mj, dj]) => {
-      setMaster(mj?.dataset?.[0] ?? null);
+      fetchClaims(est_serial),
+    ]).then(([mj, dj, cj]) => {
+      const m = mj?.dataset?.[0] ?? null;
+      setMaster(m);
+      estPrintRef.current = m?.est_print ?? "";   // est_print 현재값 보관
       setRows(dj?.dataset ?? []);
+      const claims = cj?.dataset ?? [];
+      const matched = claims.find((c) => c.estbo_seqno === estbo_seqno);
+      setClaimName(matched?.bocomname ?? claims[0]?.bocomname ?? "");
     }).catch(() => {});
+  // est_serial이 확정된 후 fetch 실행 (useUrlContextSnapshot 타이밍 대응)
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [est_serial]);
+
+  // ── afterprint → 확인 모달 표시 (est_print≠'1' 인 경우만) ──
+  const handleAfterPrint = useCallback(() => {
+    if (estPrintRef.current !== "1") {
+      setConfirmOpen(true);
+    }
+  }, []);
+
+  // ── [예, 인쇄됨] 클릭 → API 호출 + 로컬 상태 업데이트 ──────
+  const handleConfirmYes = useCallback(() => {
+    setConfirmOpen(false);
+    updateEstPrint(est_serial).then(() => {
+      estPrintRef.current = "1";
+      setMaster((m) => m ? { ...m, est_print: "1" } : m);
+    }).catch(() => {});
+  }, [est_serial, updateEstPrint]);
+
+  const handleConfirmNo = useCallback(() => {
+    setConfirmOpen(false);
   }, []);
 
   // ── 작성자 인감 — users 로드 후 w_manname 으로 검색 ──────────
@@ -78,8 +113,7 @@ export default function InspectionEstimatePrint() {
   const isInsurance = String(master?.seccode) === "12";
   const tel = [ci.tel0, ci.tel1, ci.tel2].filter(Boolean).join("-");
   const addr = [ci.addr1, ci.addr2].filter(Boolean).join(" ");
-  // 청구처명 — 마스터의 bocomname 또는 claimsBocomname
-  const claimName = master?.bocomname ?? "";
+  // claimName 은 state 로 관리 (fetchClaims 에서 estbo_seqno 기준으로 설정)
 
   // qty 표시 — paykind 3/5 만
   const showQty = (row) => {
@@ -201,7 +235,9 @@ export default function InspectionEstimatePrint() {
   };
 
   // ── 합계 + 푸터 (마지막 페이지만) ───────────────────────────
-  const renderSummaryAndFooter = () => (
+  const renderSummaryAndFooter = (pageIndex, totalPages) => {
+    const isLast = pageIndex === totalPages - 1;
+    return (
     <>
       <table style={{ marginTop: "-1px" }}>
         <colgroup>
@@ -225,11 +261,11 @@ export default function InspectionEstimatePrint() {
         <tbody>
           <tr style={{ fontWeight: "bold" }}>
             <td style={TDC}>{isInsurance ? "보험" : "일반"}</td>
-            <td style={TDR}>{fmtN(sumPart)}</td>
-            <td style={TDR}>{fmtN(sumPay)}</td>
-            <td style={TDR}>{fmtN(sumTotal)}</td>
-            <td style={TDR}>{fmtN(sumVat)}</td>
-            <td style={TDR}>{fmtN(sumGrand)}</td>
+            <td style={TDR}>{isLast ? fmtN(sumPart)  : ""}</td>
+            <td style={TDR}>{isLast ? fmtN(sumPay)   : ""}</td>
+            <td style={TDR}>{isLast ? fmtN(sumTotal) : ""}</td>
+            <td style={TDR}>{isLast ? fmtN(sumVat)   : ""}</td>
+            <td style={TDR}>{isLast ? fmtN(sumGrand) : ""}</td>
           </tr>
         </tbody>
       </table>
@@ -285,9 +321,16 @@ export default function InspectionEstimatePrint() {
             <span style={{ marginLeft: "8px" }}>나. 재제조품: B&nbsp;&nbsp;&nbsp;다. 중고품(재생품을 포함합니다): C&nbsp;&nbsp;&nbsp;라. 인증대체부품: D&nbsp;&nbsp;&nbsp;마. 수입부품: F</span>
           </div>
         </div>
+
+      </div>
+
+      {/* 페이지 번호 — 푸터 박스 밖 */}
+      <div style={{ textAlign: "center", fontSize: "8pt", marginTop: "2mm", color: "#555" }}>
+        - {pageIndex + 1} / {totalPages} -
       </div>
     </>
   );
+  };
 
   // ── 페이지 공통 헤더 (매 페이지 동일) ──────────────────────
   const renderPageHeader = () => (
@@ -405,13 +448,56 @@ export default function InspectionEstimatePrint() {
       {renderDetailTable(chunkRows)}
 
       {/* 매 페이지 동일한 합계 + 푸터 */}
-      {renderSummaryAndFooter()}
+      {renderSummaryAndFooter(pageIndex, pageChunks.length)}
     </div>
   ));
 
   return (
-    <PrintPreviewLayout>
-      {pageList}
-    </PrintPreviewLayout>
+    <>
+      <PrintPreviewLayout onAfterPrint={handleAfterPrint}>
+        {pageList}
+      </PrintPreviewLayout>
+
+      {/* ── 인쇄 확인 모달 ── */}
+      {confirmOpen && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 99999,
+          background: "rgba(0,0,0,0.45)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <div style={{
+            background: "#fff", borderRadius: "8px",
+            padding: "28px 32px", minWidth: "320px",
+            boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
+            fontFamily: "'맑은 고딕','Malgun Gothic',sans-serif",
+            textAlign: "center",
+          }}>
+            <div style={{ fontSize: "15pt", marginBottom: "8px" }}>🖨</div>
+            <div style={{ fontSize: "13pt", fontWeight: "bold", marginBottom: "6px" }}>
+              인쇄가 정상 출력되었습니까?
+            </div>
+            <div style={{ fontSize: "9.5pt", color: "#64748b", marginBottom: "24px" }}>
+              확인 시 견적서가 수정 불가로 변경됩니다.
+            </div>
+            <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
+              <button onClick={handleConfirmYes} style={{
+                padding: "8px 28px", borderRadius: "6px", border: "none",
+                background: "#2563eb", color: "#fff",
+                fontSize: "11pt", fontWeight: "bold", cursor: "pointer",
+              }}>
+                예, 인쇄됨
+              </button>
+              <button onClick={handleConfirmNo} style={{
+                padding: "8px 28px", borderRadius: "6px",
+                border: "1px solid #cbd5e1", background: "#fff",
+                fontSize: "11pt", cursor: "pointer", color: "#334155",
+              }}>
+                아니오
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

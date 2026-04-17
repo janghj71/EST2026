@@ -1,16 +1,24 @@
 // src/prints/PrintPreviewLayout.jsx
 // 공용 인쇄 미리보기 레이아웃
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Printer, ChevronLeft, ChevronRight, X } from "lucide-react";
 import IconBtn from "../components/IconBtn";
 
-export default function PrintPreviewLayout({ children }) {
+export default function PrintPreviewLayout({ children, onAfterPrint }) {
   const pages  = React.Children.toArray(children);
   const total  = pages.length;
   const [current, setCurrent] = useState(0);
 
   const prev = () => setCurrent((p) => Math.max(0, p - 1));
   const next = () => setCurrent((p) => Math.min(total - 1, p + 1));
+
+  // ── afterprint 이벤트 → 부모 콜백 ──────────────────────────
+  useEffect(() => {
+    if (!onAfterPrint) return;
+    const handler = () => onAfterPrint();
+    window.addEventListener("afterprint", handler);
+    return () => window.removeEventListener("afterprint", handler);
+  }, [onAfterPrint]);
 
   return (
     <>

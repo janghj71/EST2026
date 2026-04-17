@@ -76,10 +76,17 @@ function masterToParams(serial, master) {
 /**
  * 견적 마스터 저장 훅
  * - API: est_masterestimate_u.aspx
- * - 반환: { save(serial, master), saving }
+ * - 반환: { save(serial, master), saving, updateEstPrint(serial), printUpdating }
  */
 export function useMasterEstimateSave() {
   const { loading: saving, refetch: saveRequest } = useApi({
+    path: "/est_masterestimate_u.aspx",
+    method: "POST",
+    bodyType: "form",
+    immediate: false,
+  });
+
+  const { loading: printUpdating, refetch: printRequest } = useApi({
     path: "/est_masterestimate_u.aspx",
     method: "POST",
     bodyType: "form",
@@ -95,5 +102,20 @@ export function useMasterEstimateSave() {
     [saveRequest]
   );
 
-  return { save, saving };
+  /**
+   * 인쇄 완료 처리 — est_print='1' 로 업데이트
+   * @param {string} serial - est_serial
+   */
+  const updateEstPrint = useCallback(
+    async (serial) => {
+      const json = await printRequest({
+        est_serial: serial,
+        est_print: "1",
+      });
+      return json;
+    },
+    [printRequest]
+  );
+
+  return { save, saving, updateEstPrint, printUpdating };
 }
