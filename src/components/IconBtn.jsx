@@ -25,6 +25,12 @@ export default function IconBtn({
       ? "border-zinc-800 bg-zinc-800 text-white hover:bg-zinc-700"
       : variant === "danger"
       ? "border-red-300 text-red-700 bg-white hover:bg-red-50 hover:border-red-400"
+      : variant === "orange"
+      ? "border-orange-400 text-orange-600 bg-white hover:bg-orange-50 hover:border-orange-500"
+      : variant === "green"
+      ? "border-green-600 bg-green-600 text-white hover:bg-green-500"
+      : variant === "yellow"
+      ? "border-yellow-400 text-yellow-700 bg-white hover:bg-yellow-50 hover:border-yellow-500"
       : "border-zinc-300 text-zinc-800 bg-white hover:bg-zinc-100 hover:border-zinc-400";
 
   return (

@@ -1,11 +1,11 @@
 // src/prints/InspectionEstimatePrint.jsx
 import React, { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
 import { useEstimate } from "../hooks/useEstimate";
 import { useCompanyInfo } from "../hooks/useCompanyInfo";
 import { useSealImage } from "../hooks/useSealImage";
 import { useUserSettings } from "../hooks/useUserSettings";
 import { formatNumber } from "../utils/numberFormat";
+import { useUrlContextSnapshot } from "../hooks/useUrlContextSnapshot";
 import PrintPreviewLayout from "./PrintPreviewLayout";
 
 // ── 숫자 0 → 빈값 ──────────────────────────────────────────────
@@ -23,9 +23,14 @@ const THL = { ...TD, backgroundColor: "#e8e8e8", fontWeight: "bold", whiteSpace:
 const THLC = { ...THL, textAlign: "center" };
 
 export default function InspectionEstimatePrint() {
-  const [searchParams]  = useSearchParams();
-  const est_serial      = searchParams.get("est_serial")  ?? "";
-  const estbo_seqno     = searchParams.get("estbo_seqno") ?? "";
+  const ctx = useUrlContextSnapshot({
+    storageKey: "inspectionEstimatePrintCtx",
+    keys: ["est_serial", "estbo_seqno"],
+    cleanPath: "/print/inspection-estimate",
+  });
+
+  const est_serial  = ctx?.est_serial  ?? "";
+  const estbo_seqno = ctx?.estbo_seqno ?? "";
 
   const { fetchMasterById, fetchDetails } = useEstimate();
   const { form: ci, loading: ciLoading }  = useCompanyInfo();
@@ -52,17 +57,11 @@ export default function InspectionEstimatePrint() {
   // ── 작성자 인감 — users 로드 후 w_manname 으로 검색 ──────────
   useEffect(() => {
     if (!master?.w_manname || usersLoading) return;
-    const u = users.find((u) => u.hp === master.w_manname);
+    const u = users.find((u) => u.username === master.w_manname);
     if (u?.imgdata) setWriterSeal(`data:image/jpeg;base64,${u.imgdata}`);
   }, [master, users, usersLoading]);
 
-  // ── 모든 데이터 로드 완료 후 자동 인쇄 ───────────────────────
-  const allLoaded = master !== null && !ciLoading && !sealLoading && !usersLoading;
-  useEffect(() => {
-    if (!allLoaded) return;
-    const t = setTimeout(() => window.print(), 400);
-    return () => clearTimeout(t);
-  }, [allLoaded]);
+  // 자동 인쇄 제거 — PrintPreviewLayout 의 [인쇄] 버튼 사용
 
   // ── 합계 계산 ────────────────────────────────────────────────
   const sumPart  = rows.reduce((a, r) => a + Number(r.partsum ?? 0), 0);
@@ -163,7 +162,7 @@ export default function InspectionEstimatePrint() {
     return (
       <table>
         <colgroup>
-          <col style={{ width: "200px" }} />
+          <col style={{ width: "240px" }} />
           <col style={{ width: "68px" }} />
           <col style={{ width: "28px" }} />
           <col style={{ width: "66px" }} />
