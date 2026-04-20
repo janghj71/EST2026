@@ -14,7 +14,7 @@ import { useLaborSettings } from "../../hooks/useLaborSettings";
  * - Field는 "라벨 + children" 레이아웃 컴포넌트라서
  *   실제 input/select는 children으로 넣어야 함.
  */
-export default function EstimateReception({ master, setMaster, laborWinOpen = false }) {
+export default function EstimateReception({ master, setMaster, laborWinOpen = false, readOnly = false }) {
   const [carHelpOpen, setCarHelpOpen] = useState(false);
   const { form: laborForm } = useLaborSettings();
 
@@ -100,6 +100,7 @@ export default function EstimateReception({ master, setMaster, laborWinOpen = fa
                 className={inputCls}
                 value={master?.carno ?? ""}
                 onChange={(e) => set("carno")(e.target.value)}
+                disabled={readOnly}
               />
             </Field>
 
@@ -111,15 +112,16 @@ export default function EstimateReception({ master, setMaster, laborWinOpen = fa
                     value={master?.codecar ?? ""}
                     onChange={(e) => set("codecar")(e.target.value)}
                     placeholder="코드"
+                    disabled={readOnly}
                   />
 
                   <IconBtn
                     icon={Info}
                     title={laborWinOpen ? "공임항목 팝업 열려 있음" : "차량코드 선택"}
                     size="sm"
-                    disabled={laborWinOpen}
+                    disabled={readOnly || laborWinOpen}
                     className="h-9 rounded-md border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 ms-2"
-                    onClick={() => !laborWinOpen && setCarHelpOpen(true)}
+                    onClick={() => !readOnly && !laborWinOpen && setCarHelpOpen(true)}
                   />
                 </div>
 
@@ -128,6 +130,7 @@ export default function EstimateReception({ master, setMaster, laborWinOpen = fa
                   value={master?.carname ?? ""}
                   onChange={(e) => set("carname")(e.target.value)}
                   placeholder="차량명"
+                  disabled={readOnly}
                 />
               </div>
             </Field>
@@ -137,6 +140,7 @@ export default function EstimateReception({ master, setMaster, laborWinOpen = fa
                 className={inputCls}
                 value={master?.modelname ?? ""}
                 onChange={(e) => set("modelname")(e.target.value)}
+                disabled={readOnly}
               />
             </Field>
 
@@ -146,6 +150,7 @@ export default function EstimateReception({ master, setMaster, laborWinOpen = fa
                 value={formatNumber(master?.lastkm)}
                 onChange={(e) => set("lastkm")(unformatNumber(e.target.value))}
                 inputMode="numeric"
+                disabled={readOnly}
               />
             </Field>
 
@@ -154,6 +159,7 @@ export default function EstimateReception({ master, setMaster, laborWinOpen = fa
                 className={inputCls}
                 value={master?.vinno ?? ""}
                 onChange={(e) => set("vinno")(e.target.value)}
+                disabled={readOnly}
               />
             </Field>
           </div>
@@ -165,6 +171,7 @@ export default function EstimateReception({ master, setMaster, laborWinOpen = fa
                 className={inputCls}
                 value={master?.custom_name ?? ""}
                 onChange={(e) => set("custom_name")(e.target.value)}
+                disabled={readOnly}
               />
             </Field>
 
@@ -175,18 +182,21 @@ export default function EstimateReception({ master, setMaster, laborWinOpen = fa
                   value={master?.hp0 ?? ""}
                   onChange={(e) => set("hp0")(e.target.value)}
                   inputMode="numeric"
+                  disabled={readOnly}
                 />
                 <input
                   className={inputCls}
                   value={master?.hp1 ?? ""}
                   onChange={(e) => set("hp1")(e.target.value)}
                   inputMode="numeric"
+                  disabled={readOnly}
                 />
                 <input
                   className={inputCls}
                   value={master?.hp2 ?? ""}
                   onChange={(e) => set("hp2")(e.target.value)}
                   inputMode="numeric"
+                  disabled={readOnly}
                 />
               </div>
             </Field>
@@ -195,6 +205,7 @@ export default function EstimateReception({ master, setMaster, laborWinOpen = fa
               <input
                 className={inputCls}
                 value={emailInput}
+                disabled={readOnly}
                 onChange={(e) => {
                   const v = e.target.value;
                   setEmailInput(v);
@@ -211,6 +222,7 @@ export default function EstimateReception({ master, setMaster, laborWinOpen = fa
                 className={'select-base w-full h-9 focus:ring-2 focus:ring-zinc-200'}
                 value={master?.state ?? ""}
                 onChange={(e) => set("state")(e.target.value)}
+                disabled={readOnly}
               >
                 <option value="">상태 선택</option>
                 {statusCodes.map((c) => (
@@ -228,6 +240,7 @@ export default function EstimateReception({ master, setMaster, laborWinOpen = fa
                 type="date"
                 value={master?.inday ?? ""}
                 onChange={(e) => set("inday")(e.target.value)}
+                disabled={readOnly}
               />
             </Field>
 
@@ -238,11 +251,13 @@ export default function EstimateReception({ master, setMaster, laborWinOpen = fa
                   type="date"
                   value={master?.preoutday ?? ""}
                   onChange={(e) => set("preoutday")(e.target.value)}
+                  disabled={readOnly}
                 />
                 <select
                   className={'select-base w-full h-9 focus:ring-2 focus:ring-zinc-200 min-w-0'}
                   value={master?.preouttime ?? "10"}
                   onChange={(e) => set("preouttime")(e.target.value)}
+                  disabled={readOnly}
                 >
                   {Array.from({ length: 24 }).map((_, i) => {
                     const v = String(i).padStart(2, "0");
@@ -262,6 +277,7 @@ export default function EstimateReception({ master, setMaster, laborWinOpen = fa
                 type="date"
                 value={master?.outday ?? ""}
                 onChange={(e) => set("outday")(e.target.value)}
+                disabled={readOnly}
               />
             </Field>
 
@@ -271,6 +287,7 @@ export default function EstimateReception({ master, setMaster, laborWinOpen = fa
                 type="date"
                 value={master?.reqday ?? ""}
                 onChange={(e) => set("reqday")(e.target.value)}
+                disabled={readOnly}
               />
             </Field>
 
@@ -280,6 +297,7 @@ export default function EstimateReception({ master, setMaster, laborWinOpen = fa
                 type="date"
                 value={master?.car_registday ?? ""}
                 onChange={(e) => set("car_registday")(e.target.value)}
+                disabled={readOnly}
               />
             </Field>
           </div>

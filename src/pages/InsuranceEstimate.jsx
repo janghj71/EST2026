@@ -35,9 +35,13 @@ function addMonths(baseDate, delta) {
 
 
 const SS_KEY = "insurance_estimate_state";
+const SS_FILTER_KEY = "insurance_estimate_filter";
 
 function loadSavedState() {
   try { return JSON.parse(sessionStorage.getItem(SS_KEY)); } catch { return null; }
+}
+function loadSavedFilter() {
+  try { return JSON.parse(sessionStorage.getItem(SS_FILTER_KEY)); } catch { return null; }
 }
 function clearSavedState() {
   try { sessionStorage.removeItem(SS_KEY); } catch { /* empty */ }
@@ -51,6 +55,7 @@ export default function InsuranceEstimate() {
     estimates, estLoading, estError, fetchEstimates, fetchByText,
     claims, claimLoading, claimError, fetchClaims,
     details, detailLoading, detailError, fetchDetails,
+    unlockEstimate,
   } = useEstimate();
 
   const { codes: sortCodes } = useTbCode('IDX01');
@@ -105,16 +110,17 @@ export default function InsuranceEstimate() {
   };
 
   // ====== 검색/조회 ======
-  // 수정 화면에서 돌아올 때 sessionStorage 복원
+  // 수정 화면에서 돌아올 때 sessionStorage 복원 (우선순위: _saved > _filter > 기본값)
   const _saved = loadSavedState();
-  const [dateFrom, setDateFrom] = useState(() => _saved?.dateFrom ?? monthRange(new Date()).from);
-  const [dateTo, setDateTo] = useState(() => _saved?.dateTo ?? monthRange(new Date()).to);
-  const [searchText, setSearchText] = useState(() => _saved?.searchText ?? "");
-  const [chkEstimate, setChkEstimate] = useState(() => _saved?.chkEstimate ?? true);
-  const [chkWork, setChkWork] = useState(() => _saved?.chkWork ?? true);
-  const [chkClosed, setChkClosed] = useState(() => _saved?.chkClosed ?? false);
-  const [sortKey, setSortKey] = useState(() => _saved?.sortKey ?? "inday desc");
-  const [monthAnchor, setMonthAnchor] = useState(() => new Date(_saved?.dateFrom ?? Date.now()));
+  const _filter = loadSavedFilter();
+  const [dateFrom, setDateFrom] = useState(() => _saved?.dateFrom ?? _filter?.dateFrom ?? monthRange(new Date()).from);
+  const [dateTo, setDateTo] = useState(() => _saved?.dateTo ?? _filter?.dateTo ?? monthRange(new Date()).to);
+  const [searchText, setSearchText] = useState(() => _saved?.searchText ?? _filter?.searchText ?? "");
+  const [chkEstimate, setChkEstimate] = useState(() => _saved?.chkEstimate ?? _filter?.chkEstimate ?? true);
+  const [chkWork, setChkWork] = useState(() => _saved?.chkWork ?? _filter?.chkWork ?? true);
+  const [chkClosed, setChkClosed] = useState(() => _saved?.chkClosed ?? _filter?.chkClosed ?? false);
+  const [sortKey, setSortKey] = useState(() => _saved?.sortKey ?? _filter?.sortKey ?? "inday desc");
+  const [monthAnchor, setMonthAnchor] = useState(() => new Date(_saved?.dateFrom ?? _filter?.dateFrom ?? Date.now()));
   // 복원 후 바로 삭제 (새 조회 시엔 저장 안 된 상태)
   const _restoredSerial = _saved?.selectedSerial ?? null;
   clearSavedState();
@@ -132,6 +138,16 @@ export default function InsuranceEstimate() {
 
   // ====== Row Action Bar ======
   const [printOpen, setPrintOpen] = useState(false);
+
+  // 선택 Row 변경 시 드롭다운 닫기
+  useEffect(() => { setPrintOpen(false); }, [selected]);
+
+  // 조회 조건 변경 시 sessionStorage에 저장 (F5 복원용)
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(SS_FILTER_KEY, JSON.stringify({ dateFrom, dateTo, searchText, chkEstimate, chkWork, chkClosed, sortKey }));
+    } catch {}
+  }, [dateFrom, dateTo, searchText, chkEstimate, chkWork, chkClosed, sortKey]);
 
   // ====== 조회 에러 → 메시지 표시 ======
   useEffect(() => {
@@ -175,7 +191,7 @@ export default function InsuranceEstimate() {
       { key: "inday", title: "입고일자", width: "9%", align: "left" },
       { key: "outday", title: "출고일자", width: "9%", align: "left", render: (v) => v || "-" },
       { key: "preoutdate", title: "출고예정일시", width: "12%", align: "left" },
-      { key: "statename", title: "상태", width: "8%", align: "left", render: (v) => <StatusBadge value={v} /> },
+      { key: "statename", title: "상태", width: "8%", align: "left", render: (v, row) => <StatusBadge value={v} row={row} onUnlock={handleUnlock} /> },
     ],
     []
   );
@@ -421,6 +437,18 @@ export default function InsuranceEstimate() {
 
   const onPrint = (kind) =>
     requireSelected() && alert(`인쇄(${kind}): ${selected.est_serial}`);
+
+  // ====== 수정잠금 해제 ======
+  const handleUnlock = useCallback(async (row) => {
+    try {
+      await withLoading(async () => {
+        await unlockEstimate(row.est_serial);
+        await fetchEstimates(dateFrom, dateTo);
+      }, "처리 중...");
+    } catch (err) {
+      error(err?.message ?? "잠금 해제 실패");
+    }
+  }, [unlockEstimate, fetchEstimates, dateFrom, dateTo, withLoading, error]);
 
   // ====== 조회 버튼 ======
   const onSearch = useCallback(async () => {
@@ -889,6 +917,7 @@ export default function InsuranceEstimate() {
                       printOpen={printOpen}
                       setPrintOpen={setPrintOpen}
                       onPrint={onPrint}
+                      isest={selected?.isest}
                     />
                   )}
                   // 카드 안에서 바디만 스크롤
@@ -1022,7 +1051,20 @@ function InlineActions({
   printOpen,
   setPrintOpen,
   onPrint,
+  isest,
 }) {
+  const printItems = String(isest) === "1"
+    ? [
+        { label: "점검정비 견적서" },
+        { label: "개인정보 활용동의" },
+      ]
+    : [
+        { label: "작업지시서" },
+        { label: "수리비 청구서" },
+        { label: "점검정비 명세서" },
+        { label: "개인정보 활용동의" },
+      ];
+
   return (
     <div className="flex flex-wrap items-center gap-2">
       <SmallBtn onClick={onModify}>수정</SmallBtn>
@@ -1036,10 +1078,12 @@ function InlineActions({
       <div className="relative">
         <SmallBtn onClick={() => setPrintOpen(!printOpen)}>인쇄 ▾</SmallBtn>
         {printOpen && (
-          <div className="absolute left-0 top-9 w-44 overflow-hidden rounded-md border border-zinc-200 bg-white shadow-lg z-10">
-            <MenuItem onClick={() => { setPrintOpen(false); onPrint("견적서"); }}>견적서 인쇄</MenuItem>
-            <MenuItem onClick={() => { setPrintOpen(false); onPrint("거래명세서"); }}>거래명세서</MenuItem>
-            <MenuItem onClick={() => { setPrintOpen(false); onPrint("보험청구서"); }}>보험청구서</MenuItem>
+          <div className="absolute left-0 top-9 w-48 overflow-hidden rounded-md border border-zinc-200 bg-white shadow-lg z-10">
+            {printItems.map((item) => (
+              <MenuItem key={item.label} onClick={() => { setPrintOpen(false); onPrint(item.label); }}>
+                {item.label}
+              </MenuItem>
+            ))}
           </div>
         )}
       </div>
@@ -1115,7 +1159,13 @@ function Toggle({ label, checked, onChange }) {
   );
 }
 
-function StatusBadge({ value }) {
+function StatusBadge({ value, row, onUnlock }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const badgeRef = useRef(null);
+
+  const isLocked = Boolean(row?.est_print || row?.reqday || row?.workend);
+
   const cls =
     value === "종결"
       ? "bg-emerald-100 text-emerald-800"
@@ -1123,9 +1173,59 @@ function StatusBadge({ value }) {
       ? "bg-sky-100 text-sky-800"
       : "bg-zinc-100 text-zinc-700";
 
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      if (!badgeRef.current?.contains(e.target)) setOpen(false);
+    };
+    const onScroll = () => setOpen(false);
+    document.addEventListener("mousedown", handler);
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [open]);
+
+  const handleBadgeClick = () => {
+    if (!isLocked) return;
+    if (open) { setOpen(false); return; }
+    const rect = badgeRef.current?.getBoundingClientRect();
+    if (rect) setPos({ top: rect.bottom + 4, left: rect.left });
+    setOpen(true);
+  };
+
   return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${cls}`}>
-      {value}
+    <span ref={badgeRef} className="inline-flex">
+      <span
+        className={[
+          "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold",
+          cls,
+          isLocked ? "cursor-pointer hover:brightness-95" : "",
+        ].join(" ")}
+        onClick={handleBadgeClick}
+      >
+        {value}
+      </span>
+      {open && isLocked && (
+        <div
+          style={{ position: "fixed", top: pos.top, left: pos.left }}
+          className="z-[9999] min-w-[120px] rounded-md border border-zinc-200 bg-white shadow-lg py-1"
+        >
+          <button
+            type="button"
+            className="w-full px-3 py-2 text-left text-sm text-zinc-800 hover:bg-zinc-100"
+            onClick={() => {
+              setOpen(false);
+              onUnlock?.(row);
+            }}
+          >
+            수정잠금 해제
+          </button>
+        </div>
+      )}
     </span>
   );
 }

@@ -24,6 +24,7 @@ import SmsSenderPage from "./pages/SmsSenderPage";
 import SmsHistoryPage from "./pages/SmsHistoryPage";
 import ChemicalItemsPage from "./pages/ChemicalItemsPage";
 import RepairHistorySend from "./pages/RepairHistorySend";
+import EstClaimSend from "./pages/EstClaimSend";
 
 import EstimateEditPage from "./pages/estimate/EstimateEditPage";
 import LaborItemsPopup from "./pages/estimate/LaborItemsPopup";
@@ -45,6 +46,7 @@ export default function App() {
         <Route path="/estsmsend" element={<SmsSend />} />
         <Route path="/estimate-memo" element={<EstimateMemo />} />
         <Route path="/estimate-deposit" element={<DepositPopup />} />
+        <Route path="/est-claim-send" element={<EstClaimSend />} />
         <Route path="/labor-items" element={<LaborItemsPopup />} />
         <Route path="paint-items" element={<PaintItemsPopup />} />
         <Route path="chemical-items" element={<ChemicalItemsPopup />} />

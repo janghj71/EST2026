@@ -144,6 +144,20 @@ export function useEstimate() {
     [overlapRefetch]
   );
 
+  // ── 수정잠금 해제 (est_print/reqday/workend 초기화) ──
+  const { refetch: unlockRefetch } = useApi({
+    path: "/est_masterestimate_u.aspx",
+    method: "POST",
+    bodyType: "form",
+    immediate: false,
+  });
+
+  const unlockEstimate = useCallback(
+    (est_serial) =>
+      unlockRefetch({ est_serial, est_print: "", reqday: "0", workend: "0" }),
+    [unlockRefetch]
+  );
+
   return {
     // 견적목록
     estimates: estimates ?? [],
@@ -175,6 +189,9 @@ export function useEstimate() {
 
     // 공유견적 목록
     fetchSharedEstimates,
+
+    // 수정잠금 해제
+    unlockEstimate,
   };
 }
 

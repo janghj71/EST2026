@@ -19,7 +19,7 @@ import { toInt } from "../../utils/numberFormat";
  *   bocomname, boman_nm, regno, misrate, dambo, accday, driver_nm,
  *   insura_exemp, insura_person, insura_carno, carsale_amt, xpay, bpay, ppay
  */
-export default function EstimateClaimPanel({ master, setMaster, inputCls, selectCls, onClaimDirty, onClaimClean, onRateChange }) {
+export default function EstimateClaimPanel({ master, setMaster, inputCls, selectCls, onClaimDirty, onClaimClean, onRateChange, readOnly = false }) {
   const claims = Array.isArray(master?.claims) ? master.claims : [];
 
   const [selectedIdx, setSelectedIdx] = useState(() => (claims.length ? 0 : -1));
@@ -130,8 +130,8 @@ export default function EstimateClaimPanel({ master, setMaster, inputCls, select
 return (
   <div className="flex flex-col gap-2">
     <div className="flex items-center gap-2">
-      <IconBtn icon={Plus} label="보험사 추가" onClick={addClaim} disabled={claims.length >= 2} />
-      <IconBtn icon={Trash2} label="보험사 삭제" onClick={removeClaim} disabled={safeSelectedIdx < 0} />
+      <IconBtn icon={Plus} label="보험사 추가" onClick={addClaim} disabled={readOnly || claims.length >= 2} />
+      <IconBtn icon={Trash2} label="보험사 삭제" onClick={removeClaim} disabled={readOnly || safeSelectedIdx < 0} />
       {/* <div className="ml-auto text-xs text-zinc-500">청구 보험사 최대 2개</div> */}
     </div>
 
@@ -180,6 +180,7 @@ return (
                 id="claim-panel-first"
                 className={selectCls}
                 value={current?.bocomcode ?? ""}
+                disabled={readOnly}
                 onChange={(e) => {
                   const bocom = findBocom(e.target.value);
                   if (!bocom) return;
@@ -220,6 +221,7 @@ return (
                 options={contactOptions}
                 inputClassName={inputCls}
                 showAllWhenNoMatch
+                disabled
               />
             </FormRow>
           </div>
@@ -232,7 +234,7 @@ return (
                 className={inputCls}
                 value={current?.regno ?? ""}
                 onChange={(e) => setClaim(safeSelectedIdx, "regno", e.target.value)}
-                // placeholder="접수번호"
+                disabled={readOnly}
               />
             </FormRow>
 
@@ -245,11 +247,12 @@ return (
                   if (n > 100) n = 100;
                   setClaim(safeSelectedIdx, "misrate", String(n));
                 }}
-                options={misrateOptions}      
+                options={misrateOptions}
                 placeholder="0~100"
-                inputClassName={inputCls}     
+                inputClassName={inputCls}
                 maxHeightClassName="max-h-64"
                 showAllWhenNoMatch
+                disabled
               />
             </FormRow>
             
@@ -258,6 +261,7 @@ return (
                 className={selectCls}
                 value={current?.dambo ?? ""}
                 onChange={(e) => setClaim(safeSelectedIdx, "dambo", e.target.value)}
+                disabled={readOnly}
               >
                 <option value="">선택</option>
                 <option value="자차">자차</option>
@@ -272,6 +276,7 @@ return (
                 type="date"
                 value={master?.accday ?? ""}
                 onChange={(e) => setMaster((m) => ({ ...m, accday: e.target.value }))}
+                disabled={readOnly}
               />
             </FormRow>
 
@@ -280,7 +285,7 @@ return (
                 className={inputCls}
                 value={master?.driver_nm ?? ""}
                 onChange={(e) => setMaster((m) => ({ ...m, driver_nm: e.target.value }))}
-                // placeholder="운전자"
+                disabled={readOnly}
               />
             </FormRow>
 
@@ -288,6 +293,7 @@ return (
               <MoneyInput
                 value={current?.insura_exemp ?? ""}
                 onChange={(v) => setClaim(safeSelectedIdx, "insura_exemp", v)}
+                readOnly={readOnly}
               />
             </FormRow>
 
@@ -296,7 +302,7 @@ return (
                 className={inputCls}
                 value={current?.insura_person ?? ""}
                 onChange={(e) => setClaim(safeSelectedIdx, "insura_person", e.target.value)}
-                // placeholder="피보험자"
+                disabled={readOnly}
               />
             </FormRow>
 
@@ -305,7 +311,7 @@ return (
                 className={inputCls}
                 value={current?.insura_carno ?? ""}
                 onChange={(e) => setClaim(safeSelectedIdx, "insura_carno", e.target.value)}
-                // placeholder="피보험차"
+                disabled={readOnly}
               />
             </FormRow>
 
@@ -313,6 +319,7 @@ return (
               <MoneyInput
                 value={master?.carsale_amt ?? ""}
                 onChange={(v) => setMaster((m) => ({ ...m, carsale_amt: v }))}
+                readOnly={readOnly}
               />
             </FormRow>
 
@@ -322,6 +329,7 @@ return (
                   className={inputCls}
                   value={current?.pntratesec ?? ""}
                   onChange={(e) => setClaim(safeSelectedIdx, "pntratesec", e.target.value)}
+                  disabled={readOnly}
                 />
               </FormRow>
             )}
@@ -335,6 +343,7 @@ return (
                 <MoneyInput
                   value={current?.xpay ?? ""}
                   onChange={(v) => setClaim(safeSelectedIdx, "xpay", v)}
+                  readOnly={readOnly}
                   {...(safeSelectedIdx === 0 ? { onBlur: onRateChange } : {})}
                 />
               </div>
@@ -345,6 +354,7 @@ return (
                 <MoneyInput
                   value={current?.bpay ?? ""}
                   onChange={(v) => setClaim(safeSelectedIdx, "bpay", v)}
+                  readOnly={readOnly}
                   {...(safeSelectedIdx === 0 ? { onBlur: onRateChange } : {})}
                 />
               </div>
@@ -357,6 +367,7 @@ return (
                 <MoneyInput
                   value={current?.ppay ?? ""}
                   onChange={(v) => setClaim(safeSelectedIdx, "ppay", v)}
+                  readOnly={readOnly}
                   {...(safeSelectedIdx === 0 ? { onBlur: onRateChange } : {})}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {

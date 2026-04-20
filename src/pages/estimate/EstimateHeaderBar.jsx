@@ -12,9 +12,12 @@ import {
   Send,
   Save,
 } from "lucide-react";
+import { openCenteredWindow } from "../../utils/popup";
+import { getComcode } from "../../api/config";
 
 export default function EstimateHeaderBar({
   onSaveAndList,
+  onSave,
   saving = false,
   onOpenLaborItems,
   onOpenPaintItems,
@@ -24,9 +27,43 @@ export default function EstimateHeaderBar({
   onOpenPhotoViewer,
   onPrint,
   master,
+  readOnly = false,
 }) {
   const [printMenuOpen, setPrintMenuOpen] = useState(false);
   const printMenuRef = useRef(null);
+  const claimWinRef = useRef(null);
+
+  const openClaimSend = async () => {
+    if (!readOnly) await onSave?.();
+    const payload = {
+      est_serial: master?.est_serial ?? "",
+      carno: master?.carno ?? "",
+      comcode: getComcode(),
+      claims: master?.claims ?? [],
+      isest: master?.isest ?? "",
+    };
+
+    if (claimWinRef.current && !claimWinRef.current.closed) {
+      try {
+        claimWinRef.current.focus();
+        claimWinRef.current.postMessage(
+          { type: "EST_CLAIM_SEND_SET_CTX", payload },
+          window.location.origin
+        );
+        return;
+      } catch {
+        claimWinRef.current = null;
+      }
+    }
+
+    const win = openCenteredWindow("/est-claim-send", "estClaimSend", 900, 760, {
+      postMessage: {
+        type: "EST_CLAIM_SEND_SET_CTX",
+        payload,
+      },
+    });
+    claimWinRef.current = win;
+  };
 
   useEffect(() => {
     if (!printMenuOpen) return;
@@ -52,12 +89,12 @@ export default function EstimateHeaderBar({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <IconBtn icon={Wrench} label="공임항목" onClick={onOpenLaborItems} />
-      <IconBtn icon={Paintbrush} label="도장항목" onClick={onOpenPaintItems} />
-      <IconBtn icon={FlaskConical} label="케미칼항목" onClick={onOpenChemicalItems} />
-      <IconBtn icon={Search} label="부품조회" onClick={onOpenPartLookup} />
+      <IconBtn icon={Wrench} label="공임항목" disabled={readOnly} onClick={onOpenLaborItems} />
+      <IconBtn icon={Paintbrush} label="도장항목" disabled={readOnly} onClick={onOpenPaintItems} />
+      <IconBtn icon={FlaskConical} label="케미칼항목" disabled={readOnly} onClick={onOpenChemicalItems} />
+      <IconBtn icon={Search} label="부품조회" disabled={readOnly} onClick={onOpenPartLookup} />
 
-      <IconBtn icon={CheckCircle} label="중복체크" onClick={onDuplicateCheck} />
+      <IconBtn icon={CheckCircle} label="중복체크" disabled={readOnly} onClick={onDuplicateCheck} />
 
       <div className="ml-auto flex items-center gap-2">
         <IconBtn icon={ImageIcon} label="차량사진" onClick={onOpenPhotoViewer} />
@@ -76,8 +113,9 @@ export default function EstimateHeaderBar({
                   key={item.label}
                   type="button"
                   className="w-full px-3 py-2 text-left text-sm text-zinc-800 hover:bg-zinc-100 active:bg-zinc-200"
-                  onClick={() => {
+                  onClick={async () => {
                     setPrintMenuOpen(false);
+                    if (!readOnly) await onSave?.();
                     onPrint?.(item.label);
                   }}
                 >
@@ -88,8 +126,8 @@ export default function EstimateHeaderBar({
           )}
         </div>
 
-        <IconBtn icon={Send} label="견적청구" onClick={() => alert("TODO")} />
-        <IconBtn icon={Save} label="저장" onClick={onSaveAndList} disabled={saving} />
+        <IconBtn icon={Send} label="견적청구" onClick={openClaimSend} />
+        <IconBtn icon={Save} label="저장" onClick={onSaveAndList} disabled={saving || readOnly} className="min-w-[96px]" />
       </div>
     </div>
   );

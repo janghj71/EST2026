@@ -15,7 +15,7 @@ import { useTbCode } from "../../hooks/useTbCode";
 import { usePntcot } from "../../hooks/usePntcot";
 
 
-export default function EstimateSidePanel({ master, setMaster, active, onTabChange, onClaimLeave, onClaimDirty, onClaimClean, onRateChange, onOpenChange, onSettleEnter, settleRefreshKey, laborWinOpen = false }) {
+export default function EstimateSidePanel({ master, setMaster, active, onTabChange, onClaimLeave, onClaimDirty, onClaimClean, onRateChange, onOpenChange, onSettleEnter, settleRefreshKey, laborWinOpen = false, readOnly = false }) {
   const [open, setOpen] = useState(false);
   const changeOpen = (next) => { setOpen(next); onOpenChange?.(next); };
   const set = (k) => (vOrEvent) => {
@@ -156,6 +156,7 @@ export default function EstimateSidePanel({ master, setMaster, active, onTabChan
               codeInputCls={codeInputCls}
               colorOptions={colorOptions}
               ReadonlyBox={ReadonlyBox}
+              readOnly={readOnly}
             />
           )}
           {active === "claim" && (
@@ -167,6 +168,7 @@ export default function EstimateSidePanel({ master, setMaster, active, onTabChan
               onClaimDirty={onClaimDirty}
               onClaimClean={onClaimClean}
               onRateChange={onRateChange}
+              readOnly={readOnly}
             />
           )}
           {active === "settle" && (
@@ -176,6 +178,7 @@ export default function EstimateSidePanel({ master, setMaster, active, onTabChan
               inputCls={inputCls}
               selectCls={selectCls}
               refreshKey={settleRefreshKey}
+              readOnly={readOnly}
             />
           )}
         </div>
@@ -195,6 +198,7 @@ function LaborPanel({
   codeInputCls,
   colorOptions,
   ReadonlyBox,
+  readOnly = false,
 }) {
   // ── 공통코드 로딩 ──────────────────────────────────────────
   const { codes: pgr31Codes } = useTbCode('PGR31');  // 도장종류
@@ -253,12 +257,13 @@ function LaborPanel({
               className={`${codeInputCls} w-[10ch]`}
               value={master?.est_codecar ?? ""}
               onChange={(e) => set("est_codecar")(e.target.value)}
-              // placeholder="0315014"
+              disabled={readOnly}
             />
             <IconBtn
               icon={Info}
               title="대체차종 선택"
               onClick={() => setAltCarHelpOpen(true)}
+              disabled={readOnly}
               className="h-9 rounded-md border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 ms-2"
             />
           </div>
@@ -267,7 +272,7 @@ function LaborPanel({
             className={inputCls}
             value={master?.est_carname ?? ""}
             onChange={(e) => set("est_carname")(e.target.value)}
-            // placeholder="제네시스 DH"
+            disabled={readOnly}
           />
         </div>
       </FormRow>
@@ -278,7 +283,7 @@ function LaborPanel({
           className={selectCls}
           value={master?.paint ?? ""}
           onChange={(e) => set("paint")(e.target.value)}
-          disabled={!isPnt3}
+          disabled={readOnly || !isPnt3}
         >
           <option value="">선택</option>
           {paintTypeOptions.map(o => {
@@ -298,6 +303,7 @@ function LaborPanel({
             className={estKindSelectCls}
             value={master?.seccode ?? "12"}
             onChange={(e) => set("seccode")(e.target.value)}
+            disabled={readOnly}
           >
             <option value="11">11 일반</option>
             <option value="12">12 보험</option>
@@ -319,6 +325,7 @@ function LaborPanel({
           className={inputCls}
           value={master?.w_manname ?? ""}
           onChange={(e) => set("w_manname")(e.target.value)}
+          disabled={readOnly}
           placeholder="이명기"
         />
       </FormRow>
@@ -329,6 +336,7 @@ function LaborPanel({
           className={inputCls}
           value={master?.supman ?? ""}
           onChange={(e) => set("supman")(e.target.value)}
+          disabled={readOnly}
           placeholder="책임자"
         />
       </FormRow>
@@ -340,6 +348,7 @@ function LaborPanel({
           <CheckBox
             checked={master?.add_repair === '1'}
             onChange={(v) => set("add_repair")(v ? '1' : '0')}
+            disabled={readOnly}
             label="추가정비 동의함"
           />
         </div>
@@ -351,6 +360,7 @@ function LaborPanel({
           className={selectCls}
           value={master?.pntcot_code ?? "2"}
           onChange={(e) => set("pntcot_code")(e.target.value)}
+          disabled={readOnly}
         >
           <option value="1">1 코트</option>
           <option value="2">2 코트</option>
@@ -365,6 +375,7 @@ function LaborPanel({
           className={selectCls}
           value={master?.pnt_m ?? "2"}
           onChange={(e) => set("pnt_m")(e.target.value)}
+          disabled={readOnly}
         >
           <option value="1">1 유용성</option>
           <option value="2">2 수용성</option>
@@ -381,6 +392,7 @@ function LaborPanel({
           placeholder="예: 1W / AH3"
           inputClassName={inputCls}
           showAllWhenNoMatch
+          disabled
         />
       </FormRow>
 
@@ -391,12 +403,14 @@ function LaborPanel({
             <MoneyInput
               value={Number(master?.pnt_drypay ?? 15869)}
               onChange={set("pnt_drypay")}
+              readOnly={readOnly}
             />
           </div>
           <div className="whitespace-nowrap mt-1">
             <CheckBox
               checked={master?.req_pnt_drypay === '1'}
               onChange={(v) => set("req_pnt_drypay")(v ? '1' : '0')}
+              disabled={readOnly}
               label="가열건조비 청구함"
             />
           </div>
@@ -414,13 +428,13 @@ function LaborPanel({
         return (
           <>
             <FormRow label="탈착M/H">
-              <MoneyInput value={Number(xpay)} onChange={set("xpay")} readOnly={isInsurance} className={mhCls} />
+              <MoneyInput value={Number(xpay)} onChange={set("xpay")} readOnly={readOnly || isInsurance} className={mhCls} />
             </FormRow>
             <FormRow label="판금M/H">
-              <MoneyInput value={Number(bpay)} onChange={set("bpay")} readOnly={isInsurance} className={mhCls} />
+              <MoneyInput value={Number(bpay)} onChange={set("bpay")} readOnly={readOnly || isInsurance} className={mhCls} />
             </FormRow>
             <FormRow label="도장M/H">
-              <MoneyInput value={Number(ppay)} onChange={set("ppay")} readOnly={isInsurance} className={mhCls} />
+              <MoneyInput value={Number(ppay)} onChange={set("ppay")} readOnly={readOnly || isInsurance} className={mhCls} />
             </FormRow>
           </>
         );
@@ -437,7 +451,7 @@ function LaborPanel({
               className={inputCls + (isInsurance ? " bg-zinc-100" : "")}
               value={pntrate_sec}
               onChange={(e) => set("pntrate_sec")(e.target.value)}
-              readOnly={isInsurance}
+              readOnly={readOnly || isInsurance}
             />
           </FormRow>
         );

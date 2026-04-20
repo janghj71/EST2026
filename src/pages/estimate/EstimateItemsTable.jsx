@@ -258,6 +258,7 @@ export default function EstimateItemsTable({
   sidePanelOpen = false,
   est_serial,
   onSharedEstimateSelect,
+  readOnly = false,
 }) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } })
@@ -715,7 +716,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
         width: "360px",
         className: "px-2 py-0",
         render: (_val, row) => {
-          const editable = canEditPayName(row);
+          const editable = !readOnly && canEditPayName(row);
           const id = `cell-${row.estb_orgseqno}-payname`;
           if (!editable)
             return (
@@ -757,7 +758,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
         width: "80px",
         className: "px-2 py-0",
         render: (_val, row) => {
-          const editable = canEditWorkcode(row);
+          const editable = !readOnly && canEditWorkcode(row);
           const blocked = editable && isWorkcodePopupBlocked(row);
           return (
             <div className="h-8 flex items-stretch">
@@ -783,7 +784,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
         align: "right",
         className: "px-2 py-0",
         render: (_val, row) => {
-          const editable = canEditQty(row);
+          const editable = !readOnly && canEditQty(row);
           const id = `cell-${row.estb_orgseqno}-qty`;
           // T/G/W(세차·구난·견인)는 qty 미사용 → 빈 칸 표시
           if (!editable) return <div className="h-8 flex items-center justify-end pr-1">{["T","G","W"].includes(wc(row)) ? "" : fmtQty(row.qty)}</div>;
@@ -880,7 +881,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
         noTruncate: true,
         className: "px-2 py-0",
         render: (_val, row) => {
-          const editable = canEditLaborAmt(row);
+          const editable = !readOnly && canEditLaborAmt(row);
           const id = `cell-${row.estb_orgseqno}-paysum`;
           if (!editable) return <div className="h-8 flex items-center justify-end pr-1">{formatNumber(row.paysum || 0)}</div>;
           return (
@@ -937,7 +938,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
         noTruncate: true,
         className: "px-2 py-0",
         render: (_val, row) => {
-          const editable = canEditPartAmt(row);
+          const editable = !readOnly && canEditPartAmt(row);
           const id = `cell-${row.estb_orgseqno}-partsum`;
           if (!editable) return <div className="h-8 flex items-center justify-end pr-1">{formatNumber(row.partsum || 0)}</div>;
           return (
@@ -992,7 +993,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
         width: "130px",
         className: "px-2 py-0",
         render: (_val, row) => {
-          const editable = canEditPartCode(row);
+          const editable = !readOnly && canEditPartCode(row);
           const id = `cell-${row.estb_orgseqno}-part_makercode`;
           if (!editable)
             return (
@@ -1068,34 +1069,35 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
             String(row.state ?? "") !== "2";
           // paykind in ('5','3') → WRK03 상태 드롭다운
           const canWrk03State = rowPk === "5" || rowPk === "3";
+          const stateText = computeStatename(row, master, wrk34Codes, pyk02Codes, wrk03Codes);
           return (
             <div className="h-8 flex items-center">
-              {isPntAcc ? (
+              {!readOnly && isPntAcc ? (
                 <button
                   type="button"
                   className="w-full text-left hover:underline"
                   onClick={(e) => openPntAccPopover(e, row)}
                 >
-                  {computeStatename(row, master, wrk34Codes, pyk02Codes, wrk03Codes)}
+                  {stateText}
                 </button>
-              ) : canPntExtr ? (
+              ) : !readOnly && canPntExtr ? (
                 <button
                   type="button"
                   className="w-full text-left hover:underline"
                   onClick={(e) => openPopover(e, "pntextr", row)}
                 >
-                  {computeStatename(row, master, wrk34Codes, pyk02Codes, wrk03Codes)}
+                  {stateText}
                 </button>
-              ) : canWrk03State ? (
+              ) : !readOnly && canWrk03State ? (
                 <button
                   type="button"
                   className="w-full text-left hover:underline"
                   onClick={(e) => openPopover(e, "wrk03state", row)}
                 >
-                  {computeStatename(row, master, wrk34Codes, pyk02Codes, wrk03Codes)}
+                  {stateText}
                 </button>
               ) : (
-                computeStatename(row, master, wrk34Codes, pyk02Codes, wrk03Codes)
+                stateText
               )}
             </div>
           );
@@ -1124,11 +1126,13 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
     const k = String(row.paykind);
     const BLOCK_KINDS = new Set(["1", "2", "3", "6"]);
     const dragEnabled =
-      sortMode === "block"
-      ? BLOCK_KINDS.has(k) &&
-        String(row.payno || "") !== "" &&
-        firstPaynoOrgSeqs.has(row.estb_orgseqno)
-      : true; // 자유: 모든 row
+      !readOnly && (
+        sortMode === "block"
+        ? BLOCK_KINDS.has(k) &&
+          String(row.payno || "") !== "" &&
+          firstPaynoOrgSeqs.has(row.estb_orgseqno)
+        : true // 자유: 모든 row
+      );
     const isSelected =
       selectedOrgSeq === row.estb_orgseqno || selectedOrgSeqs.has(row.estb_orgseqno);
     const mergedTrProps = { ...trProps };
@@ -1405,6 +1409,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
           <IconBtn
             icon={Trash2}
             label="삭제"
+            disabled={readOnly}
             onClick={() => setDeleteMenuOpen((v) => !v)}
           />
           {deleteMenuOpen && (
@@ -1437,13 +1442,14 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
             </div>
           )}
         </div>
-        <IconBtn icon={Plus} label="공임추가" onClick={() => insertAfterSelected("4")} />
-        <IconBtn icon={Plus} label="부품추가" onClick={() => insertAfterSelected("5")} />
+        <IconBtn icon={Plus} label="공임추가" disabled={readOnly} onClick={() => insertAfterSelected("4")} />
+        <IconBtn icon={Plus} label="부품추가" disabled={readOnly} onClick={() => insertAfterSelected("5")} />
         {/* 기본정비항목 드롭다운 */}
         <div className="relative" ref={basicMenuRef}>
           <IconBtn
             icon={ListPlus}
             label="기본정비항목"
+            disabled={readOnly}
             onClick={() => setBasicMenuOpen((v) => !v)}
           />
           <BasicMaintenanceMenu
@@ -1480,9 +1486,9 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
             </button>
           </div>
 
-          <IconBtn icon={ArrowDownWideNarrow} label="도장 하단정렬" onClick={onMovePaintToBottom} />
+          <IconBtn icon={ArrowDownWideNarrow} label="도장 하단정렬" disabled={readOnly} onClick={onMovePaintToBottom} />
           <IconBtn icon={Send} label="정비이력전송" onClick={() => alert("TODO")} />
-          <IconBtn icon={Share2} label="공유견적" onClick={() => setSharedEstOpen(true)} />
+          <IconBtn icon={Share2} label="공유견적" disabled={readOnly} onClick={() => setSharedEstOpen(true)} />
         </div>
       </div>
 

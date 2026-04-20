@@ -241,6 +241,8 @@ export default function EstimateEditPage() {
   const partLookupWinRef = useRef(null);
   const photoWinRef = useRef(null);
 
+  const isLocked = Boolean(master?.workend || master?.reqday || master?.est_print);
+
   const childWinsRef = useRef(new Set());
   
   
@@ -256,6 +258,34 @@ export default function EstimateEditPage() {
     });
     childWinsRef.current.clear();
   };
+
+  // Lock 시 팝업 닫기
+  useEffect(() => {
+    if (!isLocked) return;
+    [laborWinRef, paintWinRef, chemicalWinRef, partLookupWinRef].forEach((ref) => {
+      try { if (ref.current && !ref.current.closed) ref.current.close(); } catch {}
+      ref.current = null;
+    });
+    setLaborWinOpen(false);
+    setPaintWinOpen(false);
+  }, [isLocked]);
+
+  // 메일청구 완료 → 마스터 리프레시
+  useEffect(() => {
+    const handler = (ev) => {
+      if (ev.origin !== window.location.origin) return;
+      if (ev.data?.type !== "EST_MASTER_REFRESH") return;
+      const serial = ev.data?.payload?.est_serial ?? est_serial;
+      fetchMasterById(serial)
+        .then((json) => {
+          const row = json?.dataset?.[0];
+          if (row) setMaster((prev) => ({ ...prev, ...row }));
+        })
+        .catch(() => {});
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, [est_serial]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 공임항목 팝업 닫힘 감지 (500ms 폴링)
   useEffect(() => {
@@ -2024,8 +2054,9 @@ export default function EstimateEditPage() {
     }
   }, [rows, est_serial, saveAllDetails, fetchDetails, setRows, setSettleRefreshKey, alertError]);
 
-  // [목록] 버튼: 전체 저장 후 이동
+  // [목록] 버튼: 전체 저장 후 이동 (잠긴 경우 저장 없이 이동)
   const handleClose = useCallback(async () => {
+    if (isLocked) { navigate(-1); return; }
     try {
       await withLoading(async () => {
         // 1. 접수(마스터) 저장 — 항상 (rows 합계 반영)
@@ -2045,7 +2076,7 @@ export default function EstimateEditPage() {
     } catch (err) {
       alertError(err?.message ?? "저장 실패");
     }
-  }, [est_serial, master, masterWithSums, rows, sidePanelOpen, sideActive,
+  }, [isLocked, est_serial, master, masterWithSums, rows, sidePanelOpen, sideActive,
       save, saveClaim, saveAllDetails, withLoading, navigate, alertError]);
 
   const handleDuplicateCheck = useCallback(async () => {
@@ -2122,6 +2153,7 @@ export default function EstimateEditPage() {
   }, [setRows, est_serial]);
 
   const handleSaveAndList = useCallback(async () => {
+    if (isLocked) return;
     try {
       await withLoading(async () => {
         // 1. 마스터 저장 (항상, rows 합계 반영)
@@ -2150,7 +2182,7 @@ export default function EstimateEditPage() {
     }
   }, [est_serial, master, masterWithSums, rows, sidePanelOpen, sideActive,
       save, saveClaim, saveAllDetails, fetchDetails, setRows, setSettleRefreshKey,
-      claimDirtyRef, withLoading, alertError]);
+      claimDirtyRef, withLoading, alertError, isLocked]);
 
   return (
     <div className="h-screen bg-zinc-50 flex flex-col overflow-hidden">
@@ -2176,6 +2208,7 @@ export default function EstimateEditPage() {
           <div className="mt-2">
             <EstimateHeaderBar
               onSaveAndList={handleSaveAndList}
+              onSave={handleSaveAndList}
               saving={saving}
               onOpenLaborItems={openLaborItemsPopup}
               onOpenPaintItems={openPaintItemsPopup}
@@ -2185,6 +2218,7 @@ export default function EstimateEditPage() {
               onOpenPhotoViewer={openPhotoViewerPopup}
               onPrint={handlePrint}
               master={master}
+              readOnly={isLocked}
             />
           </div>
         </div>
@@ -2195,7 +2229,7 @@ export default function EstimateEditPage() {
         <div className="min-h-0 flex-1 flex gap-3 min-w-0">
           {/* 좌: 접수 + 테이블 */}
           <div className="min-h-0 flex-1 flex flex-col gap-2 min-w-0">
-            <EstimateReception master={master} setMaster={setMaster} laborWinOpen={laborWinOpen || paintWinOpen} />
+            <EstimateReception master={master} setMaster={setMaster} laborWinOpen={laborWinOpen || paintWinOpen} readOnly={isLocked} />
 
             <div className="min-h-0 flex-1 flex flex-col min-w-0">
               <EstimateItemsTable
@@ -2205,8 +2239,6 @@ export default function EstimateEditPage() {
                 setSelectedOrgSeq={setSelectedOrgSeq}
                 sortMode={sortMode}
                 setSortMode={setSortMode}
-                // onAddLabor={() => addRowBelow("4")}
-                // onAddPart={() => addRowBelow("5")}
                 onDeleteSelected={handleDeleteSelected}
                 onDeleteAll={handleDeleteAll}
                 onMovePaintToBottom={movePaintToBottom}
@@ -2219,6 +2251,7 @@ export default function EstimateEditPage() {
                 sidePanelOpen={sidePanelOpen}
                 est_serial={est_serial}
                 onSharedEstimateSelect={handleSharedEstimateSelect}
+                readOnly={isLocked}
               />
               
             </div>
@@ -2239,6 +2272,7 @@ export default function EstimateEditPage() {
             onSettleEnter={handleSettleEnter}
             settleRefreshKey={settleRefreshKey}
             laborWinOpen={laborWinOpen || paintWinOpen}
+            readOnly={isLocked}
           />
         </div>
       </div>

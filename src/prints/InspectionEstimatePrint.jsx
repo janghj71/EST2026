@@ -196,23 +196,25 @@ export default function InspectionEstimatePrint() {
     return (
       <table>
         <colgroup>
-          <col style={{ width: "240px" }} />
+          <col style={{ width: "230px" }} />
           <col style={{ width: "68px" }} />
           <col style={{ width: "28px" }} />
-          <col style={{ width: "66px" }} />
-          <col style={{ width: "66px" }} />
-          <col style={{ width: "66px" }} />
+          <col style={{ width: "50px" }} />
+          <col style={{ width: "60px" }} />
+          <col style={{ width: "60px" }} />
+          <col style={{ width: "60px" }} />
         </colgroup>
         <thead>
           <tr style={{ backgroundColor: "#e8e8e8" }}>
             <th rowSpan={2} style={THLC}>견 적 내 용</th>
-            <th colSpan={3} style={THLC}>부 품 내 역</th>
+            <th colSpan={4} style={THLC}>부 품 내 역</th>
             <th rowSpan={2} style={THLC}>공 임</th>
             <th rowSpan={2} style={THLC}>합 계</th>
           </tr>
           <tr style={{ backgroundColor: "#e8e8e8" }}>
             <th style={THLC}>코 드</th>
             <th style={THLC}>수량</th>
+            <th style={THLC}>단 가</th>
             <th style={THLC}>계</th>
           </tr>
         </thead>
@@ -224,6 +226,7 @@ export default function InspectionEstimatePrint() {
               </td>
               <td style={TDC}>{row?.part_makercode ?? ""}</td>
               <td style={TDR}>{row ? showQty(row) : ""}</td>
+              <td style={TDR}></td>
               <td style={TDR}>{row ? fmtN(row.partsum) : ""}</td>
               <td style={TDR}>{row ? fmtN(row.paysum) : ""}</td>
               <td style={TDR}>{row ? rowTotal(row) : ""}</td>

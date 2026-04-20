@@ -14,11 +14,12 @@ export default function ComboInput({
   value,
   onChange,
   options = [],
-  normalize, 
+  normalize,
   placeholder,
   inputClassName = "",
   maxHeightClassName = "max-h-56",
   showAllWhenNoMatch = false,
+  disabled = false,
 }) {
   const rootRef = useRef(null);
   const inputRef = useRef(null);
@@ -166,59 +167,61 @@ export default function ComboInput({
           ref={inputRef}
           className={inputClassName}
           value={q}
+          disabled={disabled}
           onChange={(e) => {
-            // const v = e.target.value;
+            if (disabled) return;
             const raw = e.target.value;
-            const v = normalize ? normalize(raw) : raw; 
-
+            const v = normalize ? normalize(raw) : raw;
             setQ(v);
-            setIsFiltering(true); 
+            setIsFiltering(true);
             setOpen(true);
             setHi(-1);
-            setIntentPick(false); // ★ 타이핑 중엔 옵션 선택 의도 없음
-            onChange?.(v); // 입력 즉시 반영
+            setIntentPick(false);
+            onChange?.(v);
           }}
-          onKeyDown={onKeyDown}
+          onKeyDown={disabled ? undefined : onKeyDown}
           placeholder={placeholder}
           onMouseDown={() => {
+            if (disabled) return;
             setIsFiltering(false);
             openDropdown(false);
           }}
           onFocus={() => {
-            // 키보드 탭 이동으로 들어와도 전체 옵션이 자연스럽다
+            if (disabled) return;
             setIsFiltering(false);
           }}
         />
 
         {/* ▼ 토글 버튼 (클릭 시에만 열기/닫기) */}
-        <div
-          role="button"
-          aria-hidden="true"
-          className="absolute right-1 top-1/2 -translate-y-1/2
-                    h-7 w-7 flex items-center justify-center
-                    rounded-md hover:bg-zinc-100 text-zinc-600
-                    cursor-pointer select-none"
-          onMouseDown={(e) => {
-            // input blur 방지 + 포커스 생성 차단
-            e.preventDefault();
-          }}
-          onClick={() => {
-            if (open) {
-              setOpen(false);
-              setHi(-1);
-              return;
-            }
-            openDropdown(true);
-          }}
-        >
-          ▼
-        </div>
+        {!disabled && (
+          <div
+            role="button"
+            aria-hidden="true"
+            className="absolute right-1 top-1/2 -translate-y-1/2
+                      h-7 w-7 flex items-center justify-center
+                      rounded-md hover:bg-zinc-100 text-zinc-600
+                      cursor-pointer select-none"
+            onMouseDown={(e) => {
+              e.preventDefault();
+            }}
+            onClick={() => {
+              if (open) {
+                setOpen(false);
+                setHi(-1);
+                return;
+              }
+              openDropdown(true);
+            }}
+          >
+            ▼
+          </div>
+        )}
 
 
       </div>
 
       {/* {open && filtered.length > 0 && ( */}
-      {open && shownOptions.length > 0 && (
+      {!disabled && open && shownOptions.length > 0 && (
         <div
           ref={listRef}
           className={[

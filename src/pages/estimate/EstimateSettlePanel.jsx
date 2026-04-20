@@ -43,7 +43,7 @@ function SettleStat({ label, valueText, emphasize = false, red = false, labelRed
   );
 }
 
-export default function EstimateSettlePanel({ master, inputCls, refreshKey }) {
+export default function EstimateSettlePanel({ master, inputCls, refreshKey, readOnly = false }) {
   const claims = Array.isArray(master?.claims) ? master.claims : [];
   const [selectedIdx, setSelectedIdx] = useState(() => (claims.length ? 0 : -1));
 
@@ -205,6 +205,7 @@ export default function EstimateSettlePanel({ master, inputCls, refreshKey }) {
                   value={editValues.depreci_amt}
                   onChange={(v) => setEditField("depreci_amt", v)}
                   onBlur={() => refreshSettleField("depreci_amt", editRef.current.depreci_amt)}
+                  readOnly={readOnly}
                 />
               </SettleRow>
 
@@ -214,6 +215,7 @@ export default function EstimateSettlePanel({ master, inputCls, refreshKey }) {
                   value={editValues.rem_amt}
                   onChange={(v) => setEditField("rem_amt", v)}
                   onBlur={() => refreshSettleField("rem_amt", editRef.current.rem_amt)}
+                  readOnly={readOnly}
                 />
               </SettleRow>
             </div>
@@ -240,6 +242,7 @@ export default function EstimateSettlePanel({ master, inputCls, refreshKey }) {
                     }}
                     options={["0", "5", "8", "9", "9.5", "10"]}
                     inputClassName={inputCls}
+                    disabled
                   />
                   <div className="h-9 w-full min-w-0 flex items-center justify-end rounded-md border border-zinc-200 bg-zinc-50 px-2 text-sm text-zinc-700">
                     {fmt(n(settle.endvat))}
@@ -269,6 +272,7 @@ export default function EstimateSettlePanel({ master, inputCls, refreshKey }) {
                     value={editValues.insura_exemp}
                     onChange={(v) => setEditField("insura_exemp", v)}
                     onBlur={() => refreshSettleField("insura_exemp", editRef.current.insura_exemp)}
+                    readOnly={readOnly}
                   />
                 </SettleRow>
 
