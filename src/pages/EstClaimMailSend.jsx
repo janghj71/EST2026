@@ -1,12 +1,14 @@
-// src/pages/EstClaimSend.jsx
+// src/pages/EstClaimMailSend.jsx
 import React, { useEffect, useRef, useState } from "react";
 import { Mail, Phone, X } from "lucide-react";
 import IconBtn from "../components/IconBtn";
 import { useInsurerContacts } from "../hooks/useInsurerContacts";
-import { useApi } from "../hooks/useApi";
+import { useEstimate } from "../hooks/useEstimate";
+import { useMailSend } from "../hooks/useMailSend";
 import { useAlert } from "../alerts";
+import { useLoading } from "../loading/useLoading";
 
-const REPORT_BASE = "http://estservice.goldauto.co.kr/report/est_report03.aspx";
+import { API_HOST } from "../api/config";
 const STORAGE_KEY = "estClaimSendCtx";
 const MSG_TYPE = "EST_CLAIM_SEND_SET_CTX";
 
@@ -23,7 +25,7 @@ function emptyTab() {
   return { email: "", subject: "", body: "", fax: "", hp: "", sendSms: true };
 }
 
-function buildAutoEntry(claim, contacts, carno) {
+function buildAutoEntry(claim, contacts, carno, isest) {
   const bocomContacts = contacts.filter((c) => c.bocomcode === claim?.bocomcode);
   const matched =
     bocomContacts.find((c) => c.boman_nm === claim?.boman_nm) ?? bocomContacts[0];
@@ -36,11 +38,12 @@ function buildAutoEntry(claim, contacts, carno) {
   const hp = matched
     ? [matched.hp0, matched.hp1, matched.hp2].filter(Boolean).join("-")
     : "";
-  const subject = `${carno} ${claim?.regno ?? ""} 점검정비견적서입니다`;
+  const docName = String(isest) === "1" ? "점검정비견적서" : "청구서";
+  const subject = `${carno}_${claim?.regno ?? ""} ${docName}입니다`;
   return { email, subject, body: "", fax, hp, sendSms: true };
 }
 
-export default function EstClaimSend() {
+export default function EstClaimMailSend() {
   const [estSerial, setEstSerial] = useState("");
   const [carno, setCarno] = useState("");
   const [comcode, setComcode] = useState("");
@@ -48,28 +51,14 @@ export default function EstClaimSend() {
   const [claims, setClaims] = useState([]);
   const [activeTab, setActiveTab] = useState(0);
   const [tabState, setTabState] = useState({});
-  const [sending, setSending] = useState(false);
 
   const initializedRef = useRef(new Set());
 
   const { contacts } = useInsurerContacts();
   const { info, error: alertError } = useAlert();
-
-  // 메일청구 API
-  const { refetch: sendMail } = useApi({
-    path: "/est_mail_send.aspx",
-    method: "POST",
-    bodyType: "form",
-    immediate: false,
-  });
-
-  // 청구 완료 처리 API (reqday='1')
-  const { refetch: updateReqday } = useApi({
-    path: "/est_masterestimate_u.aspx",
-    method: "POST",
-    bodyType: "form",
-    immediate: false,
-  });
+  const { withLoading } = useLoading();
+  const { sendEstimateMail } = useMailSend();
+  const { requestEstimate } = useEstimate();
 
   // sessionStorage 복원 (F5 대비)
   useEffect(() => {
@@ -122,7 +111,7 @@ export default function EstClaimSend() {
     initializedRef.current.add(activeTab);
     setTabState((prev) => ({
       ...prev,
-      [activeTab]: buildAutoEntry(claim, contacts, carno),
+      [activeTab]: buildAutoEntry(claim, contacts, carno, isest),
     }));
   }, [activeTab, claims, contacts, carno]);
 
@@ -135,22 +124,21 @@ export default function EstClaimSend() {
     }));
 
   const activeClaim = claims[activeTab];
+  const reportPath = String(isest) === "1" ? "est_report03.aspx" : "est_report01.aspx";
   const iframeUrl = activeClaim?.estbo_seqno
-    ? `${REPORT_BASE}?comcode=${encodeURIComponent(comcode)}&est_serial=${encodeURIComponent(estSerial)}&estbo_seqno=${encodeURIComponent(activeClaim.estbo_seqno)}`
+    ? `${API_HOST}/report/${reportPath}?comcode=${encodeURIComponent(comcode)}&est_serial=${encodeURIComponent(estSerial)}&estbo_seqno=${encodeURIComponent(activeClaim.estbo_seqno)}`
     : "";
 
-  const onEmailSend = async () => {
+  const doEmailSend = async () => {
     if (!claims.length) {
       alertError("청구처를 선택하세요.");
       return;
     }
 
-    // 미방문 탭은 buildAutoEntry로 채움
     const allTabs = claims.map((claim, idx) =>
-      tabState[idx] ?? buildAutoEntry(claim, contacts, carno)
+      tabState[idx] ?? buildAutoEntry(claim, contacts, carno, isest)
     );
 
-    // 메일주소 누락 검증
     const missingIdx = allTabs.findIndex((t) => !t.email);
     if (missingIdx >= 0) {
       setActiveTab(missingIdx);
@@ -158,49 +146,42 @@ export default function EstClaimSend() {
       return;
     }
 
-    setSending(true);
-    try {
-      const mailkind = String(isest) === "1" ? "03" : "01";
+    const mailkind = String(isest) === "1" ? "03" : "01";
 
-      for (let idx = 0; idx < claims.length; idx++) {
-        const claim = claims[idx];
-        const tab = allTabs[idx];
-        if (!claim?.estbo_seqno) continue;
+    for (let idx = 0; idx < claims.length; idx++) {
+      const claim = claims[idx];
+      const tab = allTabs[idx];
+      if (!claim?.estbo_seqno) continue;
 
-        await sendMail({
-          comcode,
-          est_serial: estSerial,
-          estbo_seqno: claim.estbo_seqno,
-          mailkind,
-          mail_addr: tab.email,
-          mail_subject: tab.subject,
-          mail_text: tab.body,
-          hp: tab.hp,
-          lsms: tab.sendSms ? "1" : "0",
-        });
-      }
-
-      await updateReqday({
+      await sendEstimateMail({
         comcode,
         est_serial: estSerial,
-        reqday: "1",
+        estbo_seqno: claim.estbo_seqno,
+        mailkind,
+        mail_addr: tab.email,
+        mail_subject: tab.subject,
+        mail_text: tab.body,
+        hp: tab.hp,
+        lsms: tab.sendSms ? "1" : "0",
       });
-
-      // 부모창에 마스터 리프레시 요청
-      try {
-        window.opener?.postMessage(
-          { type: "EST_MASTER_REFRESH", payload: { est_serial: estSerial } },
-          window.location.origin
-        );
-      } catch {}
-
-      await info("메일청구가 완료되었습니다.");
-    } catch (err) {
-      alertError(err?.message ?? "메일청구 실패");
-    } finally {
-      setSending(false);
     }
+
+    await requestEstimate(estSerial);
+
+    try {
+      window.opener?.postMessage(
+        { type: "EST_MASTER_REFRESH", payload: { est_serial: estSerial } },
+        window.location.origin
+      );
+    } catch {}
+
+    await info("메일청구가 완료되었습니다.");
   };
+
+  const onEmailSend = () =>
+    withLoading(doEmailSend, "메일 전송 중...").catch((err) =>
+      alertError(err?.message ?? "메일청구 실패")
+    );
 
   const onFaxSend = () => {
     console.log("팩스청구", {
@@ -216,31 +197,25 @@ export default function EstClaimSend() {
   return (
     <div className="h-screen bg-white overflow-hidden flex flex-col">
       {/* 헤더 */}
-      <div className="border-b border-zinc-200 px-4 py-3 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onEmailSend}
-          disabled={sending}
-          className="inline-flex items-center gap-1.5 rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <Mail size={15} />
-          {sending ? "전송 중..." : "메일청구"}
-        </button>
-        <button
-          type="button"
-          onClick={onFaxSend}
-          className="inline-flex items-center gap-1.5 rounded-md bg-zinc-600 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700"
-        >
-          <Phone size={15} />
-          팩스청구
-        </button>
-        <div className="ml-auto">
-          <IconBtn icon={X} label="닫기" variant="primary" onClick={() => window.close()} />
+      <div className="border-b border-zinc-200 bg-white">
+        <div className="px-6 py-4 flex items-start gap-4">
+          <div className="min-w-0">
+            <div className="text-xl font-semibold text-zinc-900">청구서 발송</div>
+            <div className="mt-1 text-sm text-zinc-500">
+              차량번호 <span className="text-zinc-800 font-semibold">{carno || "-"}</span>
+            </div>
+          </div>
+
+          <div className="ml-auto flex items-center gap-2">
+            <IconBtn icon={Mail} label="메일청구" variant="orange" onClick={onEmailSend} />
+            <IconBtn icon={Phone} label="팩스청구" onClick={onFaxSend} />
+            <IconBtn icon={X} label="닫기" variant="primary" onClick={() => window.close()} />
+          </div>
         </div>
       </div>
 
       {/* 탭 */}
-      <div className="flex border-b border-zinc-200 bg-white px-4">
+      <div className="flex border-b border-zinc-200 bg-white px-6">
         {claims.length === 0 ? (
           <span className="py-2.5 text-sm text-zinc-400">청구처 데이터 없음</span>
         ) : (
@@ -263,7 +238,7 @@ export default function EstClaimSend() {
       </div>
 
       {/* 입력 폼 */}
-      <div className="px-4 py-2 border-b border-zinc-200 bg-white">
+      <div className="px-6 py-3 border-b border-zinc-200 bg-white">
         <Row label="받는사람 메일주소">
           <input
             value={current.email}

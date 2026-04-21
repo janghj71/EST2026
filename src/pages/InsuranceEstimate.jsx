@@ -2,11 +2,13 @@
 import { useNavigate } from "react-router-dom";
 import FixedHeadTable from "../components/FixedHeadTable";
 import { openCenteredWindow } from "../utils/popup";
+import ClaimSelectModal from "./estimate/ClaimSelectModal";
 import CheckBox from "../components/CheckBox";
 import { useAlert } from "../alerts";
 import { useLoading } from "../loading/useLoading";
 import { useEstimate } from "../hooks/useEstimate";
 import { useTbCode } from "../hooks/useTbCode";
+import { getComcode } from "../api/config";
 
 /**
  * 보험 견적일지 (UI 샘플)
@@ -56,6 +58,8 @@ export default function InsuranceEstimate() {
     claims, claimLoading, claimError, fetchClaims,
     details, detailLoading, detailError, fetchDetails,
     unlockEstimate,
+    requestEstimate,
+    closeEstimate,
   } = useEstimate();
 
   const { codes: sortCodes } = useTbCode('IDX01');
@@ -66,6 +70,8 @@ export default function InsuranceEstimate() {
   const smsWinRef = useRef(null);
   const memoWinRef = useRef(null);
   const depositWinRef = useRef(null);
+  const claimWinRef = useRef(null);
+  const customerWinRef = useRef(null);
 
   const childWinsRef = useRef(new Set());
 
@@ -126,8 +132,8 @@ export default function InsuranceEstimate() {
   clearSavedState();
 
   // ====== 선택/상세 ======
-  const [selected, setSelected] = useState(null);
-  const [selectedClaim, setSelectedClaim] = useState(null);
+  const [selectedRaw, setSelected] = useState(null);
+  const [selectedClaimRaw, setSelectedClaim] = useState(null);
   const [detailOpen, setDetailOpen] = useState(false);
 
   // ====== 분할바 (견적상세 바로 위) ======
@@ -136,11 +142,67 @@ export default function InsuranceEstimate() {
   const startY = useRef(0);
   const startH = useRef(0);
 
+  // sortCodes 미로드 시엔 raw sortKey, 로드 후 목록에 없으면 첫 항목으로 폴백
+  const effectiveSortKey = useMemo(() => {
+    if (!sortCodes.length) return sortKey;
+    return sortCodes.some(c => c.def_value === sortKey) ? sortKey : sortCodes[0].def_value;
+  }, [sortKey, sortCodes]);
+
+  // 보험견적일지: 보험건(seccode=12) + 체크박스 필터 + 정렬
+  const insuranceEstimates = useMemo(() => {
+    const byInsurance = estimates.filter((row) => String(row?.seccode ?? "") === "12");
+    const filtered = (!chkEstimate && !chkWork && !chkClosed)
+      ? byInsurance
+      : byInsurance.filter((row) => {
+          const typeMatch =
+            (!chkEstimate && !chkWork) ||
+            (chkEstimate && row.seccodename === '견적_보험') ||
+            (chkWork     && row.seccodename === '작업_보험');
+          const closedMatch = !chkClosed || (row.workend != null && row.workend !== '');
+          return typeMatch && closedMatch;
+        });
+    const arr = [...filtered];
+    if (effectiveSortKey) {
+      if (effectiveSortKey.includes(';')) {
+        const fields = effectiveSortKey.split(';').map(f => f.trim());
+        arr.sort((a, b) => {
+          const A = fields.map(f => String(a[f] ?? '')).join('-');
+          const B = fields.map(f => String(b[f] ?? '')).join('-');
+          return A.localeCompare(B, 'ko');
+        });
+      } else {
+        const parts = effectiveSortKey.trim().split(/\s+/);
+        const field = parts[0];
+        const desc = parts[1]?.toLowerCase() === 'desc';
+        arr.sort((a, b) => {
+          const aVal = String(a[field] ?? '');
+          const bVal = String(b[field] ?? '');
+          const cmp = aVal.localeCompare(bVal, 'ko');
+          return desc ? -cmp : cmp;
+        });
+      }
+    }
+    return arr;
+  }, [estimates, chkEstimate, chkWork, chkClosed, effectiveSortKey]);
+
+  // 파생 selected: 필터 후 목록에 없으면 null
+  const selected = useMemo(
+    () => selectedRaw && insuranceEstimates.some(r => r.est_serial === selectedRaw.est_serial)
+      ? selectedRaw : null,
+    [selectedRaw, insuranceEstimates]
+  );
+
+  // 파생 selectedClaim: claims 갱신 시 첫 항목 자동 선택
+  const selectedClaim = useMemo(() => {
+    if (!claims.length) return null;
+    if (selectedClaimRaw && claims.some(c => c.estbo_seqno === selectedClaimRaw.estbo_seqno))
+      return selectedClaimRaw;
+    return claims[0];
+  }, [selectedClaimRaw, claims]);
+
   // ====== Row Action Bar ======
   const [printOpen, setPrintOpen] = useState(false);
 
-  // 선택 Row 변경 시 드롭다운 닫기
-  useEffect(() => { setPrintOpen(false); }, [selected]);
 
   // 조회 조건 변경 시 sessionStorage에 저장 (F5 복원용)
   useEffect(() => {
@@ -170,76 +232,7 @@ export default function InsuranceEstimate() {
       setSelected(found);
       restoredSerialRef.current = null; // 복원 1회만
     }
-  }, [estimates]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // sortCodes 로드 완료 후 현재 sortKey가 목록에 없으면 첫 번째 항목으로 폴백
-  useEffect(() => {
-    if (sortCodes.length > 0 && !sortCodes.some(c => c.def_value === sortKey)) {
-      setSortKey(sortCodes[0].def_value);
-    }
-  }, [sortCodes]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const estimateColumns = useMemo(
-    () => [
-      { key: "seccodename", title: "구분", width: "7%", align: "left" },
-      { key: "carno", title: "차량번호", width: "9%", align: "left" },
-      { key: "carname", title: "차량명", width: "12%", align: "left" },
-      { key: "custom_name", title: "고객명", width: "9%", align: "left" },
-      { key: "hp0", title: "연락처", width: "10%", align: "left", render: (_v, row) => [row.hp0, row.hp1, row.hp2].filter(Boolean).join('-') || "-" },
-      { key: "bocomname", title: "보험사", width: "12%", align: "left" },
-      { key: "saletotal", title: "견적금액", width: "9%", align: "right", render: (v) => fmt(v) },
-      { key: "inday", title: "입고일자", width: "9%", align: "left" },
-      { key: "outday", title: "출고일자", width: "9%", align: "left", render: (v) => v || "-" },
-      { key: "preoutdate", title: "출고예정일시", width: "12%", align: "left" },
-      { key: "statename", title: "상태", width: "8%", align: "left", render: (v, row) => <StatusBadge value={v} row={row} onUnlock={handleUnlock} /> },
-    ],
-    []
-  );
-
-  // 보험견적일지: 보험건(seccode=12) + 체크박스 필터 + 정렬
-  // 견적/작업: OR 조건 / 종결: AND 조건
-  const insuranceEstimates = useMemo(() => {
-    const byInsurance = estimates.filter((row) => String(row?.seccode ?? "") === "12");
-
-    // 체크박스 필터
-    const filtered = (!chkEstimate && !chkWork && !chkClosed)
-      ? byInsurance
-      : byInsurance.filter((row) => {
-          const typeMatch =
-            (!chkEstimate && !chkWork) ||
-            (chkEstimate && row.seccodename === '견적_보험') ||
-            (chkWork     && row.seccodename === '작업_보험');
-          const closedMatch = !chkClosed || (row.workend != null && row.workend !== '');
-          return typeMatch && closedMatch;
-        });
-
-    // 정렬 — def_value 필드명 파싱
-    // 형식: "field desc" | "field" | "f1;f2;f3" (복합 필드)
-    const arr = [...filtered];
-    if (sortKey) {
-      if (sortKey.includes(';')) {
-        // 복합 필드 (예: "hp0;hp1;hp2") → 하이픈 결합 문자열 비교
-        const fields = sortKey.split(';').map(f => f.trim());
-        arr.sort((a, b) => {
-          const A = fields.map(f => String(a[f] ?? '')).join('-');
-          const B = fields.map(f => String(b[f] ?? '')).join('-');
-          return A.localeCompare(B, 'ko');
-        });
-      } else {
-        // "inday desc" 또는 단순 필드명
-        const parts = sortKey.trim().split(/\s+/);
-        const field = parts[0];
-        const desc = parts[1]?.toLowerCase() === 'desc';
-        arr.sort((a, b) => {
-          const aVal = String(a[field] ?? '');
-          const bVal = String(b[field] ?? '');
-          const cmp = aVal.localeCompare(bVal, 'ko');
-          return desc ? -cmp : cmp;
-        });
-      }
-    }
-    return arr;
-  }, [estimates, chkEstimate, chkWork, chkClosed, sortKey]);
+  }, [estimates]);
 
   const claimColumns = useMemo(
     () => [
@@ -344,6 +337,7 @@ export default function InsuranceEstimate() {
         );
         registerChildWin(photoWinRef.current);
         return;
+      // eslint-disable-next-line no-unused-vars
       } catch (e) {
         // 핸들이 꼬였으면 새로 열기
         photoWinRef.current = null;
@@ -435,8 +429,92 @@ export default function InsuranceEstimate() {
     registerChildWin(win);
   };
 
-  const onPrint = (kind) =>
-    requireSelected() && alert(`인쇄(${kind}): ${selected.est_serial}`);
+  const [claimSelectOpen, setClaimSelectOpen] = useState(false);
+  const [mailOpen, setMailOpen] = useState(false);
+
+  const openMailClaimSend = useCallback(() => {
+    const payload = {
+      est_serial: selected?.est_serial ?? "",
+      carno:      selected?.carno      ?? "",
+      comcode:    getComcode(),
+      claims:     claims,
+      isest:      selected?.isest      ?? "",
+    };
+
+    if (claimWinRef.current && !claimWinRef.current.closed) {
+      try {
+        claimWinRef.current.focus();
+        claimWinRef.current.postMessage(
+          { type: "EST_CLAIM_SEND_SET_CTX", payload },
+          window.location.origin
+        );
+        return;
+      } catch {
+        claimWinRef.current = null;
+      }
+    }
+
+    const win = openCenteredWindow("/est-claim-send", "estClaimSend", 750, 1000, {
+      postMessage: { type: "EST_CLAIM_SEND_SET_CTX", payload },
+    });
+    claimWinRef.current = win;
+    registerChildWin(win);
+  }, [selected, claims]);
+
+  const openCustomerMailSend = useCallback(() => {
+    const payload = {
+      est_serial:  selected?.est_serial  ?? "",
+      carno:       selected?.carno       ?? "",
+      comcode:     getComcode(),
+      isest:       selected?.isest       ?? "",
+      estbo_seqno: selectedClaim?.estbo_seqno ?? "",
+      email_acc:   selected?.email_acc   ?? "",
+      email_smtp:  selected?.email_smtp  ?? "",
+    };
+
+    if (customerWinRef.current && !customerWinRef.current.closed) {
+      try {
+        customerWinRef.current.focus();
+        customerWinRef.current.postMessage(
+          { type: "EST_CUSTOMER_SEND_SET_CTX", payload },
+          window.location.origin
+        );
+        return;
+      } catch {
+        customerWinRef.current = null;
+      }
+    }
+
+    const win = openCenteredWindow("/est-customer-send", "estCustomerSend", 750, 1000, {
+      postMessage: { type: "EST_CUSTOMER_SEND_SET_CTX", payload },
+    });
+    customerWinRef.current = win;
+    registerChildWin(win);
+  }, [selected, selectedClaim]);
+
+  const openInspectionPrint = useCallback((estbo_seqno) => {
+    const url =
+      `/print/inspection-estimate` +
+      `?est_serial=${encodeURIComponent(selected?.est_serial ?? "")}` +
+      `&estbo_seqno=${encodeURIComponent(estbo_seqno ?? "")}`;
+    openCenteredWindow(url, "inspectionEstimatePrint", 900, 1200, {
+      scrollbars: "yes", resizable: "yes",
+    });
+  }, [selected?.est_serial]);
+
+  const onPrint = useCallback((kind) => {
+    if (!selected) return;
+    if (kind === "점검정비 견적서") {
+      if (claims.length === 0) return;
+      if (claims.length === 1) {
+        openInspectionPrint(claims[0].estbo_seqno);
+      } else {
+        setClaimSelectOpen(true);
+      }
+      return;
+    }
+    alert(`인쇄(${kind}): ${selected.est_serial}`);
+  }, [selected, claims, openInspectionPrint]);
 
   // ====== 수정잠금 해제 ======
   const handleUnlock = useCallback(async (row) => {
@@ -449,6 +527,60 @@ export default function InsuranceEstimate() {
       error(err?.message ?? "잠금 해제 실패");
     }
   }, [unlockEstimate, fetchEstimates, dateFrom, dateTo, withLoading, error]);
+
+  // ====== 견적청구 / 견적종결 ======
+  const [outdayModal, setOutdayModal] = useState(null);
+  // { type: 'request'|'close', row }
+
+  const handleRequest = useCallback(async (row) => {
+    const needsDate = String(row.isest) !== "1" && !row.outday;
+    if (needsDate) { setOutdayModal({ type: "request", row }); return; }
+    try {
+      await withLoading(async () => {
+        await requestEstimate(row.est_serial, row.outday ?? "");
+        await fetchEstimates(dateFrom, dateTo);
+      }, "처리 중...");
+    } catch (err) { error(err?.message ?? "견적청구 실패"); }
+  }, [requestEstimate, fetchEstimates, dateFrom, dateTo, withLoading, error]);
+
+  const handleCloseEst = useCallback(async (row) => {
+    if (!row.outday) { setOutdayModal({ type: "close", row }); return; }
+    try {
+      await withLoading(async () => {
+        await closeEstimate(row.est_serial, row.outday);
+        await fetchEstimates(dateFrom, dateTo);
+      }, "처리 중...");
+    } catch (err) { error(err?.message ?? "견적종결 실패"); }
+  }, [closeEstimate, fetchEstimates, dateFrom, dateTo, withLoading, error]);
+
+  const handleOutdayConfirm = useCallback(async (outday) => {
+    const { type, row } = outdayModal;
+    setOutdayModal(null);
+    try {
+      await withLoading(async () => {
+        if (type === "request") await requestEstimate(row.est_serial, outday);
+        else                    await closeEstimate(row.est_serial, outday);
+        await fetchEstimates(dateFrom, dateTo);
+      }, "처리 중...");
+    } catch (err) { error(err?.message ?? "처리 실패"); }
+  }, [outdayModal, requestEstimate, closeEstimate, fetchEstimates, dateFrom, dateTo, withLoading, error]);
+
+  const estimateColumns = useMemo(
+    () => [
+      { key: "seccodename", title: "구분", width: "7%", align: "left" },
+      { key: "carno", title: "차량번호", width: "9%", align: "left" },
+      { key: "carname", title: "차량명", width: "12%", align: "left" },
+      { key: "custom_name", title: "고객명", width: "9%", align: "left" },
+      { key: "hp0", title: "연락처", width: "10%", align: "left", render: (_v, row) => [row.hp0, row.hp1, row.hp2].filter(Boolean).join('-') || "-" },
+      { key: "bocomname", title: "보험사", width: "12%", align: "left" },
+      { key: "saletotal", title: "견적금액", width: "9%", align: "right", render: (v) => fmt(v) },
+      { key: "inday", title: "입고일자", width: "9%", align: "left" },
+      { key: "outday", title: "출고일자", width: "9%", align: "left", render: (v) => v || "-" },
+      { key: "preoutdate", title: "출고예정일시", width: "12%", align: "left" },
+      { key: "statename", title: "상태", width: "8%", align: "left", render: (v, row) => <StatusBadge value={v} row={row} onUnlock={handleUnlock} onRequest={handleRequest} onCloseEst={handleCloseEst} /> },
+    ],
+    [handleUnlock, handleRequest, handleCloseEst]
+  );
 
   // ====== 조회 버튼 ======
   const onSearch = useCallback(async () => {
@@ -463,30 +595,12 @@ export default function InsuranceEstimate() {
     await withLoading(() => fetchByText(searchText.trim()), '검색 중...');
   }, [searchText, fetchByText, withLoading, setSelected]);
 
-  useEffect(() => {
-    setMonthAnchor(new Date(dateTo));
-  }, [dateTo]);
-
-  // 견적 선택 시 → 청구보험 조회 + 청구 선택 초기화
+  // 견적 선택 시 → 청구보험 조회 (selectedClaim 초기화는 setSelectedClaim(null) in row click)
   useEffect(() => {
     if (selected?.est_serial) {
-      setSelectedClaim(null);
       fetchClaims(selected.est_serial);
     }
   }, [selected?.est_serial]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!selected?.est_serial) return;
-    const exists = insuranceEstimates.some((row) => row.est_serial === selected.est_serial);
-    if (!exists) setSelected(null);
-  }, [insuranceEstimates, selected?.est_serial]);
-
-  // 청구보험 조회 완료 → 첫 번째 항목 자동 선택
-  useEffect(() => {
-    if (claims.length > 0) {
-      setSelectedClaim(claims[0]);
-    }
-  }, [claims]);
 
   // 청구보험 선택 시 → 견적상세 조회
   useEffect(() => {
@@ -603,14 +717,7 @@ export default function InsuranceEstimate() {
       w.postMessage(
         { type: "SMS_SEND_SET_CTX", payload },  window.location.origin);
     } catch { /* empty */ }
-  }, [selected?.est_serial,
-    selected?.carno,
-    selected?.hp0,
-    selected?.hp1,
-    selected?.hp2,
-    selected?.isest,
-    selected?.isestname,
-    selected?.inday,]);
+  }, [selected]);
 
   useEffect(() => {
     const w = photoWinRef.current;
@@ -628,11 +735,7 @@ export default function InsuranceEstimate() {
         window.location.origin
       );
     } catch { /* empty */ }
-  }, [
-    // id만이 아니라 PhotoViewer에 영향 있는 값이 바뀌면 갱신되게
-    selected?.est_serial,
-    selected?.carno,
-  ]);
+  }, [selected]);
     
   useEffect(() => {
     const w = memoWinRef.current;
@@ -699,6 +802,17 @@ export default function InsuranceEstimate() {
       });
     });
   }, [selected?.est_serial, detailOpen]);
+
+  // 팝업(인쇄/청구 등)에서 마스터 변경 시 목록 재조회
+  useEffect(() => {
+    const handler = (ev) => {
+      if (ev.origin !== window.location.origin) return;
+      if (ev.data?.type !== "EST_MASTER_REFRESH") return;
+      fetchEstimates(dateFrom, dateTo);
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, [dateFrom, dateTo, fetchEstimates]);
 
   useEffect(() => {
     const onBeforeUnload = () => closeAllChildWins();
@@ -780,6 +894,7 @@ export default function InsuranceEstimate() {
                   value={dateTo}
                   onChange={(v) => {
                     setDateTo(v);
+                    setMonthAnchor(new Date(v));
                   }}
                 />
 
@@ -870,7 +985,7 @@ export default function InsuranceEstimate() {
               <div className="ml-auto">
                 <select
                   className="select-base" 
-                  value={sortKey}
+                  value={effectiveSortKey}
                   onChange={(e) => setSortKey(e.target.value)}
                 >
                   {sortCodes.map(c => (
@@ -902,7 +1017,7 @@ export default function InsuranceEstimate() {
                   rows={insuranceEstimates}
                   rowKey={(r) => r.est_serial}
                   selectedKey={selected?.est_serial}
-                  onRowClick={(r) => setSelected(r)}
+                  onRowClick={(r) => { setSelected(r); setSelectedClaim(null); setPrintOpen(false); setMailOpen(false); }}
                   // 선택 행 아래에 인라인 액션 표시 (기존 UX 그대로)
                   expandedKey={selected?.est_serial}
                   expandedRowRender={() => (
@@ -917,6 +1032,10 @@ export default function InsuranceEstimate() {
                       printOpen={printOpen}
                       setPrintOpen={setPrintOpen}
                       onPrint={onPrint}
+                      mailOpen={mailOpen}
+                      setMailOpen={setMailOpen}
+                      onMailClaim={openMailClaimSend}
+                      onCustomerSend={openCustomerMailSend}
                       isest={selected?.isest}
                     />
                   )}
@@ -1035,6 +1154,23 @@ export default function InsuranceEstimate() {
 
       </div>
 
+      <ClaimSelectModal
+        open={claimSelectOpen}
+        onClose={() => setClaimSelectOpen(false)}
+        claims={claims}
+        onSelect={(estbo_seqno) => {
+          setClaimSelectOpen(false);
+          openInspectionPrint(estbo_seqno);
+        }}
+      />
+
+      <OutdayModal
+        open={!!outdayModal}
+        title={outdayModal?.type === "request" ? "견적청구 - 출고일자 입력" : "견적종결 - 출고일자 입력"}
+        onConfirm={handleOutdayConfirm}
+        onClose={() => setOutdayModal(null)}
+      />
+
     </div>
   );
 }
@@ -1051,6 +1187,10 @@ function InlineActions({
   printOpen,
   setPrintOpen,
   onPrint,
+  mailOpen,
+  setMailOpen,
+  onMailClaim,
+  onCustomerSend,
   isest,
 }) {
   const printItems = String(isest) === "1"
@@ -1065,6 +1205,10 @@ function InlineActions({
         { label: "개인정보 활용동의" },
       ];
 
+  const customerMailLabel = String(isest) === "1"
+    ? "점검정비 견적서 - 고객용"
+    : "점검정비 명세서 - 고객용";
+
   return (
     <div className="flex flex-wrap items-center gap-2">
       <SmallBtn onClick={onModify}>수정</SmallBtn>
@@ -1076,9 +1220,26 @@ function InlineActions({
       <SmallBtn onClick={onSms}>문자</SmallBtn>
 
       <div className="relative">
-        <SmallBtn onClick={() => setPrintOpen(!printOpen)}>인쇄 ▾</SmallBtn>
+        <SmallBtn onClick={() => { setMailOpen(!mailOpen); setPrintOpen(false); }}>메일 ▾</SmallBtn>
+        {mailOpen && (
+          <div className="absolute left-0 top-9 w-52 flex flex-col overflow-hidden rounded-md border border-zinc-200 bg-white shadow-lg z-10">
+            <MenuItem onClick={() => { setMailOpen(false); onMailClaim?.(); }}>
+              견적청구 - 보험사
+            </MenuItem>
+            <MenuItem onClick={() => { setMailOpen(false); onCustomerSend?.(); }}>
+              {customerMailLabel}
+            </MenuItem>
+            <MenuItem onClick={() => { setMailOpen(false); alert("메일발송 조회"); }}>
+              메일발송 조회
+            </MenuItem>
+          </div>
+        )}
+      </div>
+
+      <div className="relative">
+        <SmallBtn onClick={() => { setPrintOpen(!printOpen); setMailOpen(false); }}>인쇄 ▾</SmallBtn>
         {printOpen && (
-          <div className="absolute left-0 top-9 w-48 overflow-hidden rounded-md border border-zinc-200 bg-white shadow-lg z-10">
+          <div className="absolute left-0 top-9 w-48 flex flex-col overflow-hidden rounded-md border border-zinc-200 bg-white shadow-lg z-10">
             {printItems.map((item) => (
               <MenuItem key={item.label} onClick={() => { setPrintOpen(false); onPrint(item.label); }}>
                 {item.label}
@@ -1159,12 +1320,15 @@ function Toggle({ label, checked, onChange }) {
   );
 }
 
-function StatusBadge({ value, row, onUnlock }) {
+function StatusBadge({ value, row, onUnlock, onRequest, onCloseEst }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0 });
   const badgeRef = useRef(null);
 
-  const isLocked = Boolean(row?.est_print || row?.reqday || row?.workend);
+  const isLocked   = Boolean(row?.est_print || row?.reqday || row?.workend);
+  const canRequest = !row?.reqday;
+  const canClose   = !row?.workend;
+  const hasMenu    = isLocked || canRequest || canClose;
 
   const cls =
     value === "종결"
@@ -1190,12 +1354,14 @@ function StatusBadge({ value, row, onUnlock }) {
   }, [open]);
 
   const handleBadgeClick = () => {
-    if (!isLocked) return;
+    if (!hasMenu) return;
     if (open) { setOpen(false); return; }
     const rect = badgeRef.current?.getBoundingClientRect();
     if (rect) setPos({ top: rect.bottom + 4, left: rect.left });
     setOpen(true);
   };
+
+  const pick = (fn, arg) => { setOpen(false); fn?.(arg); };
 
   return (
     <span ref={badgeRef} className="inline-flex">
@@ -1203,30 +1369,66 @@ function StatusBadge({ value, row, onUnlock }) {
         className={[
           "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold",
           cls,
-          isLocked ? "cursor-pointer hover:brightness-95" : "",
+          hasMenu ? "cursor-pointer hover:brightness-95" : "",
         ].join(" ")}
         onClick={handleBadgeClick}
       >
         {value}
       </span>
-      {open && isLocked && (
+      {open && hasMenu && (
         <div
           style={{ position: "fixed", top: pos.top, left: pos.left }}
-          className="z-[9999] min-w-[120px] rounded-md border border-zinc-200 bg-white shadow-lg py-1"
+          className="z-[9999] min-w-[120px] rounded-md border border-zinc-200 bg-white shadow-lg py-1 flex flex-col"
         >
-          <button
-            type="button"
-            className="w-full px-3 py-2 text-left text-sm text-zinc-800 hover:bg-zinc-100"
-            onClick={() => {
-              setOpen(false);
-              onUnlock?.(row);
-            }}
-          >
-            수정잠금 해제
-          </button>
+          {canRequest && (
+            <button type="button" className="w-full px-3 py-2 text-left text-sm text-zinc-800 hover:bg-zinc-100"
+              onClick={() => pick(onRequest, row)}>견적청구</button>
+          )}
+          {canClose && (
+            <button type="button" className="w-full px-3 py-2 text-left text-sm text-zinc-800 hover:bg-zinc-100"
+              onClick={() => pick(onCloseEst, row)}>견적종결</button>
+          )}
+          {isLocked && (
+            <button type="button" className="w-full px-3 py-2 text-left text-sm text-zinc-800 hover:bg-zinc-100"
+              onClick={() => pick(onUnlock, row)}>수정잠금 해제</button>
+          )}
         </div>
       )}
     </span>
+  );
+}
+
+function OutdayModal({ open, title, onConfirm, onClose }) {
+  const [date, setDate] = useState(() => ymd(new Date()));
+  useEffect(() => { if (open) setDate(ymd(new Date())); }, [open]);
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/30">
+      <div className="w-[320px] rounded-md border border-zinc-200 bg-white shadow-xl overflow-hidden">
+        <header className="flex items-center border-b border-zinc-100 bg-zinc-50 px-4 py-3">
+          <span className="text-sm font-semibold text-zinc-900">{title}</span>
+        </header>
+        <div className="px-4 py-4 flex items-center gap-3">
+          <label className="text-sm text-zinc-700 whitespace-nowrap">출고일자</label>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="flex-1 rounded-md border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-400"
+          />
+        </div>
+        <div className="flex justify-end gap-2 border-t border-zinc-100 px-4 py-3">
+          <button type="button" onClick={onClose}
+            className="rounded-md border border-zinc-200 bg-white px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50">
+            취소
+          </button>
+          <button type="button" disabled={!date} onClick={() => onConfirm(date)}
+            className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700 disabled:opacity-40">
+            확인
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

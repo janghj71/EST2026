@@ -12,7 +12,7 @@ import AlertModal from "../../components/AlertModal";
 import ClaimSelectModal from "./ClaimSelectModal";
 import { ArrowLeft } from "lucide-react";
 import { openCenteredWindow } from "../../utils/popup";
-import { formatNumber } from "../../utils/numberFormat";
+// import { formatNumber } from "../../utils/numberFormat";
 import { useEstimate } from "../../hooks/useEstimate";
 import { useMasterEstimateSave } from "../../hooks/useMasterEstimateSave";
 import { useEstimateClaimSave } from "../../hooks/useEstimateClaimSave";

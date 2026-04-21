@@ -158,6 +158,34 @@ export function useEstimate() {
     [unlockRefetch]
   );
 
+  // ── 견적청구 (reqday='1') ──
+  const { refetch: requestRefetch } = useApi({
+    path: "/est_masterestimate_u.aspx",
+    method: "POST",
+    bodyType: "form",
+    immediate: false,
+  });
+
+  const requestEstimate = useCallback(
+    (est_serial, outday) =>
+      requestRefetch({ est_serial, outday: outday ?? "", reqday: "1" }),
+    [requestRefetch]
+  );
+
+  // ── 견적종결 (workend='1') ──
+  const { refetch: closeRefetch } = useApi({
+    path: "/est_masterestimate_u.aspx",
+    method: "POST",
+    bodyType: "form",
+    immediate: false,
+  });
+
+  const closeEstimate = useCallback(
+    (est_serial, outday) =>
+      closeRefetch({ est_serial, outday: outday ?? "", workend: "1" }),
+    [closeRefetch]
+  );
+
   return {
     // 견적목록
     estimates: estimates ?? [],
@@ -192,6 +220,10 @@ export function useEstimate() {
 
     // 수정잠금 해제
     unlockEstimate,
+
+    // 견적청구 / 견적종결
+    requestEstimate,
+    closeEstimate,
   };
 }
 

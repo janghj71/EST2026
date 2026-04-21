@@ -82,6 +82,12 @@ export default function InspectionEstimatePrint() {
     updateEstPrint(est_serial).then(() => {
       estPrintRef.current = "1";
       setMaster((m) => m ? { ...m, est_print: "1" } : m);
+      try {
+        window.opener?.postMessage(
+          { type: "EST_MASTER_REFRESH", payload: { est_serial } },
+          window.location.origin
+        );
+      } catch { /* empty */ }
     }).catch(() => {});
   }, [est_serial, updateEstPrint]);
 
@@ -106,8 +112,17 @@ export default function InspectionEstimatePrint() {
   const sumGrand = sumTotal + sumVat;
 
   // ── 날짜 ────────────────────────────────────────────────────
-  const today = new Date();
-  const todayStr = `${today.getFullYear()} 년 ${String(today.getMonth() + 1).padStart(2, "0")} 월 ${String(today.getDate()).padStart(2, "0")} 일`;
+  const todayStr = (() => {
+    const src = master?.inday ?? "";
+    const d = src ? new Date(src) : new Date();
+    return `${d.getFullYear()} 년 ${String(d.getMonth() + 1).padStart(2, "0")} 월 ${String(d.getDate()).padStart(2, "0")} 일`;
+  })();
+
+  const printDateStr = (() => {
+    const n = new Date();
+    const p2 = (v) => String(v).padStart(2, "0");
+    return `${n.getFullYear()}-${p2(n.getMonth() + 1)}-${p2(n.getDate())} ${p2(n.getHours())}:${p2(n.getMinutes())}`;
+  })();
 
   // ── 기타 ─────────────────────────────────────────────────────
   const isInsurance = String(master?.seccode) === "12";
@@ -327,9 +342,11 @@ export default function InspectionEstimatePrint() {
 
       </div>
 
-      {/* 페이지 번호 — 푸터 박스 밖 */}
-      <div style={{ textAlign: "center", fontSize: "8pt", marginTop: "2mm", color: "#555" }}>
-        - {pageIndex + 1} / {totalPages} -
+      {/* 페이지 번호 + 인쇄일시 — 푸터 박스 밖 */}
+      <div style={{ display: "flex", alignItems: "center", fontSize: "8pt", marginTop: "2mm", color: "#555" }}>
+        <span>인쇄일시 : {printDateStr}</span>
+        <span style={{ flex: 1, textAlign: "center" }}>- {pageIndex + 1} / {totalPages} -</span>
+        <span style={{ visibility: "hidden" }}>인쇄일시 : {printDateStr}</span>
       </div>
     </>
   );

@@ -56,7 +56,7 @@ export default function EstimateHeaderBar({
       }
     }
 
-    const win = openCenteredWindow("/est-claim-send", "estClaimSend", 900, 760, {
+    const win = openCenteredWindow("/est-claim-send", "estClaimSend", 750, 1200, {
       postMessage: {
         type: "EST_CLAIM_SEND_SET_CTX",
         payload,
