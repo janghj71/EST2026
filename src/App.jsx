@@ -26,6 +26,7 @@ import ChemicalItemsPage from "./pages/ChemicalItemsPage";
 import RepairHistorySend from "./pages/RepairHistorySend";
 import EstClaimMailSend from "./pages/EstClaimMailSend";
 import EstCustomerMailSend from "./pages/EstCustomerMailSend";
+import MailHistoryPage from "./pages/MailHistoryPage";
 
 import EstimateEditPage from "./pages/estimate/EstimateEditPage";
 import LaborItemsPopup from "./pages/estimate/LaborItemsPopup";
@@ -33,6 +34,10 @@ import PaintItemsPopup from "./pages/estimate/PaintItemsPopup";
 import ChemicalItemsPopup from "./pages/estimate/ChemicalItemsPopup";
 import PartLookupPopup from "./pages/estimate/PartLookupPopup";
 import InspectionEstimatePrint from "./prints/InspectionEstimatePrint";
+import InspectionStatementPrint from "./prints/InspectionStatementPrint";
+import InsuranceClaimPrint from "./prints/InsuranceClaimPrint";
+import PrivacyConsentPrint from "./prints/PrivacyConsentPrint";
+import PrivacyConsentCapturePage from "./prints/PrivacyConsentCapturePage";
 
 export default function App() {
   return (
@@ -49,11 +54,16 @@ export default function App() {
         <Route path="/estimate-deposit" element={<DepositPopup />} />
         <Route path="/est-claim-send" element={<EstClaimMailSend />} />
         <Route path="/est-customer-send" element={<EstCustomerMailSend />} />
+        <Route path="/mail-history" element={<MailHistoryPage />} />
         <Route path="/labor-items" element={<LaborItemsPopup />} />
         <Route path="paint-items" element={<PaintItemsPopup />} />
         <Route path="chemical-items" element={<ChemicalItemsPopup />} />
         <Route path="part-lookup" element={<PartLookupPopup />} />
         <Route path="/print/inspection-estimate" element={<InspectionEstimatePrint />} />
+        <Route path="/print/inspection-statement" element={<InspectionStatementPrint />} />
+        <Route path="/print/insurance-claim" element={<InsuranceClaimPrint />} />
+        <Route path="/print/privacy-consent" element={<PrivacyConsentPrint />} />
+        <Route path="/print/privacy-consent/capture" element={<PrivacyConsentCapturePage />} />
 
         {/* 상단 고정 레이아웃 */}
         <Route element={<AppLayout />}>

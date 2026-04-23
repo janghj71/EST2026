@@ -2,10 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import FixedHeadTable from "../components/FixedHeadTable";
 import { Search, ChevronLeft, ChevronRight, X } from "lucide-react";
-
-function pad2(n) {
-  return String(n).padStart(2, "0");
-}
+import { pad2 } from "../utils/dateUtils";
 function yyyymmOf(year, month) {
   return `${year}${pad2(month)}`;
 }

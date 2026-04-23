@@ -5,6 +5,7 @@ import { X , Save,  Pen, Tag , Wrench, RefreshCw, Send, Trash2, Search, Download
 import IconBtn from "../components/IconBtn";
 import { useAlert } from "../alerts";
 import { moveFocusOnEnter } from "../utils/focusUtils";
+import { pad2, ymd } from "../utils/dateUtils";
 
 
 const inputCls =
@@ -807,13 +808,6 @@ function Field({ label, children }) {
       <div>{children}</div>
     </div>
   );
-}
-
-function pad2(n) {
-  return String(n).padStart(2, "0");
-}
-function ymd(d) {
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
 function Badge({ tone = "zinc", children }) {

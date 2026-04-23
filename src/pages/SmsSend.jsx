@@ -9,13 +9,7 @@ import { useAlimtalkTemplate } from "../hooks/useAlimtalkTemplate";
 import { useSms } from "../hooks/useSms";
 import { useSmsSender } from "../hooks/useSmsSender";
 import { getComcode } from "../api/config";
-
-function pad2(n) {
-  return String(n).padStart(2, "0");
-}
-function ymd(d) {
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-}
+import { pad2, ymd } from "../utils/dateUtils";
 
 function Row({ label, children }) {
   return (

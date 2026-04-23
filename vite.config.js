@@ -21,6 +21,13 @@ export default defineConfig(({ mode }) => {
           rewrite: (path) => path.replace(/^\/api/, ""),
         },
 
+        // Puppeteer 캡처 서버 (port 3001)
+        "/capture-api": {
+          target: "http://localhost:3001",
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/capture-api/, ""),
+        },
+
         // (선택) 다른 서비스들도 DEV에서 프록시로 탈 수 있게 하고 싶으면 추가
         "/neoservice": {
           target: env.VITE_NEOSERVICE || "http://neoservice.goldauto.co.kr",

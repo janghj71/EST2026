@@ -17,23 +17,7 @@ import { getComcode } from "../api/config";
  * - 테이블 컬럼은 그대로(예시로만 렌더). 실제 컬럼/데이터는 그대로 꽂으면 됨.
  */
 
-function pad2(n) {
-  return String(n).padStart(2, "0");
-}
-function ymd(d) {
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-}
-function monthRange(baseDate) {
-  const y = baseDate.getFullYear();
-  const m = baseDate.getMonth(); // 0~11
-  const from = new Date(y, m, 1);
-  const to = new Date(y, m + 1, 0);
-  return { from: ymd(from), to: ymd(to) };
-}
-function addMonths(baseDate, delta) {
-  // "해당 월의 1일"로 정규화해서 월 이동 안전하게
-  return new Date(baseDate.getFullYear(), baseDate.getMonth() + delta, 1);
-}
+import { ymd, monthRange, addMonths } from "../utils/dateUtils";
 
 
 const SS_KEY = "insurance_estimate_state";
@@ -51,7 +35,7 @@ function clearSavedState() {
 
 export default function InsuranceEstimate() {
   const navigate = useNavigate();
-  const { error, info, warning } = useAlert();
+  const { error, info, warning, confirm } = useAlert();
   const { withLoading } = useLoading();
   const {
     estimates, estLoading, estError, fetchEstimates, fetchByText,
@@ -72,6 +56,7 @@ export default function InsuranceEstimate() {
   const depositWinRef = useRef(null);
   const claimWinRef = useRef(null);
   const customerWinRef = useRef(null);
+  const mailHistWinRef = useRef(null);
 
   const childWinsRef = useRef(new Set());
 
@@ -317,7 +302,7 @@ export default function InsuranceEstimate() {
     openEstimateEdit(selected, "edit");
   };
   const onDelete = () => requireSelected() && alert(`견적삭제: ${selected.est_serial}`);
-  const onClose = () => requireSelected() && alert(`견적종결: ${selected.est_serial}`);
+  const onClose = () => { if (selected) handleCloseEst(selected); };
   
   const openPhotoViewer = () => {
     const estId = selected?.est_serial || "";
@@ -430,6 +415,7 @@ export default function InsuranceEstimate() {
   };
 
   const [claimSelectOpen, setClaimSelectOpen] = useState(false);
+  const [claimSelectKind, setClaimSelectKind] = useState("estimate");
   const [mailOpen, setMailOpen] = useState(false);
 
   const openMailClaimSend = useCallback(() => {
@@ -492,29 +478,106 @@ export default function InsuranceEstimate() {
     registerChildWin(win);
   }, [selected, selectedClaim]);
 
+  const openMailHistoryPage = useCallback(() => {
+    if (mailHistWinRef.current && !mailHistWinRef.current.closed) {
+      try { mailHistWinRef.current.focus(); return; } catch { mailHistWinRef.current = null; }
+    }
+    const win = openCenteredWindow("/mail-history", "mailHistory", 1100, 800, {
+      scrollbars: "yes", resizable: "yes",
+    });
+    mailHistWinRef.current = win;
+    registerChildWin(win);
+  }, []);
+
   const openInspectionPrint = useCallback((estbo_seqno) => {
     const url =
       `/print/inspection-estimate` +
       `?est_serial=${encodeURIComponent(selected?.est_serial ?? "")}` +
       `&estbo_seqno=${encodeURIComponent(estbo_seqno ?? "")}`;
-    openCenteredWindow(url, "inspectionEstimatePrint", 900, 1200, {
+    const win = openCenteredWindow(url, "inspectionEstimatePrint", 900, 1200, {
       scrollbars: "yes", resizable: "yes",
     });
+    registerChildWin(win);
   }, [selected?.est_serial]);
+
+  const openInspectionStatementPrint = useCallback((estbo_seqno) => {
+    const url =
+      `/print/inspection-statement` +
+      `?est_serial=${encodeURIComponent(selected?.est_serial ?? "")}` +
+      `&estbo_seqno=${encodeURIComponent(estbo_seqno ?? "")}`;
+    const win = openCenteredWindow(url, "inspectionStatementPrint", 900, 1200, {
+      scrollbars: "yes", resizable: "yes",
+    });
+    registerChildWin(win);
+  }, [selected?.est_serial]);
+
+  const openInsuranceClaimPrint = useCallback((estbo_seqno) => {
+    const url =
+      `/print/insurance-claim` +
+      `?est_serial=${encodeURIComponent(selected?.est_serial ?? "")}` +
+      `&estbo_seqno=${encodeURIComponent(estbo_seqno ?? "")}`;
+    const win = openCenteredWindow(url, "insuranceClaimPrint", 900, 1200, {
+      scrollbars: "yes", resizable: "yes",
+    });
+    registerChildWin(win);
+  }, [selected?.est_serial]);
+
+  const openPrivacyConsentPrint = useCallback(() => {
+    if (!selected) return;
+    const payload = {
+      est_serial:  selected.est_serial,
+      accday:      selected.accday,
+      carno:       selected.carno,
+      custom_name: selected.custom_name,
+      hp0:         selected.hp0,
+      hp1:         selected.hp1,
+      hp2:         selected.hp2,
+      email_acc:   selected.email_acc,
+      email_smtp:  selected.email_smtp,
+      claims,
+    };
+    sessionStorage.setItem("privacyConsentCtx", JSON.stringify(payload));
+    const win = openCenteredWindow("/print/privacy-consent", "privacyConsent", 900, 1200, {
+      scrollbars: "yes", resizable: "yes",
+    });
+    registerChildWin(win);
+  }, [selected, claims]);
 
   const onPrint = useCallback((kind) => {
     if (!selected) return;
+    if (kind === "개인정보 활용동의") {
+      openPrivacyConsentPrint();
+      return;
+    }
+    if (claims.length === 0) return;
     if (kind === "점검정비 견적서") {
-      if (claims.length === 0) return;
       if (claims.length === 1) {
         openInspectionPrint(claims[0].estbo_seqno);
       } else {
+        setClaimSelectKind("estimate");
         setClaimSelectOpen(true);
       }
       return;
     }
-    alert(`인쇄(${kind}): ${selected.est_serial}`);
-  }, [selected, claims, openInspectionPrint]);
+    if (kind === "점검정비 명세서") {
+      if (claims.length === 1) {
+        openInspectionStatementPrint(claims[0].estbo_seqno);
+      } else {
+        setClaimSelectKind("statement");
+        setClaimSelectOpen(true);
+      }
+      return;
+    }
+    if (kind === "수리비 청구서") {
+      if (claims.length === 1) {
+        openInsuranceClaimPrint(claims[0].estbo_seqno);
+      } else {
+        setClaimSelectKind("insurance");
+        setClaimSelectOpen(true);
+      }
+      return;
+    }
+  }, [selected, claims, openInspectionPrint, openInspectionStatementPrint, openInsuranceClaimPrint, openPrivacyConsentPrint, setClaimSelectKind, setClaimSelectOpen]);
 
   // ====== 수정잠금 해제 ======
   const handleUnlock = useCallback(async (row) => {
@@ -541,9 +604,11 @@ export default function InsuranceEstimate() {
         await fetchEstimates(dateFrom, dateTo);
       }, "처리 중...");
     } catch (err) { error(err?.message ?? "견적청구 실패"); }
-  }, [requestEstimate, fetchEstimates, dateFrom, dateTo, withLoading, error]);
+  }, [requestEstimate, fetchEstimates, dateFrom, dateTo, withLoading, error, setOutdayModal]);
 
   const handleCloseEst = useCallback(async (row) => {
+    const ok = await confirm("견적을 종결하시겠습니까?", "견적종결");
+    if (!ok) return;
     if (!row.outday) { setOutdayModal({ type: "close", row }); return; }
     try {
       await withLoading(async () => {
@@ -551,7 +616,7 @@ export default function InsuranceEstimate() {
         await fetchEstimates(dateFrom, dateTo);
       }, "처리 중...");
     } catch (err) { error(err?.message ?? "견적종결 실패"); }
-  }, [closeEstimate, fetchEstimates, dateFrom, dateTo, withLoading, error]);
+  }, [closeEstimate, fetchEstimates, dateFrom, dateTo, withLoading, error, confirm, setOutdayModal]);
 
   const handleOutdayConfirm = useCallback(async (outday) => {
     const { type, row } = outdayModal;
@@ -563,7 +628,7 @@ export default function InsuranceEstimate() {
         await fetchEstimates(dateFrom, dateTo);
       }, "처리 중...");
     } catch (err) { error(err?.message ?? "처리 실패"); }
-  }, [outdayModal, requestEstimate, closeEstimate, fetchEstimates, dateFrom, dateTo, withLoading, error]);
+  }, [outdayModal, requestEstimate, closeEstimate, fetchEstimates, dateFrom, dateTo, withLoading, error, setOutdayModal]);
 
   const estimateColumns = useMemo(
     () => [
@@ -1036,6 +1101,7 @@ export default function InsuranceEstimate() {
                       setMailOpen={setMailOpen}
                       onMailClaim={openMailClaimSend}
                       onCustomerSend={openCustomerMailSend}
+                      onMailHistory={openMailHistoryPage}
                       isest={selected?.isest}
                     />
                   )}
@@ -1160,11 +1226,18 @@ export default function InsuranceEstimate() {
         claims={claims}
         onSelect={(estbo_seqno) => {
           setClaimSelectOpen(false);
-          openInspectionPrint(estbo_seqno);
+          if (claimSelectKind === "statement") {
+            openInspectionStatementPrint(estbo_seqno);
+          } else if (claimSelectKind === "insurance") {
+            openInsuranceClaimPrint(estbo_seqno);
+          } else {
+            openInspectionPrint(estbo_seqno);
+          }
         }}
       />
 
       <OutdayModal
+        key={String(!!outdayModal)}
         open={!!outdayModal}
         title={outdayModal?.type === "request" ? "견적청구 - 출고일자 입력" : "견적종결 - 출고일자 입력"}
         onConfirm={handleOutdayConfirm}
@@ -1191,6 +1264,7 @@ function InlineActions({
   setMailOpen,
   onMailClaim,
   onCustomerSend,
+  onMailHistory,
   isest,
 }) {
   const printItems = String(isest) === "1"
@@ -1229,8 +1303,8 @@ function InlineActions({
             <MenuItem onClick={() => { setMailOpen(false); onCustomerSend?.(); }}>
               {customerMailLabel}
             </MenuItem>
-            <MenuItem onClick={() => { setMailOpen(false); alert("메일발송 조회"); }}>
-              메일발송 조회
+            <MenuItem onClick={() => { setMailOpen(false); onMailHistory?.(); }}>
+              발송메일 조회
             </MenuItem>
           </div>
         )}
@@ -1400,7 +1474,6 @@ function StatusBadge({ value, row, onUnlock, onRequest, onCloseEst }) {
 
 function OutdayModal({ open, title, onConfirm, onClose }) {
   const [date, setDate] = useState(() => ymd(new Date()));
-  useEffect(() => { if (open) setDate(ymd(new Date())); }, [open]);
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/30">

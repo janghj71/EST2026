@@ -232,6 +232,7 @@ export default function EstimateEditPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(null); // null | { type:"all" } | { type:"selected", orgSeqs:string[] }
   const [claimSelectOpen, setClaimSelectOpen] = useState(false);
+  const [claimSelectKind, setClaimSelectKind] = useState("estimate");
 
   const laborWinRef = useRef(null);
   const [laborWinOpen, setLaborWinOpen] = useState(false);
@@ -379,16 +380,83 @@ export default function EstimateEditPage() {
     });
   }, [est_serial]);
 
+  const openInspectionStatementPrint = useCallback((estbo_seqno) => {
+    const url =
+      `/print/inspection-statement` +
+      `?est_serial=${encodeURIComponent(est_serial)}` +
+      `&estbo_seqno=${encodeURIComponent(estbo_seqno ?? "")}`;
+    openCenteredWindow(url, "inspectionStatementPrint", 900, 1200, {
+      scrollbars: "yes",
+      resizable: "yes",
+    });
+  }, [est_serial]);
+
+  const openInsuranceClaimPrint = useCallback((estbo_seqno) => {
+    const url =
+      `/print/insurance-claim` +
+      `?est_serial=${encodeURIComponent(est_serial)}` +
+      `&estbo_seqno=${encodeURIComponent(estbo_seqno ?? "")}`;
+    openCenteredWindow(url, "insuranceClaimPrint", 900, 1200, {
+      scrollbars: "yes",
+      resizable: "yes",
+    });
+  }, [est_serial]);
+
+  const openPrivacyConsentPrint = useCallback(() => {
+    if (!master) return;
+    const payload = {
+      est_serial:  master.est_serial,
+      accday:      master.accday,
+      carno:       master.carno,
+      custom_name: master.custom_name,
+      hp0:         master.hp0,
+      hp1:         master.hp1,
+      hp2:         master.hp2,
+      email_acc:   master.email_acc,
+      email_smtp:  master.email_smtp,
+      claims:      master.claims ?? [],
+    };
+    sessionStorage.setItem("privacyConsentCtx", JSON.stringify(payload));
+    openCenteredWindow("/print/privacy-consent", "privacyConsent", 900, 1200, {
+      scrollbars: "yes", resizable: "yes",
+    });
+  }, [master]);
+
   const handlePrint = useCallback((label) => {
-    if (label !== "점검정비 견적서") return;
+    if (label === "개인정보 활용동의") {
+      openPrivacyConsentPrint();
+      return;
+    }
     const claimList = master?.claims ?? [];
     if (claimList.length === 0) return;
-    if (claimList.length === 1) {
-      openInspectionPrint(claimList[0].estbo_seqno);
-    } else {
-      setClaimSelectOpen(true);
+    if (label === "점검정비 견적서") {
+      if (claimList.length === 1) {
+        openInspectionPrint(claimList[0].estbo_seqno);
+      } else {
+        setClaimSelectKind("estimate");
+        setClaimSelectOpen(true);
+      }
+      return;
     }
-  }, [master, openInspectionPrint]);
+    if (label === "점검정비 명세서") {
+      if (claimList.length === 1) {
+        openInspectionStatementPrint(claimList[0].estbo_seqno);
+      } else {
+        setClaimSelectKind("statement");
+        setClaimSelectOpen(true);
+      }
+      return;
+    }
+    if (label === "수리비 청구서") {
+      if (claimList.length === 1) {
+        openInsuranceClaimPrint(claimList[0].estbo_seqno);
+      } else {
+        setClaimSelectKind("insurance");
+        setClaimSelectOpen(true);
+      }
+      return;
+    }
+  }, [master, openInspectionPrint, openInspectionStatementPrint, openInsuranceClaimPrint, openPrivacyConsentPrint]);
 
   const openLaborItemsPopup = async () => {
     await saveClaimIfActive();
@@ -2284,7 +2352,13 @@ export default function EstimateEditPage() {
         claims={master?.claims ?? []}
         onSelect={(estbo_seqno) => {
           setClaimSelectOpen(false);
-          openInspectionPrint(estbo_seqno);
+          if (claimSelectKind === "statement") {
+            openInspectionStatementPrint(estbo_seqno);
+          } else if (claimSelectKind === "insurance") {
+            openInsuranceClaimPrint(estbo_seqno);
+          } else {
+            openInspectionPrint(estbo_seqno);
+          }
         }}
       />
 
