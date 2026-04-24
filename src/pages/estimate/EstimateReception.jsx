@@ -246,13 +246,23 @@ export default function EstimateReception({ master, setMaster, laborWinOpen = fa
 
             <Field label="출고예정">
               <div className="grid grid-cols-[minmax(0,1fr)_minmax(64px,84px)] gap-2">
-                <input
-                  className={dateCls(master?.preoutday)}
-                  type="date"
-                  value={master?.preoutday ?? ""}
-                  onChange={(e) => set("preoutday")(e.target.value)}
-                  disabled={readOnly}
-                />
+                <div className="relative flex items-center min-w-0">
+                  <input
+                    className={dateCls(master?.preoutday)}
+                    type="date"
+                    value={master?.preoutday ?? ""}
+                    onChange={(e) => set("preoutday")(e.target.value)}
+                    disabled={readOnly}
+                  />
+                  {!readOnly && master?.preoutday && (
+                    <button
+                      type="button"
+                      onClick={() => set("preoutday")("")}
+                      className="absolute left-24 text-zinc-400 hover:text-zinc-600 text-base leading-none"
+                      tabIndex={-1}
+                    >×</button>
+                  )}
+                </div>
                 <select
                   className={'select-base w-full h-9 focus:ring-2 focus:ring-zinc-200 min-w-0'}
                   value={master?.preouttime ?? "10"}
@@ -272,13 +282,23 @@ export default function EstimateReception({ master, setMaster, laborWinOpen = fa
             </Field>
 
             <Field label="출고일자">
-              <input
-                className={dateCls(master?.outday)}
-                type="date"
-                value={master?.outday ?? ""}
-                onChange={(e) => set("outday")(e.target.value)}
-                disabled={readOnly}
-              />
+              <div className="relative flex items-center">
+                <input
+                  className={dateCls(master?.outday)}
+                  type="date"
+                  value={master?.outday ?? ""}
+                  onChange={(e) => set("outday")(e.target.value)}
+                  disabled={readOnly}
+                />
+                {!readOnly && master?.outday && (
+                  <button
+                    type="button"
+                    onClick={() => set("outday")("")}
+                    className="absolute left-24 text-zinc-400 hover:text-zinc-600 text-base leading-none"
+                    tabIndex={-1}
+                  >×</button>
+                )}
+              </div>
             </Field>
 
             <Field label="청구일자">

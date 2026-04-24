@@ -3,17 +3,10 @@ import { X, Save, Calendar } from "lucide-react";
 import IconBtn from "../components/IconBtn";
 import { useUrlContextSnapshot, setUrlContextSnapshot } from "../hooks/useUrlContextSnapshot";
 import { useAlert } from "../alerts";
+import { useDepositSave } from "../hooks/useDepositSave";
+import { ymd } from "../utils/dateUtils";
+import { unformatNumber } from "../utils/numberFormat";
 
-function todayYmd() {
-  const d = new Date();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${mm}-${dd}`;
-}
-
-function numberOnly(s) {
-  return String(s || "").replace(/[^\d]/g, "");
-}
 
 /**
  * 부모창 청구보험목록 row -> DepositItem 으로 normalize
@@ -22,6 +15,7 @@ function numberOnly(s) {
 function normalizeClaimRow(row) {
   if (!row) {
     return {
+      estbo_seqno: "",
       bocomname: "",
       regno: "",
       reqtotal: 0,
@@ -30,17 +24,19 @@ function normalizeClaimRow(row) {
     };
   }
 
-  const bocomname = row.bocomname || "";
-  const regno = row.regno || "";
-  const reqtotal = Number(row.reqtotal || 0) || 0;
-  const incom = Number(row.incom || 0) || 0;
-  const inday = row.inday || "";
+  const estbo_seqno = row.estbo_seqno || "";
+  const bocomname   = row.bocomname   || "";
+  const regno       = row.regno       || "";
+  const reqtotal    = Number(row.reqtotal || 0) || 0;
+  const incom       = Number(row.incom    || 0) || 0;
+  const inday       = row.inday       || "";
 
-  return { bocomname, regno, reqtotal, incom, inday };
+  return { estbo_seqno, bocomname, regno, reqtotal, incom, inday };
 }
 
 export default function DepositPopup() {
-  const { success } = useAlert();
+  const { success, error } = useAlert();
+  const { saveDeposit } = useDepositSave();
   const ctx = useUrlContextSnapshot({
     storageKey: "depositCtx",
     keys: ["est_serial", "carno"],
@@ -64,8 +60,8 @@ export default function DepositPopup() {
   // 실제 편집/저장할 items(최대2)
   const emptyItems = useMemo(
     () => [
-      { bocomname: "", regno: "", reqtotal: 0, incom: 0, inday: "" },
-      { bocomname: "", regno: "", reqtotal: 0, incom: 0, inday: "" },
+      { estbo_seqno: "", bocomname: "", regno: "", reqtotal: 0, incom: 0, inday: "" },
+      { estbo_seqno: "", bocomname: "", regno: "", reqtotal: 0, incom: 0, inday: "" },
     ],
     []
   );
@@ -148,10 +144,29 @@ export default function DepositPopup() {
   };
 
   const onSave = async () => {
-    // TODO: API 저장 (부모 claim row의 key가 필요하면 normalize 단계에서 id도 같이 넣어주면 됨)
-    console.log("SAVE_DEPOSIT", { est_serial: estSerial, items });
-    // alert("저장(샘플)");
-    await success("저장이 완료되었습니다.");
+    try {
+      // 보이는 항목(estbo_seqno 있는 것)만 순차 저장
+      const targets = visibleItems.filter((it) => it.estbo_seqno);
+      for (const it of targets) {
+        await saveDeposit({
+          est_serial:  estSerial,
+          estbo_seqno: it.estbo_seqno,
+          inday:       it.inday  || "",
+          incom:       it.incom  ?? 0,
+        });
+      }
+      await success("저장이 완료되었습니다.");
+      // 부모창 청구보험 목록 리프레시 후 닫기
+      try {
+        window.opener?.postMessage(
+          { type: "ESTIMATE_DEPOSIT_SAVED", payload: { est_serial: estSerial } },
+          window.location.origin,
+        );
+      } catch { /* empty */ }
+      window.close();
+    } catch (err) {
+      error(err?.message ?? "저장 실패");
+    }
   };
 
   const visibleItems = useMemo(() => {
@@ -187,7 +202,7 @@ export default function DepositPopup() {
               idx={idx}
               item={it}
               onChange={(patch) => updateItem(idx, patch)}
-              onSetToday={() => updateItem(idx, { inday: todayYmd() })}
+              onSetToday={() => updateItem(idx, { inday: ymd(new Date()) })}
             />
           ))}
         </div>
@@ -231,9 +246,9 @@ function DepositCard({ idx, item, onChange, onSetToday }) {
 
         <Field label="입금금액">
           <input
-            value={String(item.incom ?? "")}
+            value={item.incom ? Number(item.incom).toLocaleString() : ""}
             onChange={(e) =>
-              onChange({ incom: Number(numberOnly(e.target.value) || 0) })
+              onChange({ incom: Number(unformatNumber(e.target.value) || 0) })
             }
             className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
             placeholder="0"

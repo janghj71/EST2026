@@ -302,8 +302,12 @@ export default function PrivacyConsentPrint() {
   const [c3,   setC3]   = useState(true);
 
   /* ── 기존 서명 조회 후 보기 모드 ── */
-  const [viewMode,      setViewMode]      = useState(false);
+  const [viewMode,       setViewMode]       = useState(false);
   const [existingStamps, setExistingStamps] = useState({ signstamp: "", signstamp2: "" });
+
+  /* ── 인쇄 확인 모달 / 저장 진행 상태 ── */
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [saving,      setSaving]      = useState(false);
 
   /* ── 중복 조회 방지 ref ── */
   const fetchCalledRef = useRef(false);
@@ -323,9 +327,7 @@ export default function PrivacyConsentPrint() {
 
   /* ── ctx 준비되면 기존 서명 조회 → 분기 ── */
   const handleInitialFetch = useCallback(async (serial) => {
-    console.log("[PrivacyConsent] ① fetchSignStamp 호출 serial=", serial);
     const res  = await fetchSignStamp({ sign_serial: serial, signkind: "4" });
-    console.log("[PrivacyConsent] ② API 응답 res=", res);
 
     // API 오류 처리 (aborted / result:false)
     if (res?.result === "false" || res?.result === false) {
@@ -340,23 +342,16 @@ export default function PrivacyConsentPrint() {
     const rows = res?.dataset ?? [];
     console.log("[PrivacyConsent] ③ rows.length=", rows.length);
     if (rows.length === 0) {
-      console.log("[PrivacyConsent] ③-1 dataset 없음 → 정상 작성 모드");
       return;
     }
 
     const row = rows[0];
-    console.log("[PrivacyConsent] ④ row=", row,
-      "| signstamp:", !!row?.signstamp,
-      "| signstamp2:", !!row?.signstamp2);
     if (!row?.signstamp && !row?.signstamp2) {
-      console.log("[PrivacyConsent] ④-1 stamp 값 없음 → 정상 작성 모드");
       return;
     }
 
     // 기존 서명 있음 → 재작성 여부 확인
-    console.log("[PrivacyConsent] ⑤ confirm 다이얼로그 표시");
     const yes = await confirm("개인정보활용동의 내역을 재작성 하시겠습니까?");
-    console.log("[PrivacyConsent] ⑤ confirm 결과=", yes);
     if (!yes) {
       setExistingStamps({ signstamp: row.signstamp || "", signstamp2: row.signstamp2 || "" });
       setViewMode(true);
@@ -381,22 +376,19 @@ export default function PrivacyConsentPrint() {
     return () => { fetchCalledRef.current = false; };
   }, [ctx?.est_serial, handleInitialFetch]);
 
-  /* ── 인쇄 후 Puppeteer 캡처 → 서버 저장 ── */
-  const onAfterPrint = useCallback(async () => {
-    if (viewMode) return;                // 보기 모드는 저장 안 함
+  /* ── 인쇄 후 확인 모달 표시 (보기 모드 / est_serial 없으면 스킵) ── */
+  const onAfterPrint = useCallback(() => {
+    if (viewMode) return;
     if (!ctx?.est_serial) return;
+    setConfirmOpen(true);
+  }, [viewMode, ctx?.est_serial]);
 
+  /* ── [예, 인쇄됨] → 로딩 전환 → Puppeteer 캡처 + 서버 저장 ── */
+  const handleConfirmYes = useCallback(async () => {
+    setSaving(true);   // 로딩 시작 (모달은 열린 채로 유지, 닫기 버튼 disable)
     try {
-      const captureData = {
-        ...ctx,
-        c1,
-        c2,
-        c2id,
-        c3,
-        sigDataUrl,
-      };
-
-      const appUrl = window.location.origin;   // e.g. "http://localhost:5173"
+      const captureData = { ...ctx, c1, c2, c2id, c3, sigDataUrl };
+      const appUrl = window.location.origin;
 
       const res = await fetch("/capture-api/consent-pages", {
         method:  "POST",
@@ -421,8 +413,16 @@ export default function PrivacyConsentPrint() {
       console.log("[PrivacyConsentPrint] 서명 이미지 저장 완료");
     } catch (err) {
       console.error("[PrivacyConsentPrint] 서명 저장 실패:", err);
+    } finally {
+      setSaving(false);      // 성공/실패 무관 로딩 종료
+      setConfirmOpen(false); // 저장 완료 후 모달 닫기
     }
-  }, [viewMode, ctx, c1, c2, c2id, c3, sigDataUrl, saveSignStamp]);
+  }, [ctx, c1, c2, c2id, c3, sigDataUrl, saveSignStamp]);
+
+  /* ── [아니오] → 모달만 닫기 ── */
+  const handleConfirmNo = useCallback(() => {
+    setConfirmOpen(false);
+  }, []);
 
   /* ── 파생값 ── */
   const acc        = parseDateParts(ctx?.accday);
@@ -669,10 +669,67 @@ export default function PrivacyConsentPrint() {
       `}</style>
 
       {/* ── 화면 + 인쇄 미리보기 ── */}
-      <PrintPreviewLayout onAfterPrint={onAfterPrint}>
+      <PrintPreviewLayout onAfterPrint={onAfterPrint} disableClose={saving}>
         <div style={PAGE_STYLE}>{page1Inner}</div>
         <div style={PAGE_STYLE}>{page2Inner}</div>
       </PrintPreviewLayout>
+
+      {/* ── 인쇄 확인 모달 ── */}
+      {confirmOpen && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 99999,
+          background: "rgba(0,0,0,0.45)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <div style={{
+            background: "#fff", borderRadius: "8px",
+            padding: "28px 32px", minWidth: "320px",
+            boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
+            fontFamily: "'맑은 고딕','Malgun Gothic',sans-serif",
+            textAlign: "center",
+          }}>
+            {saving ? (
+              /* ── 저장 진행 중 ── */
+              <>
+                <div style={{ fontSize: "15pt", marginBottom: "12px" }}>⏳</div>
+                <div style={{ fontSize: "12pt", fontWeight: "bold", marginBottom: "6px" }}>
+                  서명 이미지 저장 중...
+                </div>
+                <div style={{ fontSize: "9.5pt", color: "#64748b" }}>
+                  잠시만 기다려 주세요.
+                </div>
+              </>
+            ) : (
+              /* ── 확인 버튼 ── */
+              <>
+                <div style={{ fontSize: "15pt", marginBottom: "8px" }}>🖨</div>
+                <div style={{ fontSize: "13pt", fontWeight: "bold", marginBottom: "6px" }}>
+                  인쇄가 정상 출력되었습니까?
+                </div>
+                <div style={{ fontSize: "9.5pt", color: "#64748b", marginBottom: "24px" }}>
+                  확인 시 동의서 서명 이미지가 저장됩니다.
+                </div>
+                <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
+                  <button onClick={handleConfirmYes} style={{
+                    padding: "8px 28px", borderRadius: "6px", border: "none",
+                    background: "#2563eb", color: "#fff",
+                    fontSize: "11pt", fontWeight: "bold", cursor: "pointer",
+                  }}>
+                    예, 인쇄됨
+                  </button>
+                  <button onClick={handleConfirmNo} style={{
+                    padding: "8px 28px", borderRadius: "6px",
+                    border: "1px solid #cbd5e1", background: "#fff",
+                    fontSize: "11pt", cursor: "pointer", color: "#334155",
+                  }}>
+                    아니오
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </>
   );
 }

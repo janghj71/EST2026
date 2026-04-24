@@ -8,7 +8,8 @@ import { useAlert } from "../alerts";
 import { useLoading } from "../loading/useLoading";
 import { useEstimate } from "../hooks/useEstimate";
 import { useTbCode } from "../hooks/useTbCode";
-import { getComcode } from "../api/config";
+import { getComcode, getUserid } from "../api/config";
+import { useEstToReq } from "../hooks/useEstToReq";
 
 /**
  * 보험 견적일지 (UI 샘플)
@@ -46,6 +47,8 @@ export default function InsuranceEstimate() {
     closeEstimate,
   } = useEstimate();
 
+  const { estToReq } = useEstToReq();
+
   const { codes: sortCodes } = useTbCode('IDX01');
 
   const workBodyElRef = useRef(null);      // FixedHeadTable 바디 DOM
@@ -77,27 +80,6 @@ export default function InsuranceEstimate() {
       } catch { /* empty */ }
     });
     childWinsRef.current.clear();
-  };
-
-  const openEstimateEdit = (row, mode = "edit") => {
-    const est_serial = row?.est_serial || "0000000000";
-    // 수정 화면 이동 전 현재 상태를 sessionStorage에 저장 → 돌아올 때 복원
-    try {
-      sessionStorage.setItem(SS_KEY, JSON.stringify({
-        dateFrom, dateTo, searchText,
-        chkEstimate, chkWork, chkClosed, sortKey,
-        selectedSerial: row?.est_serial ?? null,
-      }));
-    } catch { /* empty */ }
-    navigate(`/estimate-edit/${encodeURIComponent(est_serial)}`, {
-      state: {
-        mode, // "new" | "edit"
-        ctx: {
-          est_serial,
-          carno: row?.carno || "",
-        },
-      },
-    });
   };
 
   // ====== 검색/조회 ======
@@ -188,12 +170,33 @@ export default function InsuranceEstimate() {
   // ====== Row Action Bar ======
   const [printOpen, setPrintOpen] = useState(false);
 
+  const openEstimateEdit = useCallback((row, mode = "edit") => {
+    const est_serial = row?.est_serial || "0000000000";
+    // 수정 화면 이동 전 현재 상태를 sessionStorage에 저장 → 돌아올 때 복원
+    try {
+      sessionStorage.setItem(SS_KEY, JSON.stringify({
+        dateFrom, dateTo, searchText,
+        chkEstimate, chkWork, chkClosed, sortKey,
+        selectedSerial: row?.est_serial ?? null,
+      }));
+    } catch { /* empty */ }
+    navigate(`/estimate-edit/${encodeURIComponent(est_serial)}`, {
+      state: {
+        mode, // "new" | "edit"
+        ctx: {
+          est_serial,
+          carno: row?.carno || "",
+        },
+      },
+    });
+  }, [dateFrom, dateTo, searchText, chkEstimate, chkWork, chkClosed, sortKey, navigate]);
+
 
   // 조회 조건 변경 시 sessionStorage에 저장 (F5 복원용)
   useEffect(() => {
     try {
       sessionStorage.setItem(SS_FILTER_KEY, JSON.stringify({ dateFrom, dateTo, searchText, chkEstimate, chkWork, chkClosed, sortKey }));
-    } catch {}
+    } catch { /* empty */ }
   }, [dateFrom, dateTo, searchText, chkEstimate, chkWork, chkClosed, sortKey]);
 
   // ====== 조회 에러 → 메시지 표시 ======
@@ -302,7 +305,6 @@ export default function InsuranceEstimate() {
     openEstimateEdit(selected, "edit");
   };
   const onDelete = () => requireSelected() && alert(`견적삭제: ${selected.est_serial}`);
-  const onClose = () => { if (selected) handleCloseEst(selected); };
   
   const openPhotoViewer = () => {
     const estId = selected?.est_serial || "";
@@ -618,6 +620,26 @@ export default function InsuranceEstimate() {
     } catch (err) { error(err?.message ?? "견적종결 실패"); }
   }, [closeEstimate, fetchEstimates, dateFrom, dateTo, withLoading, error, confirm, setOutdayModal]);
 
+  // ====== 작업전환 (견적 → 작업 copy) ======
+  const handleEstToReq = useCallback(async (row) => {
+    const ok = await confirm("견적을 작업으로 전환하시겠습니까?", "작업전환");
+    if (!ok) return;
+    try {
+      await withLoading(async () => {
+        const res = await estToReq({
+          est_serial: row.est_serial,
+          update_id:  getUserid(),
+        });
+        const newserial = res?.newserial ?? res?.dataset?.[0]?.newserial;
+        await fetchEstimates(dateFrom, dateTo);
+        if (newserial) {
+          // 새 Row 찾아서 선택 → 수정 화면으로 이동
+          openEstimateEdit({ est_serial: newserial });
+        }
+      }, "작업전환 중...");
+    } catch (err) { error(err?.message ?? "작업전환 실패"); }
+  }, [estToReq, fetchEstimates, dateFrom, dateTo, withLoading, error, confirm, openEstimateEdit]);
+
   const handleOutdayConfirm = useCallback(async (outday) => {
     const { type, row } = outdayModal;
     setOutdayModal(null);
@@ -632,7 +654,21 @@ export default function InsuranceEstimate() {
 
   const estimateColumns = useMemo(
     () => [
-      { key: "seccodename", title: "구분", width: "7%", align: "left" },
+      {
+        key: "seccodename", title: "구분", width: "7%", align: "left",
+        render: (v) => {
+          if (v === "작업_보험" || v === "작업_일반") {
+            const idx = v.indexOf("_");
+            return (
+              <>
+                <span className="text-violet-600 font-semibold">{v.slice(0, idx)}</span>
+                {v.slice(idx)}
+              </>
+            );
+          }
+          return v;
+        },
+      },
       { key: "carno", title: "차량번호", width: "9%", align: "left" },
       { key: "carname", title: "차량명", width: "12%", align: "left" },
       { key: "custom_name", title: "고객명", width: "9%", align: "left" },
@@ -879,6 +915,18 @@ export default function InsuranceEstimate() {
     return () => window.removeEventListener("message", handler);
   }, [dateFrom, dateTo, fetchEstimates]);
 
+  // 입금 저장 완료 시 청구보험 목록 리프레시
+  useEffect(() => {
+    const handler = (ev) => {
+      if (ev.origin !== window.location.origin) return;
+      if (ev.data?.type !== "ESTIMATE_DEPOSIT_SAVED") return;
+      const { est_serial } = ev.data.payload ?? {};
+      if (est_serial) fetchClaims(est_serial);
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, [fetchClaims]);
+
   useEffect(() => {
     const onBeforeUnload = () => closeAllChildWins();
     const onUnload = () => closeAllChildWins();
@@ -1089,7 +1137,7 @@ export default function InsuranceEstimate() {
                     <InlineActions
                       onModify={onModify}
                       onDelete={onDelete}
-                      onClose={onClose}
+                      onEstToReq={() => handleEstToReq(selected)}
                       onPhoto={openPhotoViewer}
                       onSms={openSmsPopup}
                       onMemo={openMemoPopup}
@@ -1252,7 +1300,7 @@ export default function InsuranceEstimate() {
 function InlineActions({
   onModify,
   onDelete,
-  onClose,
+  onEstToReq,
   onPhoto,
   onSms,
   onMemo,
@@ -1287,7 +1335,9 @@ function InlineActions({
     <div className="flex flex-wrap items-center gap-2">
       <SmallBtn onClick={onModify}>수정</SmallBtn>
       <SmallBtn onClick={onDelete}>삭제</SmallBtn>
-      <SmallBtn onClick={onClose}>종결</SmallBtn>
+      {String(isest) === "1" && (
+        <SmallBtn onClick={onEstToReq}>작업전환</SmallBtn>
+      )}
       <span className="mx-1 h-5 w-px bg-zinc-200" />
 
       <SmallBtn onClick={onPhoto}>사진</SmallBtn>
@@ -1405,7 +1455,13 @@ function StatusBadge({ value, row, onUnlock, onRequest, onCloseEst }) {
   const hasMenu    = isLocked || canRequest || canClose;
 
   const cls =
-    value === "종결"
+    value === "견적종결"
+      ? "bg-emerald-100 text-emerald-800"
+      : value === "견적청구"
+      ? "bg-orange-100 text-orange-800"
+      : value === "견적서발행"
+      ? "bg-blue-100 text-blue-800"
+      : value === "종결"
       ? "bg-emerald-100 text-emerald-800"
       : value === "작업"
       ? "bg-sky-100 text-sky-800"
@@ -1436,6 +1492,9 @@ function StatusBadge({ value, row, onUnlock, onRequest, onCloseEst }) {
   };
 
   const pick = (fn, arg) => { setOpen(false); fn?.(arg); };
+
+  // 훅 호출 완료 후 early return — 빈 값이면 뱃지 숨김
+  if (!value) return null;
 
   return (
     <span ref={badgeRef} className="inline-flex">

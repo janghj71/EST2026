@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { Printer, ChevronLeft, ChevronRight, X } from "lucide-react";
 import IconBtn from "../components/IconBtn";
 
-export default function PrintPreviewLayout({ children, onAfterPrint }) {
+export default function PrintPreviewLayout({ children, onAfterPrint, disableClose = false }) {
   const pages  = React.Children.toArray(children);
   const total  = pages.length;
   const [current, setCurrent] = useState(0);
@@ -100,6 +100,7 @@ export default function PrintPreviewLayout({ children, onAfterPrint }) {
             variant="primary"
             onClick={() => window.close()}
             className="ml-auto"
+            disabled={disableClose}
           />
         </div>
       </div>

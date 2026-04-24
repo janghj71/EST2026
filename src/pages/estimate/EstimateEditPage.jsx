@@ -226,7 +226,7 @@ export default function EstimateEditPage() {
   }, []); // refs만 사용하므로 deps 불필요
 
   const [sortMode, setSortMode] = useState("block");
-  const [laborOpen, setLaborOpen] = useState(false);
+  // const [laborOpen, setLaborOpen] = useState(false);
 
   const { deleteBySeqs, deleteAll } = useEstimateDetailDelete();
   const [deleteOpen, setDeleteOpen] = useState(false);
