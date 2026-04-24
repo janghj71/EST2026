@@ -10,6 +10,8 @@ import { useEstimate } from "../hooks/useEstimate";
 import { useTbCode } from "../hooks/useTbCode";
 import { getComcode, getUserid } from "../api/config";
 import { useEstToReq } from "../hooks/useEstToReq";
+import { useNewEstimate } from "../hooks/useNewEstimate";
+import { useEstimateDelete } from "../hooks/useEstimateDelete";
 
 /**
  * 보험 견적일지 (UI 샘플)
@@ -48,10 +50,13 @@ export default function InsuranceEstimate() {
   } = useEstimate();
 
   const { estToReq } = useEstToReq();
+  const { createEstimate } = useNewEstimate();
+  const { deleteEstimate } = useEstimateDelete();
 
   const { codes: sortCodes } = useTbCode('IDX01');
 
-  const workBodyElRef = useRef(null);      // FixedHeadTable 바디 DOM
+  const workBodyElRef = useRef(null);           // 견적상세 테이블 바디 DOM
+  const estimateListBodyRef = useRef(null);     // 견적목록 테이블 바디 DOM (스크롤 복원용)
   const workScrollPosRef = useRef({ top: 0, left: 0 });      // 닫기 전 scrollTop 저장
   const photoWinRef = useRef(null);
   const smsWinRef = useRef(null);
@@ -83,20 +88,29 @@ export default function InsuranceEstimate() {
   };
 
   // ====== 검색/조회 ======
-  // 수정 화면에서 돌아올 때 sessionStorage 복원 (우선순위: _saved > _filter > 기본값)
-  const _saved = loadSavedState();
+  // _filter: 날짜·필터 복원용 (SS_FILTER_KEY, 삭제 안 함)
   const _filter = loadSavedFilter();
-  const [dateFrom, setDateFrom] = useState(() => _saved?.dateFrom ?? _filter?.dateFrom ?? monthRange(new Date()).from);
-  const [dateTo, setDateTo] = useState(() => _saved?.dateTo ?? _filter?.dateTo ?? monthRange(new Date()).to);
-  const [searchText, setSearchText] = useState(() => _saved?.searchText ?? _filter?.searchText ?? "");
-  const [chkEstimate, setChkEstimate] = useState(() => _saved?.chkEstimate ?? _filter?.chkEstimate ?? true);
-  const [chkWork, setChkWork] = useState(() => _saved?.chkWork ?? _filter?.chkWork ?? true);
-  const [chkClosed, setChkClosed] = useState(() => _saved?.chkClosed ?? _filter?.chkClosed ?? false);
-  const [sortKey, setSortKey] = useState(() => _saved?.sortKey ?? _filter?.sortKey ?? "inday desc");
-  const [monthAnchor, setMonthAnchor] = useState(() => new Date(_saved?.dateFrom ?? _filter?.dateFrom ?? Date.now()));
-  // 복원 후 바로 삭제 (새 조회 시엔 저장 안 된 상태)
-  const _restoredSerial = _saved?.selectedSerial ?? null;
-  clearSavedState();
+
+  // StrictMode 이중 실행 방지 —— 컴포넌트 인스턴스 수명과 함께하는 ref를 sentinel(undefined)로
+  // 초기화하여 최초 1회만 loadSavedState + clearSavedState 실행
+  // (일반 변수로 하면 StrictMode 2번째 실행 시 이미 삭제된 값 → null이 됨)
+  const restoredSerialRef = useRef(/** @type {string|null|undefined} */(undefined));
+  const restoredScrollRef = useRef(0);
+  if (restoredSerialRef.current === undefined) {
+    const _saved = loadSavedState();
+    clearSavedState();
+    restoredSerialRef.current = _saved?.selectedSerial ?? null;
+    restoredScrollRef.current = _saved?.scrollTop ?? 0;
+  }
+
+  const [dateFrom, setDateFrom] = useState(() => _filter?.dateFrom ?? monthRange(new Date()).from);
+  const [dateTo, setDateTo] = useState(() => _filter?.dateTo ?? monthRange(new Date()).to);
+  const [searchText, setSearchText] = useState(() => _filter?.searchText ?? "");
+  const [chkEstimate, setChkEstimate] = useState(() => _filter?.chkEstimate ?? true);
+  const [chkWork, setChkWork] = useState(() => _filter?.chkWork ?? true);
+  const [chkClosed, setChkClosed] = useState(() => _filter?.chkClosed ?? false);
+  const [sortKey, setSortKey] = useState(() => _filter?.sortKey ?? "inday desc");
+  const [monthAnchor, setMonthAnchor] = useState(() => new Date(_filter?.dateFrom ?? Date.now()));
 
   // ====== 선택/상세 ======
   const [selectedRaw, setSelected] = useState(null);
@@ -152,10 +166,13 @@ export default function InsuranceEstimate() {
     return arr;
   }, [estimates, chkEstimate, chkWork, chkClosed, effectiveSortKey]);
 
-  // 파생 selected: 필터 후 목록에 없으면 null
+  // 파생 selected: 목록이 새로 고쳐지면 최신 Row 데이터를 반환
+  // (selectedRaw 를 그대로 반환하면 fetchEstimates 후에도 구버전 est_print 등이 남아 오동작)
   const selected = useMemo(
-    () => selectedRaw && insuranceEstimates.some(r => r.est_serial === selectedRaw.est_serial)
-      ? selectedRaw : null,
+    () => {
+      if (!selectedRaw) return null;
+      return insuranceEstimates.find(r => r.est_serial === selectedRaw.est_serial) ?? null;
+    },
     [selectedRaw, insuranceEstimates]
   );
 
@@ -170,6 +187,10 @@ export default function InsuranceEstimate() {
   // ====== Row Action Bar ======
   const [printOpen, setPrintOpen] = useState(false);
 
+  // ====== 신규견적 수가 선택 모달 ======
+  const [newEstModalOpen, setNewEstModalOpen]   = useState(false);
+  const [selectedYear,    setSelectedYear]      = useState("2018");
+
   const openEstimateEdit = useCallback((row, mode = "edit") => {
     const est_serial = row?.est_serial || "0000000000";
     // 수정 화면 이동 전 현재 상태를 sessionStorage에 저장 → 돌아올 때 복원
@@ -178,6 +199,7 @@ export default function InsuranceEstimate() {
         dateFrom, dateTo, searchText,
         chkEstimate, chkWork, chkClosed, sortKey,
         selectedSerial: row?.est_serial ?? null,
+        scrollTop: estimateListBodyRef.current?.scrollTop ?? 0,
       }));
     } catch { /* empty */ }
     navigate(`/estimate-edit/${encodeURIComponent(est_serial)}`, {
@@ -210,13 +232,17 @@ export default function InsuranceEstimate() {
     fetchEstimates(dateFrom, dateTo);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ====== 수정 화면에서 복귀 시 선택 행 자동 복원 ======
-  const restoredSerialRef = useRef(_restoredSerial);
+  // ====== 수정 화면에서 복귀 시 선택 행 + 스크롤 위치 자동 복원 ======
   useEffect(() => {
     const serial = restoredSerialRef.current;
     if (!serial || !estimates.length) return;
     const found = estimates.find((r) => r.est_serial === serial);
     if (found) {
+      // 스크롤 위치를 먼저 복원 → FixedHeadTable A안 effect(double-rAF)가
+      // 복원된 위치 기준으로 잘림 여부를 판단하도록 선행 처리
+      const el = estimateListBodyRef.current;
+      if (el) el.scrollTop = restoredScrollRef.current;
+
       setSelected(found);
       restoredSerialRef.current = null; // 복원 1회만
     }
@@ -295,16 +321,67 @@ export default function InsuranceEstimate() {
   };
 
   const onNew = () => {
-    //신규: 화면만 코딩이니 임시 est_serial로 진입
-    openEstimateEdit(null, "new");
+    setSelectedYear("2018");
+    setNewEstModalOpen(true);
   };
+
+  const handleNewEstConfirm = useCallback(async () => {
+    setNewEstModalOpen(false);
+    const paykind = selectedYear === "2018" ? "3" : "1";
+    const pntkind = selectedYear === "2018" ? "3" : "1";
+    try {
+      await withLoading(async () => {
+        const res = await createEstimate({
+          seccode: "12",
+          paykind,
+          pntkind,
+          userid:  getUserid(),
+        });
+        const newserial = res?.newserial ?? res?.dataset?.[0]?.newserial;
+        await fetchEstimates(dateFrom, dateTo);
+        if (newserial) {
+          openEstimateEdit({ est_serial: newserial });
+        }
+      }, "신규 견적 생성 중...");
+    } catch (err) { error(err?.message ?? "신규 견적 생성 실패"); }
+  }, [selectedYear, createEstimate, fetchEstimates, dateFrom, dateTo, openEstimateEdit, withLoading, error]);
   const onExcel = () => alert("엑셀내보내기");
 
   const onModify = () => {
     if (!requireSelected()) return;
     openEstimateEdit(selected, "edit");
   };
-  const onDelete = () => requireSelected() && alert(`견적삭제: ${selected.est_serial}`);
+  const onDelete = useCallback(async () => {
+    if (!selected) return;
+    const row = selected;
+
+    // ── 삭제 불가 조건 ──
+    if (row.workend && row.workend !== "") {
+      await warning(`${row.workend} 일시에 종결하셨습니다.\n삭제가 불가합니다.`);
+      return;
+    }
+    if (row.reqday && row.reqday !== "") {
+      await warning(`${row.reqday} 일에 청구하셨습니다.\n삭제가 불가합니다.`);
+      return;
+    }
+    if (String(row.est_print) === "1") {
+      await warning("견적서를 발행 하셨습니다.\n삭제가 불가합니다.");
+      return;
+    }
+
+    const ok = await confirm("견적을 삭제하시겠습니까?", "견적삭제");
+    if (!ok) return;
+
+    try {
+      await withLoading(async () => {
+        await deleteEstimate({ est_serial: row.est_serial, userid: getUserid() });
+        setSelected(null);
+        await fetchEstimates(dateFrom, dateTo);
+      }, "삭제 중...");
+    } catch (err) {
+      error(err?.message ?? "삭제 실패");
+    }
+  }, [selected, deleteEstimate, fetchEstimates, dateFrom, dateTo, withLoading, warning, error, confirm]);
   
   const openPhotoViewer = () => {
     const estId = selected?.est_serial || "";
@@ -1130,6 +1207,7 @@ export default function InsuranceEstimate() {
                   rows={insuranceEstimates}
                   rowKey={(r) => r.est_serial}
                   selectedKey={selected?.est_serial}
+                  bodyScrollRef={estimateListBodyRef}
                   onRowClick={(r) => { setSelected(r); setSelectedClaim(null); setPrintOpen(false); setMailOpen(false); }}
                   // 선택 행 아래에 인라인 액션 표시 (기존 UX 그대로)
                   expandedKey={selected?.est_serial}
@@ -1239,7 +1317,12 @@ export default function InsuranceEstimate() {
             style={{ height: detailOpen ? detailHeight : 52 }}
           >
             <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-100">
-              <div className="text-sm font-semibold text-zinc-900">견적상세</div>
+              <div className="flex items-center gap-2">
+                <div className="text-sm font-semibold text-zinc-900">견적상세</div>
+                {selected?.carno && (
+                  <div className="text-sm font-semibold text-blue-600">{selected.carno}</div>
+                )}
+              </div>
             </div>
 
 
@@ -1291,6 +1374,57 @@ export default function InsuranceEstimate() {
         onConfirm={handleOutdayConfirm}
         onClose={() => setOutdayModal(null)}
       />
+
+      {/* ── 신규견적 수가 선택 모달 ── */}
+      {newEstModalOpen && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/30">
+          <div className="w-[320px] rounded-md border border-zinc-200 bg-white shadow-xl overflow-hidden">
+            {/* 헤더 */}
+            <header className="flex items-center justify-between border-b border-zinc-100 bg-zinc-50 px-4 py-3">
+              <span className="text-base font-semibold text-zinc-900">작업시간 선택</span>
+              <button
+                type="button"
+                onClick={() => setNewEstModalOpen(false)}
+                className="inline-flex h-7 w-7 items-center justify-center rounded hover:bg-zinc-200 text-zinc-500"
+              >✕</button>
+            </header>
+
+            {/* 본문 — 라디오 */}
+            <div className="px-4 py-5 flex flex-col gap-4">
+              {[
+                { year: "2018", label: "2018년 수가" },
+                { year: "2005", label: "2005년 수가" },
+              ].map(({ year, label }) => (
+                <label key={year} className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="pricingYear"
+                    value={year}
+                    checked={selectedYear === year}
+                    onChange={() => setSelectedYear(year)}
+                    className="w-5 h-5 cursor-pointer accent-zinc-900"
+                  />
+                  <span className="text-xl text-zinc-800">{label}</span>
+                </label>
+              ))}
+            </div>
+
+            {/* 푸터 */}
+            <div className="flex justify-end gap-2 border-t border-zinc-100 px-4 py-3">
+              <button
+                type="button"
+                onClick={() => setNewEstModalOpen(false)}
+                className="rounded-md border border-zinc-200 bg-white px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+              >취소</button>
+              <button
+                type="button"
+                onClick={handleNewEstConfirm}
+                className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700"
+              >확인</button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

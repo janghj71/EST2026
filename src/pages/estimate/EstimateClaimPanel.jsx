@@ -221,7 +221,7 @@ return (
                 options={contactOptions}
                 inputClassName={inputCls}
                 showAllWhenNoMatch
-                disabled
+                disabled={readOnly}
               />
             </FormRow>
           </div>
@@ -252,7 +252,7 @@ return (
                 inputClassName={inputCls}
                 maxHeightClassName="max-h-64"
                 showAllWhenNoMatch
-                disabled
+                disabled={readOnly}
               />
             </FormRow>
             

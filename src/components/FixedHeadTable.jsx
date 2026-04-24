@@ -249,16 +249,44 @@ export default function FixedHeadTable({
     return () => el.removeEventListener("wheel", handleWheelSelect);
   }, [wheelSelect, handleWheelSelect]);
 
-  // selectedKey 변경 시 해당 행이 뷰포트 밖이면 스크롤 이동
+  // selectedKey / expandedKey 변경 시 스크롤 조정
+  // A안: 필요할 때만 — 확장 행(인라인 액션) 포함해서 하단 잘림 체크
   useEffect(() => {
     if (selectedKey == null) return;
-    // rAF: 레이아웃 완료 후 실행 (rows 변경 직후 ref가 최신 상태임을 보장)
-    const raf = requestAnimationFrame(() => {
-      const tr = rowRefs.current.get(selectedKey);
-      if (tr) tr.scrollIntoView({ block: "nearest" });
+
+    // double-rAF: 1번째는 React 렌더 확정, 2번째는 레이아웃(확장 tr) 완료 보장
+    let raf1, raf2;
+    raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        const tr = rowRefs.current.get(selectedKey);
+        if (!tr) return;
+        const container = bodyWrapRef.current;
+        if (!container) return;
+
+        // expandedKey === selectedKey 이면 바로 다음 <tr>(인라인 액션 행)도 포함
+        const expandedTr =
+          expandedKey === selectedKey ? tr.nextElementSibling : null;
+        const bottomEl = expandedTr || tr;
+
+        const contRect  = container.getBoundingClientRect();
+        const trRect    = tr.getBoundingClientRect();
+        const botRect   = bottomEl.getBoundingClientRect();
+
+        if (botRect.bottom > contRect.bottom) {
+          // 하단이 잘림 → 딱 맞게 스크롤 (여유 4px)
+          container.scrollTop += botRect.bottom - contRect.bottom + 4;
+        } else if (trRect.top < contRect.top) {
+          // 상단이 잘림 → row 상단이 보이게 스크롤 (여유 4px)
+          container.scrollTop += trRect.top - contRect.top - 4;
+        }
+      });
     });
-    return () => cancelAnimationFrame(raf);
-  }, [selectedKey]);
+
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
+  }, [selectedKey, expandedKey]);
   
 
 
