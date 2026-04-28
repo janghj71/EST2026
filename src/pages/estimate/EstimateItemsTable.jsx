@@ -158,7 +158,7 @@ function canEditWorkcode(row) {
  * 견적 row의 [상태] 표시 텍스트 계산
  * workcode='P' AND substring(payno,4,1)<>'P' AND paykind='3' 인 경우
  */
-function computeStatename(row, master, wrk34Codes, pyk02Codes, wrk03Codes) {
+function computeStatename(row, master, wrk34Codes, pyk02Codes, wrk03Codes, wrk04Codes) {
   // 중복체크: state='O' → '중복' 표기 (최우선)
   if (String(row.state ?? "") === "O") return "중복";
 
@@ -200,6 +200,26 @@ function computeStatename(row, master, wrk34Codes, pyk02Codes, wrk03Codes) {
       if (st === "1") return "교환도장";
       if (st === "2") return "표면도장";
       if (st === "3") return "외측판금도장";
+      if (st === "5") return "전면판금도장";
+    }
+    // paykind='1' + paykind in ('4','6'): WRK04 suffix
+    if (
+      payno.charAt(3) !== "P" &&
+      String(master?.paykind ?? "") === "1" &&
+      (rowPk === "4" || rowPk === "6")
+    ) {
+      const st = String(row.state ?? "");
+      if (String(row.pnt_extr ?? "") !== "") {
+        const tbEntry = (wrk04Codes ?? []).find((c) => c.value === String(row.pnt_extr));
+        const suffix = tbEntry ? "-" + tbEntry.label : "";
+        if (st === "1") return "교환도장" + suffix;
+        if (st === "2") return "부분판금도장" + suffix;
+        if (st === "3") return "판금도장" + suffix;
+        if (st === "5") return "전면판금도장" + suffix;
+      }
+      if (st === "1") return "교환도장";
+      if (st === "2") return "부분판금도장";
+      if (st === "3") return "판금도장";
       if (st === "5") return "전면판금도장";
     }
   }
@@ -266,6 +286,7 @@ export default function EstimateItemsTable({
   );
 
   const { codes: wrk34Codes } = useTbCode("WRK34");
+  const { codes: wrk04Codes } = useTbCode("WRK04");
   const { codes: pyk02Codes } = useTbCode("PYK02");
   const { codes: wrk03Codes } = useTbCode("WRK03");
 
@@ -1070,7 +1091,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
             String(row.state ?? "") !== "2";
           // paykind in ('5','3') → WRK03 상태 드롭다운
           const canWrk03State = rowPk === "5" || rowPk === "3";
-          const stateText = computeStatename(row, master, wrk34Codes, pyk02Codes, wrk03Codes);
+          const stateText = computeStatename(row, master, wrk34Codes, pyk02Codes, wrk03Codes, wrk04Codes);
           return (
             <div className="h-8 flex items-center">
               {!readOnly && isPntAcc ? (
@@ -1805,14 +1826,17 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
             );
           })()
           : popover.type === "pntextr" ? (() => {
-            // WRK34 / state='1' 목록 → 투톤, 서페이서 등
-            const selRow    = rows.find((r) => r.estb_orgseqno === popover.rowOrgSeq);
-            const extrItems = wrk34Codes.filter((c) => String(c.state) === "1");
-            const isBumper  = String(selRow?.payname ?? "").includes("범퍼");
+            // pntkind='1' → WRK04, pntkind='3' → WRK34 / state='1' 목록
+            const selRow     = rows.find((r) => r.estb_orgseqno === popover.rowOrgSeq);
+            const isPntKind1 = String(master?.pntkind) === "1";
+            const extrItems  = isPntKind1
+              ? (wrk04Codes ?? []).filter((c) => String(c.state) === "1")
+              : wrk34Codes.filter((c) => String(c.state) === "1");
+            const isBumper   = !isPntKind1 && String(selRow?.payname ?? "").includes("범퍼");
             return (
               <div className="p-1 flex flex-col gap-0.5">
                 {extrItems.map((item) => {
-                  const isSerf    = item.label.includes("서페이서");
+                  const isSerf    = !isPntKind1 && item.label.includes("서페이서");
                   const disabled  = isSerf && !isBumper;
                   return (
                     <button
@@ -1836,8 +1860,12 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                           closePopover();
                           return;
                         }
-                        // qty = def_value / 100
-                        const qty = String(parseFloat(item.def_value ?? "0") / 100);
+                        // pntkind='1': qty = selRow.qty * (def_value/100)
+                        // pntkind='3': qty = def_value / 100
+                        const _defRate = parseFloat(item.def_value ?? "0") / 100;
+                        const qty = isPntKind1
+                          ? String(Math.floor(parseFloat(selRow.qty ?? "0") * _defRate * 100) / 100)
+                          : String(_defRate);
                         const ps  = calcPaysum("P", qty);
                         const newRow = {
                           comcode:        selRow.comcode     ?? getComcode(),

@@ -123,20 +123,21 @@ export default function PaintItemsPopup() {
       );
     } catch { /* empty */ }
 
+    // carname / pnt_m(paintSolvent): 사용자 편집 없는 표시 필드 → 항상 동기화
+    if (ctx.carname != null) setCarName(ctx.carname || "");
+    const byPntM = solventFromPntM(ctx.pnt_m);
+    if (byPntM) setPaintSolvent(byPntM);
+
     if (hydratedRef.current) return;
     hydratedRef.current = true;
 
     if (ctx.est_serial  && !estSerial)  setEstSerial(ctx.est_serial);
     if (ctx.carno       && !carNo)      setCarNo(ctx.carno);
-    if (ctx.carname     && !carName)    setCarName(ctx.carname);
     if (ctx.pntcot_code && !pntcotCode) setPntcotCode(ctx.pntcot_code);
     if (ctx.paint       && !paint)      setPaint(ctx.paint);
     if (ctx.pntkind     && !pntkind)    setPntkind(ctx.pntkind);
     if (ctx.codecar     && !codecar)    setCodecar(ctx.codecar);
     if (ctx.workcode    !== undefined)  setWorkcode(ctx.workcode || "");
-
-    const byPntM = solventFromPntM(ctx.pnt_m);
-    if (byPntM) setPaintSolvent(byPntM);
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctx.est_serial, ctx.carno, ctx.carname, ctx.pntcot_code, ctx.pnt_m,
