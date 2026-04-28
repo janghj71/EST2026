@@ -96,6 +96,7 @@ const PAINT_COAT_FIELD_MAP = {
 function paykindLabel(paykind) {
   switch (String(paykind)) {
     case "1": return "주체";
+    case "2": return "부공임";
     case "3": return "부품";
     case "4": return "#공임";
     case "5": return "#부품";
@@ -225,17 +226,17 @@ function canEditPayName(row) {
 }
 
 
-function getSubjectBlockRange(rows, subjectIndex) {
-  if (subjectIndex < 0 || subjectIndex >= rows.length) return { start: -1, end: -1 };
-  // subjectIndex는 paykind===1인 행이어야 함
-  let start = subjectIndex;
-  let end = subjectIndex;
-  for (let i = subjectIndex + 1; i < rows.length; i++) {
-    if (String(rows[i].paykind) === "1") break; // 다음 주체면 블록 종료
-    end = i;
-  }
-  return { start, end };
-}
+// function getSubjectBlockRange(rows, subjectIndex) {
+//   if (subjectIndex < 0 || subjectIndex >= rows.length) return { start: -1, end: -1 };
+//   // subjectIndex는 paykind===1인 행이어야 함
+//   let start = subjectIndex;
+//   let end = subjectIndex;
+//   for (let i = subjectIndex + 1; i < rows.length; i++) {
+//     if (String(rows[i].paykind) === "1") break; // 다음 주체면 블록 종료
+//     end = i;
+//   }
+//   return { start, end };
+// }
 
 export default function EstimateItemsTable({
   rows = [],
@@ -2014,7 +2015,9 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                     return prev.map((r) => {
                       // ── 도장 행 ──
                       if (r.estb_orgseqno === orgSeq) {
-                        const coatKind = STATE_TO_COAT[newState];
+                        // pntkind='1' + state='2' → 부분판금: outer 필드 × (pntrate_sec/100)
+                        const isPartPanel = String(master?.pntkind) === "1" && newState === "2";
+                        const coatKind = isPartPanel ? "outer" : STATE_TO_COAT[newState];
                         const solvent  = String(r.pnt_m ?? "") === "1" ? "oil" : "pnt";
                         const fields   = coatKind ? PAINT_COAT_FIELD_MAP[solvent]?.[coatKind] : null;
                         let newHour = r.qty, newPart = r.partsum;
@@ -2024,8 +2027,15 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
                                    String(d.pntcot) === String(r.pntcot ?? "")
                           );
                           if (pntRow) {
-                            newHour = String(parseFloat(pntRow[fields.h] ?? "0"));
-                            newPart = String(parseFloat(pntRow[fields.m] ?? "0"));
+                            let rawHour = parseFloat(pntRow[fields.h] ?? "0");
+                            let rawPart = parseFloat(pntRow[fields.m] ?? "0");
+                            if (isPartPanel) {
+                              const rate = parseFloat(master?.claims?.[0]?.pntrate_sec ?? "0") / 100;
+                              rawHour = Math.floor(rawHour * rate * 100) / 100; // 소수점 둘째 자리 절삭
+                              rawPart = Math.round(rawPart * rate / 10) * 10;   // 10단위 반올림
+                            }
+                            newHour = String(rawHour);
+                            newPart = String(rawPart);
                           }
                         }
                         const ps = calcPaysum("P", newHour);

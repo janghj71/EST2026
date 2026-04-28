@@ -327,8 +327,8 @@ return (
               <FormRow label="부분판금율">
                 <input
                   className={inputCls}
-                  value={current?.pntratesec ?? ""}
-                  onChange={(e) => setClaim(safeSelectedIdx, "pntratesec", e.target.value)}
+                  value={current?.pntrate_sec ?? ""}
+                  onChange={(e) => setClaim(safeSelectedIdx, "pntrate_sec", e.target.value)}
                   disabled={readOnly}
                 />
               </FormRow>

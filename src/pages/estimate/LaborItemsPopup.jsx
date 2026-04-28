@@ -7,6 +7,7 @@ import { useCodepay, useCodepayHour, useCodepnt, useCodepart, useCheckPayno } fr
 import { useEstimateClaims } from "../../hooks/useEstimateClaims";
 import { formatLocaleNumber } from "../../utils/numberFormat";
 import { useLoading } from "../../loading/useLoading";
+import { useAlert } from "../../alerts/useAlert";
 
 
 const AREA_DEFS = [
@@ -157,7 +158,7 @@ export default function LaborItemsPopup() {
     storageKey: "LaborItemsCtx",
     keys: ["est_serial", "carno", "codecar", "est_codecar", "carname",
            "paykind", "paint", "outday", "carkind",
-           "pntkind", "pntcot_code", "pnt_m", "modelcode"],
+           "pntkind", "pntcot_code", "pnt_m", "modelcode", "seccode"],
     cleanPath: "/labor-items",
   });
 
@@ -175,6 +176,7 @@ export default function LaborItemsPopup() {
   // pnt_m: '1'=유용성(oil), '2'=수용성(pnt)
   const [pntM,        setPntM]       = useState(() => ctx.pnt_m       || "");
   const [modelcode,   setModelcode]  = useState(() => ctx.modelcode   || "");
+  const [seccode,     setSeccode]    = useState(() => ctx.seccode     || "");
   
   const hydratedRef = React.useRef(false);
 
@@ -199,6 +201,7 @@ export default function LaborItemsPopup() {
           pntcot_code: ctx.pntcot_code || "",
           pnt_m:       ctx.pnt_m       || "",
           modelcode:   ctx.modelcode   || "",
+          seccode:     ctx.seccode     || "",
         })
       );
     } catch { /* empty */ }
@@ -219,11 +222,12 @@ export default function LaborItemsPopup() {
     if (ctx.pntcot_code && !pntcotCode) setPntcotCode(ctx.pntcot_code);
     if (ctx.pnt_m       && !pntM)       setPntM(ctx.pnt_m);
     if (ctx.modelcode   && !modelcode)  setModelcode(ctx.modelcode);
+    if (ctx.seccode     && !seccode)    setSeccode(ctx.seccode);
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctx.est_serial, ctx.carno, ctx.codecar, ctx.est_codecar, ctx.carname,
       ctx.paykind, ctx.paint, ctx.outday, ctx.carkind,
-      ctx.pntkind, ctx.pntcot_code, ctx.pnt_m, ctx.modelcode]);
+      ctx.pntkind, ctx.pntcot_code, ctx.pnt_m, ctx.modelcode, ctx.seccode]);
 
   const postPick = useCallback((payload) => {
     try {
@@ -247,6 +251,7 @@ export default function LaborItemsPopup() {
   const { fetchCheckPayno }  = useCheckPayno();
   const { fetchClaims }      = useEstimateClaims();
   const { withLoading }      = useLoading();
+  const { info }             = useAlert();
   const [workItems, setWorkItems] = useState([]);
   const [workTimes, setWorkTimes] = useState([]);
   const [paints,    setPaints]    = useState([]);
@@ -255,7 +260,13 @@ export default function LaborItemsPopup() {
 
   // 견적내역에 이미 추가된 항목(paykind 1/2) — 부모 창에서 postMessage로 수신
   const [existingPaynos, setExistingPaynos] = useState(new Set());
-  const [existingRows,   setExistingRows]   = useState([]); // { payno, workcode }[]
+  const [existingRows,   setExistingRows]   = useState([]); // { payno, subpayno, workcode }[]
+
+  // paykind='1': payno+subpayno 복합키 Set (노란색 표기용)
+  const existingCompositeKeys = useMemo(() => {
+    if (paykind !== "1") return null;
+    return new Set(existingRows.map((r) => `${r.payno}|${r.subpayno ?? ""}`));
+  }, [existingRows, paykind]);
 
   // 견적점검 결과: null=비활성, Set=활성(해당 payno만 표시)
   const [checkMissingPaynos, setCheckMissingPaynos] = useState(null);
@@ -307,7 +318,8 @@ export default function LaborItemsPopup() {
 
   const [selectedSec, setSelectedSec] = useState(""); // 기본
   const [secGroup,    setSecGroup]    = useState(""); // '' = 전체
-  const [selectedPayno, setSelectedPayno] = useState("");
+  const [selectedPayno,    setSelectedPayno]    = useState("");
+  const [selectedSubpayno, setSelectedSubpayno] = useState("");
   const [workSearch, setWorkSearch] = useState("");
 
   const [areaOrder, setAreaOrder] = useState(() => {
@@ -398,9 +410,12 @@ export default function LaborItemsPopup() {
 
   const onPickArea = (sec) => {
     setSelectedSec(sec);
-    setWorkSearch(""); 
+    setWorkSearch("");
     const first = workItems.find((x) => x.seccode === sec);
-    if (first) setSelectedPayno(first.payno);
+    if (first) {
+      setSelectedPayno(first.payno);
+      setSelectedSubpayno(first.subpayno ?? "");
+    }
   };
   
 
@@ -511,10 +526,17 @@ export default function LaborItemsPopup() {
     return filteredWorkItems[0]?.payno ?? "";
   }, [selectedPayno, filteredWorkItems]);
 
-  const selectedWorkItem = useMemo(
-    () => filteredWorkItems.find((x) => x.payno === effectivePayno) ?? null,
-    [filteredWorkItems, effectivePayno]
-  );
+  // paykind='1': payno + subpayno 모두 매칭 / 그 외: payno만 매칭
+  const selectedWorkItem = useMemo(() => {
+    if (paykind === "1") {
+      return (
+        filteredWorkItems.find(
+          (x) => x.payno === effectivePayno && String(x.subpayno ?? "") === String(selectedSubpayno)
+        ) ?? filteredWorkItems.find((x) => x.payno === effectivePayno) ?? null
+      );
+    }
+    return filteredWorkItems.find((x) => x.payno === effectivePayno) ?? null;
+  }, [filteredWorkItems, effectivePayno, paykind, selectedSubpayno]);
 
   const filteredWorkTimes = useMemo(() => {
     const isSS = String(effectivePayno).startsWith("SS");
@@ -526,9 +548,12 @@ export default function LaborItemsPopup() {
       : workTimes.filter((x) => x.payno === effectivePayno);
 
     // paykind='3': subpayno='' 항목만 (SS 항목은 제외)
+    // paykind='1': payno + subpayno 모두 일치 (SS 항목은 제외)
     const base = !isSS && paykind === "3"
       ? byPayno.filter((x) => (x.subpayno ?? "") === "")
-      : byPayno;
+      : !isSS && paykind === "1"
+        ? byPayno.filter((x) => String(x.subpayno ?? "") === String(selectedWorkItem?.subpayno ?? ""))
+        : byPayno;
 
     // SS payno: workcode 기준 중복 제거 (첫 번째 유지)
     if (isSS) {
@@ -541,7 +566,7 @@ export default function LaborItemsPopup() {
     }
 
     return base;
-  }, [workTimes, effectivePayno, paykind]);
+  }, [workTimes, effectivePayno, paykind, selectedWorkItem]);
 
   const filteredPaints = useMemo(() => {
     return paints.filter(
@@ -711,6 +736,9 @@ export default function LaborItemsPopup() {
       : workTimes.filter((wt) => wt.payno === payno);
     if (!isSS && paykind === "3") {
       times = times.filter((wt) => String(wt.subpayno ?? "") === "");
+    }
+    if (!isSS && paykind === "1") {
+      times = times.filter((wt) => String(wt.subpayno ?? "") === String(row.subpayno ?? ""));
     }
 
     // 인서트할 workTime 결정: 여러 개면 'X', 1개면 그대로
@@ -1149,7 +1177,7 @@ export default function LaborItemsPopup() {
                   ? "bg-zinc-900 text-white"
                   : "bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-50",
               ].join(" ")}
-              onClick={() => setSecGroup("")}
+              onClick={() => { setSecGroup(""); setSelectedSec(""); }}
             >
               전체
             </button>
@@ -1287,16 +1315,22 @@ export default function LaborItemsPopup() {
                 <FixedHeadTable
                   columns={workItemCols}
                   rows={filteredWorkItems}
-                  rowKey={(r) => r.payno}
+                  rowKey={(r) => paykind === "1" ? `${r.payno}-${r.subpayno ?? ""}` : r.payno}
                   rowSize="sm"
-                  selectedKey={effectivePayno}
-                  onRowClick={(row) => setSelectedPayno(row.payno)}
+                  selectedKey={paykind === "1" ? `${effectivePayno}-${selectedSubpayno}` : effectivePayno}
+                  onRowClick={(row) => {
+                    setSelectedPayno(row.payno);
+                    setSelectedSubpayno(row.subpayno ?? "");
+                  }}
                   onRowDoubleClick={(row) => insertWorkItemRow(row)}
-                  getRowClassName={(row) =>
-                    existingPaynos.has(row.payno)
+                  getRowClassName={(row) => {
+                    const isExisting = paykind === "1"
+                      ? existingCompositeKeys?.has(`${row.payno}|${row.subpayno ?? ""}`)
+                      : existingPaynos.has(row.payno);
+                    return isExisting
                       ? { className: "bg-yellow-50", allowBg: true, hoverClass: "hover:bg-yellow-100" }
-                      : ""
-                  }
+                      : "";
+                  }}
                 />
               </div>
             </div>
@@ -1343,6 +1377,12 @@ export default function LaborItemsPopup() {
                     setSelectedWorkTimeRow(row);
                     const isSS = String(row.payno).startsWith("SS");
                     if (isSS) {
+                      // seccode='11': 우수기술료 추가 불가
+                      if (seccode === "11") {
+                        info("우수기술료 추가 불가");
+                        setWtMenuOpen(false);
+                        return;
+                      }
                       // SS: 우수기술료 팝업
                       const baseKey = String(row.payno).slice(0, -2);
                       const ssRows = workTimes.filter(
@@ -1355,9 +1395,8 @@ export default function LaborItemsPopup() {
                         setSsuriRows(ssRows);
                         setSelectedSsuriRow(ssRows[0]);
                         setSsuriOpen(true);
-                      } else {
-                        postPickWorkTime(row);
                       }
+                      // seccode='12' + ssRows 없음 → 팝업도 Row 추가도 하지 않음
                       setWtMenuOpen(false);
                     } else if (row.workcode === "S") {
                       const candidates = workTimes.filter(

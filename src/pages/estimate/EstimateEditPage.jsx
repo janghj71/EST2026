@@ -45,6 +45,16 @@ const PAINT_FIELD_MAP = {
   },
 };
 const COAT_STATE_MAP = { swap: "1", outer: "3", surface: "2", front: "5" };
+// pntkind별 statename: "3"=외측/표면, 그 외=판금/부분판금
+const coatStatename = (coatKind, pntkind) => {
+  const is3 = String(pntkind) === "3";
+  return {
+    swap:    "교환도장",
+    outer:   is3 ? "외측판금도장" : "판금도장",
+    surface: is3 ? "표면도장"     : "부분판금도장",
+    front:   "전면판금도장",
+  }[coatKind] ?? "";
+};
 
 export default function EstimateEditPage() {
   const navigate = useNavigate();
@@ -179,6 +189,31 @@ export default function EstimateEditPage() {
     const estSerial= mst.est_serial ?? "";
     const solvent  = paintSolvent === "oil" ? "oil" : "pnt";
     const result   = [];
+
+    // 공통작업시간: paykind='1' 이고 99990 미존재
+    if (paykind === "1" && !currentRows.some((r) => r.subpayno === "99990")) {
+      const pntcotCode = String(mst.pntcot_code ?? "");
+      // workcode='P' & state in ('2','3') 존재 시 pntcotb, 없으면 pntcotx
+      const hasPaintPanel = currentRows.some(
+        (r) => r.workcode === "P" && (r.state === "2" || r.state === "3")
+      );
+      const qtyField = hasPaintPanel ? `pntcotb${pntcotCode}` : `pntcotx${pntcotCode}`;
+      const qty      = String(ls[qtyField] ?? "0");
+      const ppay     = parseFloat(mst.claims?.[0]?.ppay ?? "0");
+      const paysum   = String(Math.round(ppay * parseFloat(qty || "0")));
+      result.push({
+        comcode, est_serial: estSerial, estb_orgseqno: newTempId(),
+        paykind: "4", payno: "", subpayno: "99990",
+        payname: "공통작업시간", workcode: "P", workcodename: "도장",
+        price: "", qty, oqty: qty,
+        partsum: "0", paysum, part_makercode: "",
+        state: "", statename: "", pnt_extr: "",
+        pnt_hour: qty, pnt_part: "0", pnt_m: solvent === "oil" ? "1" : "2",
+        pntcot: "", ts_payno: "", update_id: getUserid(),
+        paykindname: "#공임", b_level: "0.00", b_area: "0",
+        pnt_reduce: "0", body_panel: "", pay_orderno: "",
+      });
+    }
 
     // 도장 컬러매칭: paykind='3' 이고 99990 미존재
     if (paykind === "3" && !currentRows.some((r) => r.subpayno === "99990")) {
@@ -473,6 +508,7 @@ export default function EstimateEditPage() {
     const pntcot_code = master?.pntcot_code || "";
     const pnt_m       = master?.pnt_m       || "";
     const modelcode   = master?.modelcode   || "";
+    const seccode     = master?.seccode     || "";
 
     const url =
       `/labor-items?est_serial=${encodeURIComponent(estSerial)}` +
@@ -487,16 +523,17 @@ export default function EstimateEditPage() {
       `&pntkind=${encodeURIComponent(pntkind)}` +
       `&pntcot_code=${encodeURIComponent(pntcot_code)}` +
       `&pnt_m=${encodeURIComponent(pnt_m)}` +
-      `&modelcode=${encodeURIComponent(modelcode)}`;
+      `&modelcode=${encodeURIComponent(modelcode)}` +
+      `&seccode=${encodeURIComponent(seccode)}`;
 
     const payload = { est_serial: estSerial, carno, codecar, est_codecar, carname,
-                      paykind, paint, outday, carkind, pntkind, pntcot_code, pnt_m, modelcode };
+                      paykind, paint, outday, carkind, pntkind, pntcot_code, pnt_m, modelcode, seccode };
 
     const getExistingPaynos = () => {
       const filtered = rowsRef.current.filter((r) => String(r.paykind) === "1" || String(r.paykind) === "2");
       return {
         existing_paynos: filtered.map((r) => r.payno),
-        existing_rows:   filtered.map((r) => ({ payno: r.payno, workcode: r.workcode ?? "" })),
+        existing_rows:   filtered.map((r) => ({ payno: r.payno, subpayno: r.subpayno ?? "", workcode: r.workcode ?? "" })),
       };
     };
 
@@ -556,12 +593,13 @@ export default function EstimateEditPage() {
   const openPaintItemsPopup = async () => {
     await saveClaimIfActive();
     const estSerial = est_serial || "";
-    const carno = master?.carno || "";
+    const carno     = master?.carno     || "";
+    const carname   = master?.carname   || "";
     const pntcot_code = master?.pntcot_code || "";
-    const pnt_m = master?.pnt_m || "";
-    const paint   = master?.paint   || "";
-    const pntkind = master?.pntkind || "";
-    const codecar = master?.codecar || "";
+    const pnt_m     = master?.pnt_m     || "";
+    const paint     = master?.paint     || "";
+    const pntkind   = master?.pntkind   || "";
+    const codecar   = master?.codecar   || "";
 
     // 선택 Row의 주체(paykind='1') workcode: 교환(X) vs 판금/수리(B/S) 판별용
     let workcode = "";
@@ -577,11 +615,12 @@ export default function EstimateEditPage() {
       }
     }
 
-    const safePntM = pnt_m === 1 || pnt_m === 2 ? pnt_m : 2;
+    const safePntM = String(pnt_m) === "1" || String(pnt_m) === "2" ? String(pnt_m) : "2";
 
     const url =
       `/paint-items?est_serial=${encodeURIComponent(estSerial)}` +
       `&carno=${encodeURIComponent(carno)}` +
+      `&carname=${encodeURIComponent(carname)}` +
       `&pntcot_code=${encodeURIComponent(pntcot_code)}` +
       `&pnt_m=${encodeURIComponent(safePntM)}` +
       `&paint=${encodeURIComponent(paint)}` +
@@ -592,6 +631,7 @@ export default function EstimateEditPage() {
     const payload = {
       est_serial: estSerial,
       carno,
+      carname,
       pntcot_code,
       pnt_m: safePntM,
       paint,
@@ -797,8 +837,12 @@ export default function EstimateEditPage() {
 
         const currentRows = rowsRef.current;
 
-        // 1. 중복 체크: payno + workcode 조합이 이미 존재하면 스킵
-        if (currentRows.some((r) => r.payno === payno && r.workcode === workcode)) return;
+        // 1. 중복 체크: payno + subpayno + workcode 조합이 이미 존재하면 스킵
+        if (currentRows.some((r) =>
+          r.payno === payno &&
+          String(r.subpayno ?? "") === String(subpayno ?? "") &&
+          r.workcode === workcode
+        )) return;
 
         // 1-1. X↔B/S 공존 방지 (paykind='1' 한정)
         if (String(itemPaykind) === "1") {
@@ -836,7 +880,8 @@ export default function EstimateEditPage() {
             insertIdx = i + 1;
             break;
           }
-          if (i === 0) insertIdx = 0;
+          // orderno가 없는 경우(우수기술료 등)는 맨 앞 삽입 방지
+          if (i === 0 && newOrderno) insertIdx = 0;
         }
 
         // anchor를 찾은 경우에만 fallback 수행:
@@ -1039,9 +1084,9 @@ export default function EstimateEditPage() {
           pay_orderno:    String(orderno ?? ""),
         };
 
-        // 4. 범퍼 자동 추가 행: payname에 '범퍼' 포함 AND state='1' AND WRK34/9 항목 존재
+        // 4. 범퍼 자동 추가 행: payname에 '범퍼' 포함 AND state='1' AND paykind='3' AND WRK34/9 항목 존재
         let extraRow = null;
-        if (String(payname).includes("범퍼") && state === "1") {
+        if (String(payname).includes("범퍼") && state === "1" && String(masterRef.current?.paykind ?? "") === "3") {
           const tbEntry = (wrk34CodesRef.current ?? []).find((c) => c.value === "9");
           if (tbEntry) {
             const qty        = String(Number(tbEntry.def_value ?? 0) / 100);
@@ -1161,8 +1206,9 @@ export default function EstimateEditPage() {
         const fields  = PAINT_FIELD_MAP[solvent]?.[coatKind] ?? PAINT_FIELD_MAP.pnt.swap;
         const hour    = Number(paintRow[fields.h] ?? 0);
         const partsum = Number(paintRow[fields.m] ?? 0);
-        const state   = COAT_STATE_MAP[coatKind] ?? "";
-        const pntM    = solvent === "oil" ? "1" : "2";
+        const state     = COAT_STATE_MAP[coatKind] ?? "";
+        const statename = coatStatename(coatKind, masterRef.current?.pntkind);
+        const pntM      = solvent === "oil" ? "1" : "2";
 
         // pnt_hour / pnt_part: 항상 outer 기준
         const pntHourField = solvent === "oil" ? "oilpnt_hb" : "pnt_hb";
@@ -1172,10 +1218,27 @@ export default function EstimateEditPage() {
 
         // 4. 삽입 위치
         // subseq='2' 는 부모(subseq='1', 같은 category) payno 기준으로 위치 결정
-        const _insertPno = paintRow.insertPayno || payno;
+        const _insertPno  = paintRow.insertPayno || payno;
+        const _isSubseq2  = String(paintRow.subseq ?? "") === "2";
+        const _masterPaykind = String(masterRef.current?.paykind ?? "");
         let insertIdx = currentRows.length;
         for (let i = currentRows.length - 1; i >= 0; i--) {
-          if (String(currentRows[i].payno) === String(_insertPno)) { insertIdx = i + 1; break; }
+          const r = currentRows[i];
+          if (String(r.payno) === String(_insertPno)) {
+            // paykind='1' + 일반행: payno + subpayno='' 기준
+            if (_masterPaykind === "1" && !_isSubseq2) {
+              if (String(r.subpayno ?? "") === "") { insertIdx = i + 1; break; }
+            } else {
+              insertIdx = i + 1; break;
+            }
+          }
+        }
+        // 매칭 행 없으면 99990/99991 행보다 위에 삽입
+        if (insertIdx === currentRows.length) {
+          const specialIdx = currentRows.findIndex(
+            (r) => r.subpayno === "99990" || r.subpayno === "99991"
+          );
+          if (specialIdx >= 0) insertIdx = specialIdx;
         }
 
         // ts_payno 조회: 견적내역에서 payno 일치 & paykind='1' 인 행
@@ -1213,7 +1276,7 @@ export default function EstimateEditPage() {
           paysum:         _pnt2_paysum,
           part_makercode: "",
           state,
-          statename:      "",
+          statename,
           pnt_extr:       "",
           pnt_hour:       String(pntHour),
           pnt_part:       String(pntPart),
@@ -1229,11 +1292,11 @@ export default function EstimateEditPage() {
           pay_orderno:    "",
         };
 
-        // 5. 범퍼 자동 추가행: payname에 '범퍼' 포함 AND state='1'
+        // 5. 범퍼 자동 추가행: payname에 '범퍼' 포함 AND state='1' AND paykind='3'
         //    단, subseq='2' 인 행은 이미 부가항목이므로 자동 추가 제외
         let extraRow = null;
         const isSubseq2 = String(paintRow.subseq ?? "") === "2";
-        if (String(payname).includes("범퍼") && state === "1" && !isSubseq2) {
+        if (String(payname).includes("범퍼") && state === "1" && !isSubseq2 && String(masterRef.current?.paykind ?? "") === "3") {
           const tbEntry = (wrk34CodesRef.current ?? []).find((c) => c.value === "9");
           if (tbEntry) {
             const qty        = String(Number(tbEntry.def_value ?? 0) / 100);
@@ -1510,9 +1573,9 @@ export default function EstimateEditPage() {
             pay_orderno:    "",
           });
 
-          // 범퍼 자동 추가행
+          // 범퍼 자동 추가행 (paykind='3' 전용)
           const isSubseq2 = String(paintRow.subseq ?? "") === "2";
-          if (String(paintRow.payname ?? "").includes("범퍼") && state === "1" && !isSubseq2) {
+          if (String(paintRow.payname ?? "").includes("범퍼") && state === "1" && !isSubseq2 && String(masterRef.current?.paykind ?? "") === "3") {
             const tbEntry = (wrk34CodesRef.current ?? []).find((c) => c.value === "9");
             if (tbEntry) {
               const qty         = String(Number(tbEntry.def_value ?? 0) / 100);
@@ -2297,7 +2360,7 @@ export default function EstimateEditPage() {
         <div className="min-h-0 flex-1 flex gap-3 min-w-0">
           {/* 좌: 접수 + 테이블 */}
           <div className="min-h-0 flex-1 flex flex-col gap-2 min-w-0">
-            <EstimateReception master={master} setMaster={setMaster} laborWinOpen={laborWinOpen || paintWinOpen} readOnly={isLocked} />
+            <EstimateReception master={master} setMaster={setMaster} laborWinOpen={laborWinOpen || paintWinOpen} readOnly={isLocked} itemCount={rows.length} />
 
             <div className="min-h-0 flex-1 flex flex-col min-w-0">
               <EstimateItemsTable

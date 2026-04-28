@@ -242,7 +242,7 @@ export default function EstimateSettlePanel({ master, inputCls, refreshKey, read
                     }}
                     options={["0", "5", "8", "9", "9.5", "10"]}
                     inputClassName={inputCls}
-                    disabled
+                    disabled={readOnly}
                   />
                   <div className="h-9 w-full min-w-0 flex items-center justify-end rounded-md border border-zinc-200 bg-zinc-50 px-2 text-sm text-zinc-700">
                     {fmt(n(settle.endvat))}

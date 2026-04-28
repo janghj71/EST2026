@@ -14,6 +14,8 @@ const EMPTY_FORM = {
   pntcolormix:  "0",   // 도장 컬러매칭 시간
   pntmix_m_oil: "0",   // 컬러매칭 재료비 (유용성)
   pntmix_m:     "0",   // 컬러매칭 재료비 (수용성)
+  pntcotx1: "0", pntcotx2: "0", pntcotx4: "0", // 공통작업시간 Qty (코트별, 기본)
+  pntcotb1: "0", pntcotb2: "0", pntcotb4: "0", // 공통작업시간 Qty (코트별, 판금도장)
 };
 
 /** dataset 배열 → { set_name: set_value } 맵 */
@@ -49,6 +51,12 @@ function mapToForm(json) {
     pntcolormix:  m.pntcolormix  ?? "0",
     pntmix_m_oil: m.pntmix_m_oil ?? "0",
     pntmix_m:     m.pntmix_m     ?? "0",
+    pntcotx1: m.pntcotx1 ?? "0",
+    pntcotx2: m.pntcotx2 ?? "0",
+    pntcotx4: m.pntcotx4 ?? "0",
+    pntcotb1: m.pntcotb1 ?? "0",
+    pntcotb2: m.pntcotb2 ?? "0",
+    pntcotb4: m.pntcotb4 ?? "0",
   };
 }
 
@@ -74,6 +82,12 @@ function formToParams(form) {
     pntcolormix:  form.pntcolormix,
     pntmix_m_oil: form.pntmix_m_oil,
     pntmix_m:     form.pntmix_m,
+    pntcotx1: form.pntcotx1,
+    pntcotx2: form.pntcotx2,
+    pntcotx4: form.pntcotx4,
+    pntcotb1: form.pntcotb1,
+    pntcotb2: form.pntcotb2,
+    pntcotb4: form.pntcotb4,
   };
 }
 

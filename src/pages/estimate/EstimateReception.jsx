@@ -1,22 +1,86 @@
 // EST2026/src/pages/estimate/EstimateReception.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Field from "../../components/Field";
 import { Info } from "lucide-react";
 import IconBtn from "../../components/IconBtn";
 import { moveFocusOnEnter } from "../../utils/focusUtils";
 import { formatNumber, unformatNumber } from "../../utils/numberFormat";
 import CarNameHelpModal from "./CarNameHelpModal";
+import CarnoSearchModal from "./CarnoSearchModal";
 import { useTbCode } from "../../hooks/useTbCode";
 import { useLaborSettings } from "../../hooks/useLaborSettings";
+import { useCarnoSearch } from "../../hooks/useCarnoSearch";
 
 /**
  * 접수 요약 (첨부2/3 입력 순서 기준)
  * - Field는 "라벨 + children" 레이아웃 컴포넌트라서
  *   실제 input/select는 children으로 넣어야 함.
  */
-export default function EstimateReception({ master, setMaster, laborWinOpen = false, readOnly = false }) {
+export default function EstimateReception({ master, setMaster, laborWinOpen = false, readOnly = false, itemCount = 0 }) {
   const [carHelpOpen, setCarHelpOpen] = useState(false);
   const { form: laborForm } = useLaborSettings();
+
+  // 차량번호 검색 모달
+  const { loading: carnoLoading, searchByCarno } = useCarnoSearch();
+  const [carnoModalOpen,  setCarnoModalOpen]  = useState(false);
+  const [carnoSearchRows, setCarnoSearchRows] = useState([]);
+
+  // 사용자가 직접 입력을 변경했는지 추적 (외부에서 master.carno가 바뀌면 dirty 해제)
+  const carnoDirtyRef = useRef(false);
+  const carnoBaseRef  = useRef(master?.carno ?? "");
+  useEffect(() => {
+    // master가 외부에서 바뀌면 (견적 불러오기 등) dirty 초기화
+    carnoBaseRef.current  = master?.carno ?? "";
+    carnoDirtyRef.current = false;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [master?.est_serial]); // est_serial 변경 = 새 견적 로드
+
+  const openCarnoSearch = async (e) => {
+    const carno = master?.carno?.trim();
+    if (!carno || readOnly) return;
+    if (itemCount > 0) { moveFocusOnEnter(e); return; } // 견적 명세 Row 존재 시 다음 인풋으로 이동
+    const rows = await searchByCarno(carno);
+    if (rows.length === 0) {
+      moveFocusOnEnter(e);                    // 0건 — 다음 인풋으로 포커스 이동
+      return;
+    }
+    if (rows.length === 1) {
+      applyCarnoRow(rows[0]);                 // 1건 — 팝업 없이 바로 적용
+      return;
+    }
+    setCarnoSearchRows(rows);                 // 2건 이상 — 모달 표시
+    setCarnoModalOpen(true);
+  };
+
+  const applyCarnoRow = (row) => {
+    setCarnoModalOpen(false);
+    setMaster((m) => ({
+      ...m,
+      carno:         row.carno         ?? m.carno,
+      codecar:       row.codecar        ?? "",
+      carname:       row.carname        ?? "",
+      makercode:     row.makercode      ?? "",
+      carkind:       row.carkind        ?? "",
+      cargrade:      row.cargrade       ?? "",
+      carcode:       row.carcode        ?? "",
+      modelcode:     row.modelcode      ?? "",
+      modelname:     row.modelname      ?? "",
+      vinno:         row.vinno          ?? "",
+      car_registday: row.car_registday  ?? "",
+      custom_name:   row.custom_name    ?? "",
+      hp0:           row.hp0            ?? "",
+      hp1:           row.hp1            ?? "",
+      hp2:           row.hp2            ?? "",
+      email_acc:     row.email_acc      ?? "",
+      email_smtp:    row.email_smtp     ?? "",
+      paint:         row.paint          ?? "",
+      pntcolor_code: row.pntcolor_code  ?? "",
+      pntcot_code:   row.pntcot_code    ?? "",
+      est_codecar:   row.est_codecar    ?? "",
+      est_carname:   row.est_carname    ?? "",
+      caryear:       row.caryear        ?? "",
+    }));
+  };
 
   // 이메일 로컬 raw 상태 — 타이핑 중 '@' 가 사라지는 문제 방지
   const [emailInput, setEmailInput] = useState("");
@@ -99,8 +163,20 @@ export default function EstimateReception({ master, setMaster, laborWinOpen = fa
               <input
                 className={inputCls}
                 value={master?.carno ?? ""}
-                onChange={(e) => set("carno")(e.target.value)}
+                onChange={(e) => {
+                  set("carno")(e.target.value);
+                  carnoDirtyRef.current = true; // 사용자가 직접 변경
+                }}
                 disabled={readOnly}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.stopPropagation(); // moveFocusOnEnter 방지
+                    if (carnoDirtyRef.current) {   // 변동 있을 때만 검색
+                      carnoDirtyRef.current = false;
+                      openCarnoSearch(e);
+                    }
+                  }
+                }}
               />
             </Field>
 
@@ -334,6 +410,15 @@ export default function EstimateReception({ master, setMaster, laborWinOpen = fa
           modelcode: master?.modelcode ?? "",
           carkind:   master?.carkind   ?? 1,
         }}
+      />
+
+      <CarnoSearchModal
+        open={carnoModalOpen}
+        loading={carnoLoading}
+        rows={carnoSearchRows}
+        carno={master?.carno ?? ""}
+        onConfirm={applyCarnoRow}
+        onClose={() => setCarnoModalOpen(false)}
       />
 
     </div>
