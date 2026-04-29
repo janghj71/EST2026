@@ -1,4 +1,5 @@
 ﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import FixedHeadTable from "../components/FixedHeadTable";
 import TableLoadingOverlay from "../components/TableLoadingOverlay";
@@ -1452,6 +1453,25 @@ function InlineActions({
   onMailHistory,
   isest,
 }) {
+  const mailBtnRef  = useRef(null);
+  const printBtnRef = useRef(null);
+  const [mailPos,  setMailPos]  = useState(null);
+  const [printPos, setPrintPos] = useState(null);
+
+  // 버튼 위치를 보고 fixed 좌표 계산. 아래 공간이 부족하면 위로 띄움.
+  const calcPos = (btnRef, menuHeight, menuWidth) => {
+    if (!btnRef.current) return null;
+    const rect = btnRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const dropUp = spaceBelow < menuHeight + 8;
+    const top  = dropUp ? rect.top - menuHeight - 4 : rect.bottom + 4;
+    let left = rect.left;
+    if (left + menuWidth > window.innerWidth) {
+      left = window.innerWidth - menuWidth - 8;
+    }
+    return { top, left };
+  };
+
   const printItems = String(isest) === "1"
     ? [
         { label: "점검정비 견적서" },
@@ -1468,6 +1488,32 @@ function InlineActions({
     ? "점검정비 견적서 - 고객용"
     : "점검정비 명세서 - 고객용";
 
+  const MAIL_MENU_W = 208;   // w-52
+  const PRINT_MENU_W = 192;  // w-48
+  const ITEM_H = 38;         // 메뉴 1행 높이 추정
+  const mailMenuH  = 3 * ITEM_H + 8;
+  const printMenuH = printItems.length * ITEM_H + 8;
+
+  const handleMailToggle = () => {
+    if (mailOpen) {
+      setMailOpen(false);
+      return;
+    }
+    setMailPos(calcPos(mailBtnRef, mailMenuH, MAIL_MENU_W));
+    setMailOpen(true);
+    setPrintOpen(false);
+  };
+
+  const handlePrintToggle = () => {
+    if (printOpen) {
+      setPrintOpen(false);
+      return;
+    }
+    setPrintPos(calcPos(printBtnRef, printMenuH, PRINT_MENU_W));
+    setPrintOpen(true);
+    setMailOpen(false);
+  };
+
   return (
     <div className="flex flex-wrap items-center gap-2 select-none">
       <SmallBtn onClick={onModify}>수정</SmallBtn>
@@ -1480,35 +1526,44 @@ function InlineActions({
       <SmallBtn onClick={onPhoto}>사진</SmallBtn>
       <SmallBtn onClick={onSms}>문자</SmallBtn>
 
-      <div className="relative">
-        <SmallBtn onClick={() => { setMailOpen(!mailOpen); setPrintOpen(false); }}>메일 ▾</SmallBtn>
-        {mailOpen && (
-          <div className="absolute left-0 top-9 w-52 flex flex-col overflow-hidden rounded-md border border-zinc-200 bg-white shadow-lg z-10">
-            <MenuItem onClick={() => { setMailOpen(false); onMailClaim?.(); }}>
-              견적청구 - 보험사
-            </MenuItem>
-            <MenuItem onClick={() => { setMailOpen(false); onCustomerSend?.(); }}>
-              {customerMailLabel}
-            </MenuItem>
-            <MenuItem onClick={() => { setMailOpen(false); onMailHistory?.(); }}>
-              발송메일 조회
-            </MenuItem>
-          </div>
-        )}
+      <div ref={mailBtnRef}>
+        <SmallBtn onClick={handleMailToggle}>메일 ▾</SmallBtn>
       </div>
+      {mailOpen && mailPos && createPortal(
+        <div
+          className="fixed z-[1200] w-52 flex flex-col overflow-hidden rounded-md border border-zinc-200 bg-white shadow-lg"
+          style={{ top: mailPos.top, left: mailPos.left }}
+        >
+          <MenuItem onClick={() => { setMailOpen(false); onMailClaim?.(); }}>
+            견적청구 - 보험사
+          </MenuItem>
+          <MenuItem onClick={() => { setMailOpen(false); onCustomerSend?.(); }}>
+            {customerMailLabel}
+          </MenuItem>
+          <MenuItem onClick={() => { setMailOpen(false); onMailHistory?.(); }}>
+            발송메일 조회
+          </MenuItem>
+        </div>,
+        document.body
+      )}
 
-      <div className="relative">
-        <SmallBtn onClick={() => { setPrintOpen(!printOpen); setMailOpen(false); }}>인쇄 ▾</SmallBtn>
-        {printOpen && (
-          <div className="absolute left-0 top-9 w-48 flex flex-col overflow-hidden rounded-md border border-zinc-200 bg-white shadow-lg z-10">
-            {printItems.map((item) => (
-              <MenuItem key={item.label} onClick={() => { setPrintOpen(false); onPrint(item.label); }}>
-                {item.label}
-              </MenuItem>
-            ))}
-          </div>
-        )}
+      <div ref={printBtnRef}>
+        <SmallBtn onClick={handlePrintToggle}>인쇄 ▾</SmallBtn>
       </div>
+      {printOpen && printPos && createPortal(
+        <div
+          className="fixed z-[1200] w-48 flex flex-col overflow-hidden rounded-md border border-zinc-200 bg-white shadow-lg"
+          style={{ top: printPos.top, left: printPos.left }}
+        >
+          {printItems.map((item) => (
+            <MenuItem key={item.label} onClick={() => { setPrintOpen(false); onPrint(item.label); }}>
+              {item.label}
+            </MenuItem>
+          ))}
+        </div>,
+        document.body
+      )}
+
       <SmallBtn onClick={onMemo}>메모</SmallBtn>
       <SmallBtn onClick={onDeposit}>입금</SmallBtn>
     </div>

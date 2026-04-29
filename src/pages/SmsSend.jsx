@@ -44,6 +44,8 @@ export default function SmsSend() {
   const [inDay, setInDay] = useState(() => snap?.inday || "");
 
   const hydratedRef = useRef(false);
+  const companyLoadingRef = useRef(companyLoading);
+  useEffect(() => { companyLoadingRef.current = companyLoading; }, [companyLoading]);
 
   useEffect(() => {
     if (
@@ -142,7 +144,7 @@ export default function SmsSend() {
   }, [senders]);
 
   const loadAlimtalkMsg = useCallback(async ({ smskind } = {}) => {
-    if (companyLoading) return null;
+    if (companyLoadingRef.current) return null;
     if (!carNo && !inDay) return null;
     if (!companyForm.comName) return null;
 
@@ -165,7 +167,7 @@ export default function SmsSend() {
       warning(e?.message || "Failed to load alimtalk template.");
       return null;
     }
-  }, [companyLoading, carNo, inDay, isest, companyForm, fetchTemplate, warning]);
+  }, [carNo, inDay, isest, companyForm, fetchTemplate, warning]);
 
   useEffect(() => {
     loadAlimtalkMsg();
