@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { X } from "lucide-react";
 import FixedHeadTable from "../../components/FixedHeadTable";
+import TableLoadingOverlay from "../../components/TableLoadingOverlay";
 
 export default function CarnoSearchModal({ open, loading, rows = [], carno = "", onConfirm, onClose }) {
   // carno 기준 정렬
@@ -67,24 +68,19 @@ export default function CarnoSearchModal({ open, loading, rows = [], carno = "",
 
         {/* 목록 */}
         <div className="min-h-0 flex-1 p-3 flex flex-col overflow-hidden">
-          <div className="rounded-md border border-zinc-200 bg-white shadow-sm overflow-hidden flex flex-col min-h-0 flex-1">
-            {loading ? (
-              <div className="flex-1 flex items-center justify-center text-sm text-zinc-400">
-                조회 중...
-              </div>
-            ) : (
-              <FixedHeadTable
-                columns={columns}
-                rows={sortedRows}
-                rowKey={(r) => r.est_serial}
-                selectedKey={selectedRow?.est_serial}
-                onRowClick={(r) => setSelectedRow(r)}
-                onRowDoubleClick={() => handleConfirm()}
-                emptyText="검색 결과가 없습니다."
-                height="100%"
-                rowSize="sm"
-              />
-            )}
+          <div className="relative rounded-md border border-zinc-200 bg-white shadow-sm overflow-hidden flex flex-col min-h-0 flex-1">
+            <TableLoadingOverlay loading={loading} />
+            <FixedHeadTable
+              columns={columns}
+              rows={sortedRows}
+              rowKey={(r) => r.est_serial}
+              selectedKey={selectedRow?.est_serial}
+              onRowClick={(r) => setSelectedRow(r)}
+              onRowDoubleClick={() => handleConfirm()}
+              emptyText="검색 결과가 없습니다."
+              height="100%"
+              rowSize="sm"
+            />
           </div>
         </div>
 

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import IconBtn from "../components/IconBtn"; 
-import FixedHeadTable from "../components/FixedHeadTable"; 
+import IconBtn from "../components/IconBtn";
+import FixedHeadTable from "../components/FixedHeadTable";
+import TableLoadingOverlay from "../components/TableLoadingOverlay"; 
 import { moveFocusOnEnter } from "../utils/focusUtils";
 import { useAlert } from "../alerts";
 import { useTbCode } from "../hooks/useTbCode";
@@ -163,7 +164,8 @@ export default function WorkStatusPage() {
             </div>
           </div>
 
-          <div className="p-0 min-h-0">
+          <div className="relative p-0 min-h-0">
+            <TableLoadingOverlay loading={loading} />
             <FixedHeadTable
               columns={columns}
               rows={viewRows}

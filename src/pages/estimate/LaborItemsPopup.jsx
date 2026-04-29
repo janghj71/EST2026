@@ -8,6 +8,7 @@ import { useEstimateClaims } from "../../hooks/useEstimateClaims";
 import { formatLocaleNumber } from "../../utils/numberFormat";
 import { useLoading } from "../../loading/useLoading";
 import { useAlert } from "../../alerts/useAlert";
+import TableLoadingOverlay from "../../components/TableLoadingOverlay";
 
 
 const AREA_DEFS = [
@@ -252,6 +253,7 @@ export default function LaborItemsPopup() {
   const { fetchClaims }      = useEstimateClaims();
   const { withLoading }      = useLoading();
   const { info }             = useAlert();
+  const [laborLoading, setLaborLoading] = useState(false);
   const [workItems, setWorkItems] = useState([]);
   const [workTimes, setWorkTimes] = useState([]);
   const [paints,    setPaints]    = useState([]);
@@ -291,24 +293,20 @@ export default function LaborItemsPopup() {
     if (!codecar) return;
     if (!estCodecar) return;
 
-    withLoading(() =>
-      Promise.all([
-        fetchCodepay({ carcode: estCodecar, ocarcode, paykind }),
-        fetchCodepayHour({ carcode: estCodecar, ocarcode, paykind, outday }),
-        // 도장: carcode=master.paint, paykind=master.pntkind, ocarcode=master.codecar
-        fetchCodepnt({ carcode: paint, paykind: pntkind, ocarcode }),
-        // 부품: carcode=master.codecar, modelcode=master.modelcode, paykind=master.paykind
-        fetchCodepart({ carcode: codecar, modelcode, paykind }),
-        // 청구처(보험사 목록): est_serial 기준
-        fetchClaims(estSerial),
-      ]).then(([wpJson, wtJson, pntJson, ptJson, claimsJson]) => {
-        if (wpJson?.result     === "OK") setWorkItems(wpJson.dataset    ?? []);
-        if (wtJson?.result     === "OK") setWorkTimes(wtJson.dataset    ?? []);
-        if (pntJson?.result    === "OK") setPaints(pntJson.dataset      ?? []);
-        if (ptJson?.result     === "OK") setParts(ptJson.dataset        ?? []);
-        if (claimsJson?.result === "OK") setClaims(claimsJson.dataset   ?? []);
-      })
-    , "공임 데이터 불러오는 중...");
+    setLaborLoading(true);
+    Promise.all([
+      fetchCodepay({ carcode: estCodecar, ocarcode, paykind }),
+      fetchCodepayHour({ carcode: estCodecar, ocarcode, paykind, outday }),
+      fetchCodepnt({ carcode: paint, paykind: pntkind, ocarcode }),
+      fetchCodepart({ carcode: codecar, modelcode, paykind }),
+      fetchClaims(estSerial),
+    ]).then(([wpJson, wtJson, pntJson, ptJson, claimsJson]) => {
+      if (wpJson?.result     === "OK") setWorkItems(wpJson.dataset    ?? []);
+      if (wtJson?.result     === "OK") setWorkTimes(wtJson.dataset    ?? []);
+      if (pntJson?.result    === "OK") setPaints(pntJson.dataset      ?? []);
+      if (ptJson?.result     === "OK") setParts(ptJson.dataset        ?? []);
+      if (claimsJson?.result === "OK") setClaims(claimsJson.dataset   ?? []);
+    }).finally(() => setLaborLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [estCodecar, codecar]);
 
@@ -1311,7 +1309,8 @@ export default function LaborItemsPopup() {
                 </div>
               </div>
 
-              <div className="min-h-0 flex-1 overflow-hidden">
+              <div className="relative min-h-0 flex-1 overflow-hidden">
+                <TableLoadingOverlay loading={laborLoading} />
                 <FixedHeadTable
                   columns={workItemCols}
                   rows={filteredWorkItems}
@@ -1362,7 +1361,8 @@ export default function LaborItemsPopup() {
                 </div>
               </div>
 
-              <div className="min-h-0 flex-1 overflow-hidden">
+              <div className="relative min-h-0 flex-1 overflow-hidden">
+                <TableLoadingOverlay loading={laborLoading} />
                 <FixedHeadTable
                   columns={workTimeCols}
                   rows={filteredWorkTimes}

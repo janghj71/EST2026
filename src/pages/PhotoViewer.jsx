@@ -11,10 +11,10 @@ import {
   Save,
 } from "lucide-react";
 import IconBtn from "../components/IconBtn";
+import TableLoadingOverlay from "../components/TableLoadingOverlay";
 import { openCenteredWindow } from "../utils/popup";
 import { buildPhotoPrintHtml } from "../prints/photoPrintHtml";
 import { useAlert } from "../alerts";
-import { useLoading } from "../loading/useLoading";
 import { usePhoto } from "../hooks/usePhoto";
 import { useTbCode } from "../hooks/useTbCode";
 import { getUserid } from "../api/config";
@@ -43,7 +43,6 @@ function CatPill({ label }) {
 
 export default function PhotoViewer() {
   const { warning, info, confirm, choice } = useAlert();
-  const { showLoading, hideLoading } = useLoading();
   const ctx = useUrlContextSnapshot({
     storageKey: "photoViewerCtx",
     keys: ["est_serial", "carno"],
@@ -89,12 +88,6 @@ export default function PhotoViewer() {
   useEffect(() => {
     if (photoError?.message) warning(photoError.message || "사진 조회에 실패했습니다.");
   }, [photoError]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // 사진 로딩 상태 → 전역 스피너 연동
-  useEffect(() => {
-    if (photoLoading) showLoading('사진 불러오는 중...');
-    else hideLoading();
-  }, [photoLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const hydratedRef = useRef(false);
 
@@ -761,7 +754,8 @@ export default function PhotoViewer() {
       </div>
 
       {/* Grid */}
-      <div className="px-6 pb-6 min-h-0 flex-1 flex flex-col">
+      <div className="relative px-6 pb-6 min-h-0 flex-1 flex flex-col">
+        <TableLoadingOverlay loading={photoLoading} />
         {!photoLoading && viewItems.length === 0 && (
           <div className="py-10 text-center text-gray-400">사진이 없습니다.</div>
         )}

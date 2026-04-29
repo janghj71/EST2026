@@ -307,7 +307,7 @@ export default function EstimateItemsTable({
     fetchCodepnt({ carcode, paykind, ocarcode })
       .then((json) => { if (json?.result === "OK") setPntRows(json.dataset ?? []); })
       .catch(() => {});
-  }, [master?.paint, master?.pntkind, master?.codecar]);
+  }, [master?.paint, master?.pntkind, master?.codecar, fetchCodepnt]);
 
   // 악세사리 목록 마운트 시 1회 fetch → pntAccRows 캐시
   useEffect(() => {
@@ -561,12 +561,12 @@ export default function EstimateItemsTable({
     }, [EDIT_ORDER]
   );
   
-  const focusNextEditable =  useCallback(
-    (row, currentKey) => {
-      const id = nextEditableId(row, currentKey);
-      if (id) focusById(id);
-    }, [nextEditableId]
-  );
+  // const focusNextEditable =  useCallback(
+  //   (row, currentKey) => {
+  //     const id = nextEditableId(row, currentKey);
+  //     if (id) focusById(id);
+  //   }, [nextEditableId]
+  // );
 
   const prevEditableId = useCallback(
     (row, key) => {
@@ -579,12 +579,12 @@ export default function EstimateItemsTable({
       return null;
     }, [EDIT_ORDER]);
   
-  const focusPrevEditable = useCallback(
-    (row, currentKey) => {
-      const id = prevEditableId(row, currentKey);
-      if (id) focusById(id);
-    }, [prevEditableId]
-  );
+  // const focusPrevEditable = useCallback(
+  //   (row, currentKey) => {
+  //     const id = prevEditableId(row, currentKey);
+  //     if (id) focusById(id);
+  //   }, [prevEditableId]
+  // );
   
   
   const firstEditableKey = useCallback(
@@ -621,11 +621,11 @@ export default function EstimateItemsTable({
   );
   
   // 현재 포커스된 id("cell-123-qty")를 파싱
-  const parseCellId = (id) => {
-    const m = /^cell-(\d+)-([a-zA-Z0-9_]+)$/.exec(id || "");
-    if (!m) return null;
-    return { orgSeq: Number(m[1]), key: m[2] };
-  };
+  // const parseCellId = (id) => {
+  //   const m = /^cell-(\d+)-([a-zA-Z0-9_]+)$/.exec(id || "");
+  //   if (!m) return null;
+  //   return { orgSeq: Number(m[1]), key: m[2] };
+  // };
   
   const focusRowByPreferredKey = useCallback(
     (row, preferredKey) => {
@@ -1155,8 +1155,8 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
           firstPaynoOrgSeqs.has(row.estb_orgseqno)
         : true // 자유: 모든 row
       );
-    const isSelected =
-      selectedOrgSeq === row.estb_orgseqno || selectedOrgSeqs.has(row.estb_orgseqno);
+    // const isSelected =
+    //   selectedOrgSeq === row.estb_orgseqno || selectedOrgSeqs.has(row.estb_orgseqno);
     const mergedTrProps = { ...trProps };
 
     return (

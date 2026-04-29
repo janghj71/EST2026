@@ -2,12 +2,10 @@ import { useCallback } from 'react';
 import { useApi } from './useApi';
 import { apiOk } from '../api/apiOk';
 import { useAlert } from '../alerts';
-import { useLoading } from '../loading/useLoading';
 import { getComcode, getServiceKey, API_ESTSERVICE } from '../api/config';
 
 export function useEstimateMemo() {
   const { warning } = useAlert();
-  const { withLoading } = useLoading();
   const { loading, refetch } = useApi({
     path: '/est_masterestimate_memo_s.aspx',
     immediate: false,
@@ -15,22 +13,20 @@ export function useEstimateMemo() {
 
   // est_serial로 메모 30개 조회 → rows 배열 반환 (실패 시 null)
   const fetchRows = useCallback(async (est_serial) => {
-    return withLoading(async () => {
-      try {
-        const json = await refetch({ est_serial });
-        apiOk(json, '메모 조회');
-        const base = Array.from({ length: 30 }).map((_, i) => ({ seq: i + 1, text: '' }));
-        for (const item of json.dataset || []) {
-          const s = Number(item.seqno); // "001" → 1
-          if (s >= 1 && s <= 30) base[s - 1].text = item.memo ?? '';
-        }
-        return base;
-      } catch (e) {
-        warning(e.message || '메모 조회 실패');
-        return null;
+    try {
+      const json = await refetch({ est_serial });
+      apiOk(json, '메모 조회');
+      const base = Array.from({ length: 30 }).map((_, i) => ({ seq: i + 1, text: '' }));
+      for (const item of json.dataset || []) {
+        const s = Number(item.seqno); // "001" → 1
+        if (s >= 1 && s <= 30) base[s - 1].text = item.memo ?? '';
       }
-    }, '메모 불러오는 중...');
-  }, [refetch, withLoading, warning]);
+      return base;
+    } catch (e) {
+      warning(e.message || '메모 조회 실패');
+      return null;
+    }
+  }, [refetch, warning]);
 
   const { refetch: saveRefetch } = useApi({
     path: '/est_masterestimate_memo_c.aspx',

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, Save, Ban } from "lucide-react";
 
 import FixedHeadTable from "../components/FixedHeadTable";
+import TableLoadingOverlay from "../components/TableLoadingOverlay";
 import IconBtn from "../components/IconBtn";
 import { moveFocusOnEnter } from "../utils/focusUtils";
 import Field from "../components/Field";
@@ -201,7 +202,8 @@ export default function UserSettingsPage() {
               placeholder="아이디/이름/구분 검색"
             />
           </div>
-          <div style={{ height: 620 }}>
+          <div className="relative" style={{ height: 620 }}>
+            <TableLoadingOverlay loading={loading} />
             <FixedHeadTable
               columns={columns}
               rows={filteredUsers}

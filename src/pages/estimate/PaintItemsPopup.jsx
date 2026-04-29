@@ -1,15 +1,11 @@
 // src/pages/estimate/PaintItemsPopup.jsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import FixedHeadTable from "../../components/FixedHeadTable";
+import TableLoadingOverlay from "../../components/TableLoadingOverlay";
 import { useUrlContextSnapshot } from "../../hooks/useUrlContextSnapshot";
 import { useCodepnt } from "../../hooks/useLaborItems";
 import { X, Search } from "lucide-react";
-
-function fmtMoney(v) {
-  const n = Number(v ?? 0);
-  if (!n) return "";
-  return n.toLocaleString();
-}
+import { formatMoney } from "../../utils/numberFormat";
 
 function fmtHour(v) {
   const n = Number(v ?? 0);
@@ -189,14 +185,17 @@ export default function PaintItemsPopup() {
   // ---- API fetch ----
   const { fetchCodepnt } = useCodepnt();
   const [paints, setPaints] = useState([]);
+  const [paintLoading, setPaintLoading] = useState(false);
 
   useEffect(() => {
     if (!paint && !pntkind && !codecar) return;
+    setPaintLoading(true);
     fetchCodepnt({ carcode: paint, paykind: pntkind, ocarcode: codecar })
       .then((json) => {
         if (json?.result === "OK") setPaints(json.dataset ?? []);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setPaintLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paint, pntkind, codecar]);
 
@@ -251,7 +250,7 @@ export default function PaintItemsPopup() {
       align: "right",
       render: (val, row) => {
         const { m, h } = getPaintMH(row, paintSolvent, kind);
-        return sub === "m" ? fmtMoney(m) : fmtHour(h);
+        return sub === "m" ? formatMoney(m) : fmtHour(h);
       },
     });
 
@@ -460,7 +459,8 @@ export default function PaintItemsPopup() {
             </div>
           </div>
 
-          <div className="min-h-0 flex-1">
+          <div className="relative min-h-0 flex-1">
+            <TableLoadingOverlay loading={paintLoading} />
             <FixedHeadTable
               rows={rows}
               columns={columns}

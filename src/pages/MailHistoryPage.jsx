@@ -2,9 +2,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Eye, Mail, X } from "lucide-react";
 import FixedHeadTable from "../components/FixedHeadTable";
+import TableLoadingOverlay from "../components/TableLoadingOverlay";
 import IconBtn from "../components/IconBtn";
 import { useMailHistory } from "../hooks/useMailHistory";
-import { useLoading } from "../loading/useLoading";
 import { ymd, monthRange, addMonths } from "../utils/dateUtils";
 
 /* ── 발송일자가 오늘 이전인지 체크 ────────────────────── */
@@ -56,15 +56,18 @@ export default function MailHistoryPage() {
   }, [rows, filterName, filterTitle, filterFailOnly]);
 
   const { fetchMailList, fetchMailDetail, detailLoading } = useMailHistory();
-  const { withLoading } = useLoading();
+  const [mailLoading, setMailLoading] = useState(false);
 
   /* ── API 호출 래퍼 ───────────────────────────────────── */
   const loadList = useCallback(async (d1, d2) => {
-    await withLoading(async () => {
+    setMailLoading(true);
+    try {
       const res = await fetchMailList({ day1: d1, day2: d2 });
       setRows(res?.dataset ?? []);
-    });
-  }, [fetchMailList, withLoading]);
+    } finally {
+      setMailLoading(false);
+    }
+  }, [fetchMailList]);
 
   const loadDetail = useCallback(async (mail_serial) => {
     setDetail(null);
@@ -255,7 +258,8 @@ export default function MailHistoryPage() {
 
       {/* 목록 */}
       <div className="flex-1 min-h-0 p-3">
-        <div className="h-full rounded-md border border-zinc-200 bg-white overflow-hidden">
+        <div className="relative h-full rounded-md border border-zinc-200 bg-white overflow-hidden">
+          <TableLoadingOverlay loading={mailLoading} />
           <FixedHeadTable
             columns={columns}
             rows={filteredRows}

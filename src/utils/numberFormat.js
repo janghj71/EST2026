@@ -1,4 +1,16 @@
 /**
+ * 금액 천 단위 콤마 포맷 (ko-KR, 소수점 없음)
+ * null/undefined/비정수 → "0"
+ * @param {string|number} value
+ * @returns {string}
+ */
+export function formatMoney(value) {
+  const n = Number(value ?? 0);
+  if (!Number.isFinite(n)) return "0";
+  return n.toLocaleString("ko-KR");
+}
+
+/**
  * 숫자를 천 단위 콤마 포맷으로 변환 (소수점·음수 보존, toLocaleString 기반)
  * null/undefined/빈값 → "0"
  * @param {string|number} value

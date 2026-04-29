@@ -1,6 +1,7 @@
 ﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import FixedHeadTable from "../components/FixedHeadTable";
+import TableLoadingOverlay from "../components/TableLoadingOverlay";
 import { openCenteredWindow } from "../utils/popup";
 import ClaimSelectModal from "./estimate/ClaimSelectModal";
 import CheckBox from "../components/CheckBox";
@@ -763,15 +764,16 @@ export default function InsuranceEstimate() {
   // ====== 조회 버튼 ======
   const onSearch = useCallback(async () => {
     setSelected(null);
+    setSearchText("");
     await fetchEstimates(dateFrom, dateTo);
-  }, [dateFrom, dateTo, fetchEstimates]);
+  }, [dateFrom, dateTo, fetchEstimates, setSearchText]);
 
   // ====== 텍스트 검색 버튼 ======
   const onSearchByText = useCallback(async () => {
     if (!searchText.trim()) return;
     setSelected(null);
-    await withLoading(() => fetchByText(searchText.trim()), '검색 중...');
-  }, [searchText, fetchByText, withLoading, setSelected]);
+    await fetchByText(searchText.trim());
+  }, [searchText, fetchByText, setSelected]);
 
   // 견적 선택 시 → 청구보험 조회 (selectedClaim 초기화는 setSelectedClaim(null) in row click)
   useEffect(() => {
@@ -1144,7 +1146,7 @@ export default function InsuranceEstimate() {
 
               <button
                 className="ml-2 rounded-md bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
-                onClick={() => withLoading(onSearch, '조회 중...')}
+                onClick={onSearch}
               >
                 조회
               </button>
@@ -1201,7 +1203,8 @@ export default function InsuranceEstimate() {
                 </div>
               </div>
 
-              <div className="min-h-0 flex-1 overflow-hidden">
+              <div className="relative min-h-0 flex-1 overflow-hidden">
+                <TableLoadingOverlay loading={estLoading} />
                 <FixedHeadTable
                   columns={estimateColumns}
                   rows={insuranceEstimates}
@@ -1466,7 +1469,7 @@ function InlineActions({
     : "점검정비 명세서 - 고객용";
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2 select-none">
       <SmallBtn onClick={onModify}>수정</SmallBtn>
       <SmallBtn onClick={onDelete}>삭제</SmallBtn>
       {String(isest) === "1" && (

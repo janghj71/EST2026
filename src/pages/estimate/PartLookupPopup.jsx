@@ -6,8 +6,8 @@ import { formatNumber } from "../../utils/numberFormat";
 import { useUrlContextSnapshot } from "../../hooks/useUrlContextSnapshot";
 import { useFetchPartHistory, useFetchNeoPart } from "../../hooks/useChemicalItems";
 import { getComcode } from "../../api/config";
-import { useLoading } from "../../loading/useLoading";
 import { useAlert } from "../../alerts/useAlert";
+import TableLoadingOverlay from "../../components/TableLoadingOverlay";
 
 export default function PartLookupPopup() {
   const snapshotCtx = useUrlContextSnapshot({
@@ -29,10 +29,10 @@ export default function PartLookupPopup() {
 
   const { fetchPartHistory } = useFetchPartHistory();
   const { fetchNeoPart }     = useFetchNeoPart();
-  const { withLoading }      = useLoading();
   const { error: alertError } = useAlert();
   const [parts, setParts]       = useState([]);   // 사용자 이력
   const [neoParts, setNeoParts] = useState([]);   // 제작사 검색 결과
+  const [neoLoading, setNeoLoading] = useState(false);
   const [searchMode, setSearchMode] = useState("user"); // "user" | "neo"
   const [selectedId, setSelectedId] = useState(null);
 
@@ -141,25 +141,25 @@ export default function PartLookupPopup() {
   const onNeoSearch = useCallback(async () => {
     const scdptno = qInput.trim();
     if (!scdptno) return;
+    setNeoLoading(true);
     try {
-      await withLoading(async () => {
-        const json = await fetchNeoPart({ scdptno });
-        if (json?.result === "OK") {
-          // 응답 필드 매핑: cdptno→part_makercode, pnlgkr→payname, itpric→price
-          const mapped = (json.epc_tepcdmpf ?? []).map((r) => ({
-            part_makercode: r.cdptno  ?? "",
-            payname:        r.pnlgkr  ?? "",
-            price:          r.itpric  ?? "0",
-          }));
-          setNeoParts(mapped);
-          setSearchMode("neo");
-          setQ(scdptno);
-        }
-      });
+      const json = await fetchNeoPart({ scdptno });
+      if (json?.result === "OK") {
+        const mapped = (json.epc_tepcdmpf ?? []).map((r) => ({
+          part_makercode: r.cdptno  ?? "",
+          payname:        r.pnlgkr  ?? "",
+          price:          r.itpric  ?? "0",
+        }));
+        setNeoParts(mapped);
+        setSearchMode("neo");
+        setQ(scdptno);
+      }
     } catch (e) {
       alertError(e.message || "제작사 부품 검색 실패");
+    } finally {
+      setNeoLoading(false);
     }
-  }, [qInput, fetchNeoPart, withLoading, alertError]);
+  }, [qInput, fetchNeoPart, alertError]);
 
   const pickRow = (r) => {
     try {
@@ -232,7 +232,8 @@ export default function PartLookupPopup() {
 
       {/* 테이블 */}
       <div className="px-4 py-3 min-h-0 flex-1 flex flex-col">
-        <div className="min-h-0 flex-1 rounded-md border border-zinc-200 bg-white overflow-hidden">
+        <div className="relative min-h-0 flex-1 rounded-md border border-zinc-200 bg-white overflow-hidden">
+          <TableLoadingOverlay loading={neoLoading} />
           <FixedHeadTable
             rows={filtered}
             columns={columns}

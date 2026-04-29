@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Save, Trash2 } from "lucide-react";
 import FixedHeadTable from "../components/FixedHeadTable";
+import TableLoadingOverlay from "../components/TableLoadingOverlay";
 import IconBtn from "../components/IconBtn";
 import { moveFocusOnEnter } from "../utils/focusUtils";
 import { useAlert } from "../alerts";
@@ -266,7 +267,8 @@ export default function InsurerContactsPage() {
                 placeholder="코드/보험사 검색"
               />
             </div>
-            <div style={{ height: 300 }}>
+            <div className="relative" style={{ height: 300 }}>
+              <TableLoadingOverlay loading={contactsLoading} />
               <FixedHeadTable
                 columns={insurerCols}
                 rows={filteredInsurers}
@@ -290,7 +292,8 @@ export default function InsurerContactsPage() {
               <div className="ml-auto text-xs text-gray-500">{viewContacts.length}건</div>
             </div>
 
-            <div style={{ height: 310 }}>
+            <div className="relative" style={{ height: 310 }}>
+              <TableLoadingOverlay loading={contactsLoading} />
               <FixedHeadTable
                 columns={contactCols}
                 rows={viewContacts}

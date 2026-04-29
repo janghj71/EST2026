@@ -1,6 +1,7 @@
 import { useEffect, useRef, useLayoutEffect, useMemo, useState } from "react";
 import { Save } from "lucide-react";
 import FixedHeadTable from "../components/FixedHeadTable";
+import TableLoadingOverlay from "../components/TableLoadingOverlay";
 import IconBtn from "../components/IconBtn";
 import MoneyInput from "../components/MoneyInput";
 import { moveFocusOnEnter } from "../utils/focusUtils";
@@ -129,7 +130,8 @@ export default function InsurersPage() {
             <div className="text-base font-semibold text-gray-900">보험사</div>
           </div>
 
-          <div className="min-h-0 flex-1 ">
+          <div className="relative min-h-0 flex-1">
+            <TableLoadingOverlay loading={loading} />
             <FixedHeadTable
               columns={columns}
               rows={insurers}

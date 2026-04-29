@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import { GripVertical, X, Plus, Trash2, Save } from "lucide-react";
 import FixedHeadTable from "../components/FixedHeadTable";
+import TableLoadingOverlay from "../components/TableLoadingOverlay";
 import IconBtn from "../components/IconBtn";
 import { useAlert } from "../alerts";
 import { useSmsSender } from "../hooks/useSmsSender";
@@ -196,7 +197,8 @@ export default function SmsSenderPage() {
       </section>
 
       {/* 목록 */}
-      <section className="rounded-md border border-gray-200 bg-white overflow-hidden">
+      <section className="relative rounded-md border border-gray-200 bg-white overflow-hidden">
+        <TableLoadingOverlay loading={loading} />
         <FixedHeadTable
           columns={columns}
           rows={viewRows}

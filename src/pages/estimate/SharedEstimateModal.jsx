@@ -3,8 +3,8 @@ import React, { useState, useCallback, useEffect, useMemo } from "react";
 import { Share2, X, Search, Loader2 } from "lucide-react";
 
 import FixedHeadTable from "../../components/FixedHeadTable";
+import TableLoadingOverlay from "../../components/TableLoadingOverlay";
 import { useEstimate } from "../../hooks/useEstimate";
-import { useLoading } from "../../loading/useLoading";
 import { useAlert } from "../../alerts/useAlert";
 import { formatNumber } from "../../utils/numberFormat";
 
@@ -78,7 +78,6 @@ export default function SharedEstimateModal({
   const [loadingSearch, setLoadingSearch] = useState(false);
 
   const { fetchSharedEstimates, fetchDetails } = useEstimate();
-  const { withLoading } = useLoading();
   const alert = useAlert();
 
   // ── acc_scope 파싱 → 필터 버튼 옵션 ─────────────────────────
@@ -143,7 +142,7 @@ export default function SharedEstimateModal({
     }
   }, [searchText, est_serial, fetchSharedEstimates, loadDetailFor, setLoadingSearch]);
 
-  // 모달 열릴 때 초기 조회 — 전역 로딩 오버레이 사용
+  // 모달 열릴 때 초기 조회
   useEffect(() => {
     if (!open) return;
     setSearchText("");
@@ -151,16 +150,17 @@ export default function SharedEstimateModal({
     setListBRows([]);
     setSelectedA(null);
     const init = async () => {
+      setLoadingSearch(true);
       try {
-        await withLoading(async () => {
-          const json = await fetchSharedEstimates({ est_serial, isestopen: "1" });
-          const rows = json?.dataset ?? [];
-          setListARows(rows);
-          setSelectedScopes(new Set());
-          if (rows.length > 0) await loadDetailFor(rows[0]);
-        }, "견적 목록 조회 중...");
+        const json = await fetchSharedEstimates({ est_serial, isestopen: "1" });
+        const rows = json?.dataset ?? [];
+        setListARows(rows);
+        setSelectedScopes(new Set());
+        if (rows.length > 0) await loadDetailFor(rows[0]);
       } catch (err) {
         alert.error(`견적 목록 조회 오류\n${err?.message ?? err}`);
+      } finally {
+        setLoadingSearch(false);
       }
     };
     init();
@@ -280,8 +280,8 @@ export default function SharedEstimateModal({
 
         {/* ── 목록 A ── */}
         <div className="px-4 pt-3">
-          {/* <div className="text-xs font-semibold text-zinc-500 mb-1">견적 목록</div> */}
-          <div className="rounded-md border border-zinc-200 overflow-hidden" style={{ height: 240 }}>
+          <div className="relative rounded-md border border-zinc-200 overflow-hidden" style={{ height: 240 }}>
+            <TableLoadingOverlay loading={loadingSearch} />
             <FixedHeadTable
               columns={COLS_A}
               rows={filteredARows}
@@ -296,7 +296,8 @@ export default function SharedEstimateModal({
 
         {/* ── 목록 B ── */}
         <div className="px-4 pt-3 pb-3">
-          <div className="rounded-md border border-zinc-200 overflow-hidden" style={{ height: 340 }}>
+          <div className="relative rounded-md border border-zinc-200 overflow-hidden" style={{ height: 340 }}>
+            <TableLoadingOverlay loading={loadingB} />
             <FixedHeadTable
               columns={COLS_B}
               rows={listBRows}

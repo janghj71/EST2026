@@ -4,7 +4,6 @@ import IconBtn from "../components/IconBtn";
 import { moveFocusOnEnter } from "../utils/focusUtils";
 import SealUploader from "../components/SealUploader";
 import { useAlert } from "../alerts";
-import { useLoading } from "../loading/useLoading";
 import { useCompanyInfo } from "../hooks/useCompanyInfo";
 import { useTbCode } from "../hooks/useTbCode";
 import { useSealImage } from "../hooks/useSealImage";
@@ -12,8 +11,7 @@ import { useSealImage } from "../hooks/useSealImage";
 
 export default function CompanyInfoPage() {
   const { confirm, info, warning } = useAlert();
-  const { showLoading, hideLoading } = useLoading();
-  const { form, setForm, loading,  saving, error, refetch, save  } = useCompanyInfo();
+  const { form, setForm, loading, saving, error, refetch, save } = useCompanyInfo();
   const { companySeal, managerSeal, saving: sealSaving, error: sealError, saveSeal, deleteSeal } = useSealImage();
   const { codes: shopKindList } = useTbCode("SKD01");
 
@@ -27,13 +25,6 @@ export default function CompanyInfoPage() {
     if (msg) warning(msg || "조회에 실패했습니다.");
   }, [error, sealError]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 로딩 상태 → 전역 스피너 연동 (cleanup으로 카운터 균형 보장)
-  useEffect(() => {
-    if (!loading) return;
-    showLoading('업체 정보 불러오는 중...');
-    return () => hideLoading();
-  }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const onSave = async () => {
     try {
       await save(form);
@@ -43,7 +34,7 @@ export default function CompanyInfoPage() {
     }
   };
 
-  if (loading) return null;
+  if (loading) return <div className="p-10 text-center text-gray-400">불러오는 중...</div>;
   if (!form)   return <div className="p-10 text-center text-gray-400">데이터 없음</div>;
 
   return (

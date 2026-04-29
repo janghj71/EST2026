@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { X, Trash2, GripVertical } from "lucide-react";
 import IconBtn from "../components/IconBtn";
 import FixedHeadTable from "../components/FixedHeadTable";
+import TableLoadingOverlay from "../components/TableLoadingOverlay";
 import { useUrlContextSnapshot, setUrlContextSnapshot } from "../hooks/useUrlContextSnapshot";
 import { useEstimateMemo } from "../hooks/useEstimateMemo";
 
@@ -371,7 +372,8 @@ export default function EstimateMemo() {
         </div>
 
         {/* Table Card */}
-        <div className="rounded-md border border-zinc-200 bg-white overflow-hidden flex flex-col min-h-0 flex-1">
+        <div className="relative rounded-md border border-zinc-200 bg-white overflow-hidden flex flex-col min-h-0 flex-1">
+          <TableLoadingOverlay loading={loading} />
           <FixedHeadTable
             columns={columns}
             rows={rows}

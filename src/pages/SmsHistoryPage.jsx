@@ -1,134 +1,130 @@
 // src/pages/SmsHistoryPage.jsx
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import FixedHeadTable from "../components/FixedHeadTable";
-import { Search, ChevronLeft, ChevronRight, X } from "lucide-react";
-import { pad2 } from "../utils/dateUtils";
-function yyyymmOf(year, month) {
-  return `${year}${pad2(month)}`;
-}
-
-function makeRng(seedStr) {
-  let seed = 0;
-  for (let i = 0; i < seedStr.length; i++) seed = (seed * 31 + seedStr.charCodeAt(i)) >>> 0;
-  return function rand() {
-    seed ^= seed << 13;
-    seed ^= seed >>> 17;
-    seed ^= seed << 5;
-    seed >>>= 0;
-    return seed / 0xffffffff;
-  };
-}
-
-function makeDemoRows(yyyymm) {
-  const rand = makeRng(yyyymm);
-  const year = Number(yyyymm.slice(0, 4));
-  const month = Number(yyyymm.slice(4, 6));
-
-  const kinds = ["sms", "mms"];
-  const results = ["성공", "실패", "대기", "재시도"];
-  const templates = [
-    (url) =>
-      `[자동차점검정비견적서 발송안내]
-인트라반공업사로부터 [전국4가4444] 자동차점검정비견적서가 발송되었습니다.
-▶ 자동차점검정비견적서 URL
-${url}
-
-▶ 전체 청구이력확인 URL
-http://estservice.intravan.co.kr 에서 청구서와 청구사진을 확인하세요.`,
-    (url) =>
-      `안녕하세요. 예약 안내드립니다.
-원하시는 일자와 시간을 선택해 주세요.
-[예약 링크] ${url}
-감사합니다.`,
-    (url) =>
-      `정비 완료 안내드립니다.
-차량 점검이 완료되었습니다.
-자세한 내역 확인: ${url}`,
-    (url) =>
-      `보험청구 안내드립니다.
-필요 서류 및 진행상태 확인: ${url}
-문의사항은 업체로 연락주세요.`,
-  ];
-
-  const phone = () => {
-    const mid = Math.floor(rand() * 9000 + 1000);
-    const end = Math.floor(rand() * 9000 + 1000);
-    return `010${mid}${end}`;
-  };
-
-  const url = (i) => {
-    const dd = pad2(Math.floor(rand() * 28 + 1));
-    const hh = pad2(Math.floor(rand() * 24));
-    const mm = pad2(Math.floor(rand() * 60));
-    return `http://ESTService.goldauto.co.kr/HTML/KAIMA/${yyyymm}/${dd}${hh}${mm}/EST_${String(i).padStart(
-      6,
-      "0"
-    )}.pdf`;
-  };
-
-  const rows = [];
-  const total = 35;
-  for (let i = 0; i < total; i++) {
-    const day = pad2(Math.floor(rand() * 28 + 1));
-    const hour = pad2(Math.floor(rand() * 24));
-    const min = pad2(Math.floor(rand() * 60));
-
-    const t = templates[Math.floor(rand() * templates.length)];
-    const msg = t(url(i + 1));
-
-    rows.push({
-      senddatetime: `${year}-${pad2(month)}-${day} ${hour}:${min}`,
-      callphone: phone(),
-      msg,
-      result_nm: results[Math.floor(rand() * results.length)],
-      kind: kinds[Math.floor(rand() * kinds.length)],
-    });
-  }
-
-  rows.sort((a, b) => (a.senddatetime < b.senddatetime ? 1 : -1));
-  return rows;
-}
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { monthRange, addMonths } from "../utils/dateUtils";
+import { useSmsSendLog } from "../hooks/useSmsSendLog";
+import TableLoadingOverlay from "../components/TableLoadingOverlay";
 
 function rowKey(r) {
-  return `${r.senddatetime || ""}|${r.callphone || ""}|${(r.msg || "").slice(0, 20)}`;
+  return `${r.seqno || ""}|${r.senddatetime || ""}|${r.callphone || ""}`;
 }
 
 export default function SmsHistoryPage() {
   const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth() + 1);
-  const yyyymm = useMemo(() => yyyymmOf(year, month), [year, month]);
 
+  const [monthAnchor, setMonthAnchor] = useState(
+    new Date(now.getFullYear(), now.getMonth(), 1)
+  );
+  const [dateFrom, setDateFrom] = useState(() => monthRange(now).from);
+  const [dateTo,   setDateTo]   = useState(() => monthRange(now).to);
+
+  const { fetchLog, loading } = useSmsSendLog();
   const [rows, setRows] = useState([]);
-  const [status, setStatus] = useState("idle");
   const [selectedKey, setSelectedKey] = useState(null);
 
-  const refetch = useCallback(() => {
-    setStatus("loading");
-    const list = makeDemoRows(yyyymm);
-    setRows(list);
-    setStatus("success");
-  }, [yyyymm]);
+  // 분할바 드래그
+  const [msgHeight, setMsgHeight] = useState(160);
+  const dragRef = useRef(null);
+  const containerRef = useRef(null);
 
-  // ✅ rows 로딩 후 최초 선택
+  const onDividerMouseDown = useCallback((e) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = msgHeight;
+
+    const onMouseMove = (ev) => {
+      const delta = startY - ev.clientY; // 위로 올릴수록 양수
+      const containerH = containerRef.current?.offsetHeight ?? 600;
+      const next = Math.min(Math.max(startH + delta, 80), containerH * 0.75);
+      setMsgHeight(next);
+    };
+
+    const onMouseUp = () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    dragRef.current = { onMouseMove, onMouseUp };
+  }, [msgHeight]);
+
+  const [filterPhone,    setFilterPhone]    = useState("");
+  const [filterMsg,      setFilterMsg]      = useState("");
+  const [filterFailOnly, setFilterFailOnly] = useState(false);
+  const [filterKind,     setFilterKind]     = useState("");  // "" = 전체
+
+  // rows 전체 기준 구분별 카운트 + 동적 kind 목록
+  const kindCounts = useMemo(() => {
+    const counts = {};
+    rows.forEach((r) => {
+      const k = (r.kind ?? "").toLowerCase();
+      if (k) counts[k] = (counts[k] ?? 0) + 1;
+    });
+    return counts;
+  }, [rows]);
+
+  const kindOptions = useMemo(() => {
+    return Object.keys(kindCounts).sort();
+  }, [kindCounts]);
+
+  const filteredRows = useMemo(() => {
+    let list = rows;
+    if (filterKind)
+      list = list.filter((r) => (r.kind ?? "").toLowerCase() === filterKind);
+    if (filterPhone.trim())
+      list = list.filter((r) => (r.callphone ?? "").includes(filterPhone.trim()));
+    if (filterMsg.trim())
+      list = list.filter((r) => (r.msg ?? "").includes(filterMsg.trim()));
+    if (filterFailOnly)
+      list = list.filter((r) => r.result_nm === "실패");
+    return list;
+  }, [rows, filterKind, filterPhone, filterMsg, filterFailOnly]);
+
+  const loadData = useCallback(async (d1, d2) => {
+    const res = await fetchLog({ day1: d1, day2: d2 });
+    setRows(res?.dataset ?? []);
+  }, [fetchLog]);
+
+  const refetch = useCallback(() => {
+    loadData(dateFrom, dateTo);
+  }, [loadData, dateFrom, dateTo]);
+
+  // 최초 마운트 시 1회 자동 조회
+  const initRef = useRef(null);
+  if (!initRef.current) initRef.current = { dateFrom, dateTo };
   useEffect(() => {
-    if (!selectedKey && rows.length > 0) setSelectedKey(rowKey(rows[0]));
-    if (rows.length === 0) setSelectedKey(null);
+    loadData(initRef.current.dateFrom, initRef.current.dateTo);
+  }, [loadData]);
+
+  // 실제 선택 키: 사용자가 클릭한 키가 현재 rows에 없으면 첫 번째 row 자동 선택
+  const activeKey = useMemo(() => {
+    if (rows.length === 0) return null;
+    if (selectedKey && rows.some((r) => rowKey(r) === selectedKey)) return selectedKey;
+    return rowKey(rows[0]);
   }, [rows, selectedKey]);
 
   const selectedRow = useMemo(() => {
-    if (!selectedKey) return null;
-    return rows.find((r) => rowKey(r) === selectedKey) || null;
-  }, [rows, selectedKey]);
+    if (!activeKey) return null;
+    return rows.find((r) => rowKey(r) === activeKey) || null;
+  }, [rows, activeKey]);
 
-  const moveMonth = useCallback(
-    (delta) => {
-      const d = new Date(year, month - 1 + delta, 1);
-      setYear(d.getFullYear());
-      setMonth(d.getMonth() + 1);
-    },
-    [year, month]
-  );
+  const moveMonth = (delta) => {
+    const d = addMonths(monthAnchor, delta);
+    const r = monthRange(d);
+    setMonthAnchor(d);
+    setDateFrom(r.from);
+    setDateTo(r.to);
+  };
+
+  const setCurrentMonth = () => {
+    const d = new Date();
+    const r = monthRange(d);
+    setMonthAnchor(new Date(d.getFullYear(), d.getMonth(), 1));
+    setDateFrom(r.from);
+    setDateTo(r.to);
+  };
 
   // ✅ 케미칼 FixedHeadTable 컬럼 스펙에 맞춤: title/width/className/render(_val,row)
   const columns = useMemo(
@@ -192,111 +188,169 @@ export default function SmsHistoryPage() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="sticky top-0 z-20 bg-white/90 backdrop-blur">
-        <div className="border-b border-zinc-400">
-          <div className="app-container py-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-lg font-semibold text-zinc-900">문자발송 조회</div>
-                <div className="text-xs text-zinc-500">발송년월 기준으로 문자 발송 이력을 조회합니다.</div>
-              </div>
-
-              <button
-                type="button"
-                className="inline-flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm hover:bg-zinc-50"
-              >
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                문자발송
-              </button>
+      {/* 타이틀 */}
+      <div className="sticky top-0 z-20 border-b bg-white/90 backdrop-blur">
+        <div className="app-container py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-lg font-semibold text-zinc-900">문자발송 조회</div>
+              <div className="text-xs text-zinc-500">발송년월 기준으로 문자 발송 이력을 조회합니다.</div>
             </div>
+
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm hover:bg-zinc-50"
+            >
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              문자발송
+            </button>
           </div>
         </div>
+      </div>
 
-        {/* 조회 라인 */}
+      {/* 검색 바 */}
+      <div className="shrink-0">
         <div className="app-container py-3">
-          <div className="flex items-center gap-2">
-            <div className="text-sm font-medium text-zinc-700">발송년월</div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-medium text-zinc-700">발송일자</span>
 
-            <button
-              type="button"
-              className="h-9 w-9 rounded-md bg-white border border-gray-200 hover:bg-gray-50 inline-flex items-center justify-center"
-              onClick={() => moveMonth(-1)}
-              title="이전"
-            >
-              <ChevronLeft className="w-4 h-4" />
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="rounded-md border border-zinc-200 px-2 py-1.5 text-sm outline-none focus:border-zinc-400"
+            />
+            <span className="text-zinc-400">~</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="rounded-md border border-zinc-200 px-2 py-1.5 text-sm outline-none focus:border-zinc-400"
+            />
+
+            <button type="button" onClick={() => moveMonth(-1)}
+              className="rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50">
+              전월
             </button>
-
-            <select className={"select-base h-9 "} value={year} onChange={(e) => setYear(Number(e.target.value))}>
-              {Array.from({ length: 8 }).map((_, i) => {
-                const y = now.getFullYear() - 5 + i;
-                return (
-                  <option key={y} value={y}>
-                    {y}
-                  </option>
-                );
-              })}
-            </select>
-
-            <select className={"select-base h-9"} value={month} onChange={(e) => setMonth(Number(e.target.value))}>
-              {Array.from({ length: 12 }).map((_, i) => {
-                const m = i + 1;
-                return (
-                  <option key={m} value={m}>
-                    {pad2(m)}
-                  </option>
-                );
-              })}
-            </select>
-
-            <button
-              type="button"
-              className="h-9 w-9 rounded-md bg-white border border-gray-200 hover:bg-gray-50 inline-flex items-center justify-center"
-              onClick={() => moveMonth(+1)}
-              title="다음"
-            >
-              <ChevronRight className="w-4 h-4" />
+            <button type="button" onClick={setCurrentMonth}
+              className="rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50">
+              금월
+            </button>
+            <button type="button" onClick={() => moveMonth(-1)}
+              className="rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50">
+              <ChevronLeft className="w-3.5 h-3.5" />
+            </button>
+            <button type="button" onClick={() => moveMonth(+1)}
+              className="rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50">
+              <ChevronRight className="w-3.5 h-3.5" />
             </button>
 
             <button
               type="button"
               onClick={refetch}
-              className="h-9 px-4 rounded-md bg-gray-900 text-white hover:bg-gray-800 text-sm font-semibold flex items-center gap-2"
-              title="조회"
+              className="rounded-md bg-zinc-900 px-4 py-1.5 text-sm font-semibold text-white hover:bg-zinc-700"
             >
-              <Search className="w-4 h-4" />
               조회
             </button>
-
-            <div className="ml-auto text-xs text-zinc-500">
-              {status === "loading" ? "조회중..." : ""}
-            </div>
           </div>
         </div>
       </div>
 
-      {/* 테이블 + 하단 메시지 */}
-      <div className="app-container min-h-0 flex-1 py-4 flex flex-col gap-3">
-        <div className="min-h-0 flex-1 rounded-md border border-gray-200 bg-white overflow-hidden">
+      {/* 필터 바 */}
+      <div className="border-zinc-200 shrink-0">
+      <div className="app-container py-2 flex items-center gap-2 flex-wrap">
+        <input
+          type="text"
+          placeholder="수신번호"
+          value={filterPhone}
+          onChange={(e) => setFilterPhone(e.target.value)}
+          className="rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-zinc-400 w-36"
+        />
+        <input
+          type="text"
+          placeholder="메세지"
+          value={filterMsg}
+          onChange={(e) => setFilterMsg(e.target.value)}
+          className="rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-zinc-400 w-56"
+        />
+        <label className="flex items-center gap-1.5 cursor-pointer select-none text-sm text-zinc-700">
+          <input
+            type="checkbox"
+            checked={filterFailOnly}
+            onChange={(e) => setFilterFailOnly(e.target.checked)}
+            className="w-3.5 h-3.5 accent-red-500"
+          />
+          실패만 보기
+        </label>
+
+        {/* 구분 토글 버튼 (동적) — 오른쪽 끝 */}
+        {kindOptions.length > 0 && (
+          <div className="ml-auto flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setFilterKind("")}
+              className={`px-3 py-1 rounded-full text-xs font-semibold border transition
+                ${filterKind === ""
+                  ? "bg-orange-100 text-orange-700 border-orange-300"
+                  : "bg-white text-zinc-600 border-zinc-300 hover:bg-zinc-50"}`}
+            >
+              전체 {rows.length}
+            </button>
+            {kindOptions.map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setFilterKind(k)}
+                className={`px-3 py-1 rounded-full text-xs font-semibold border transition
+                  ${filterKind === k
+                    ? "bg-orange-100 text-orange-700 border-orange-300"
+                    : "bg-white text-zinc-600 border-zinc-300 hover:bg-zinc-50"}`}
+              >
+                {k.toUpperCase()} {kindCounts[k]}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      </div>
+
+      {/* 테이블 + 분할바 + 메세지 내용 */}
+      <div ref={containerRef} className="app-container min-h-0 flex-1 py-0 pb-4 flex flex-col">
+        {/* 테이블 */}
+        <div className="relative min-h-0 flex-1 rounded-md border border-gray-200 bg-white overflow-hidden">
+          <TableLoadingOverlay loading={loading} />
           <FixedHeadTable
             columns={columns}
-            rows={rows}
+            rows={filteredRows}
             rowSize="sm"
-            rowKey={(row) => rowKey(row)}   // ✅ 케미칼처럼 rowKey 사용
-            selectedKey={selectedKey}
+            rowKey={(row) => rowKey(row)}
+            selectedKey={activeKey}
             onRowClick={(row) => setSelectedKey(rowKey(row))}
-            emptyText={status === "loading" ? "조회중..." : "문자 발송 이력이 없습니다."}
+            emptyText="문자 발송 이력이 없습니다."
           />
         </div>
 
-        <div className="rounded-md border border-gray-200 bg-white overflow-hidden">
-          <div className="border-b bg-zinc-50 px-3 py-2 flex items-center gap-2">
+        {/* 분할바 */}
+        <div
+          onMouseDown={onDividerMouseDown}
+          className="h-2 shrink-0 cursor-row-resize flex items-center justify-center group"
+        >
+          <div className="w-12 h-1 rounded-full bg-zinc-300 group-hover:bg-zinc-400 transition-colors" />
+        </div>
+
+        {/* 메세지 내용 */}
+        <div
+          className="shrink-0 rounded-md border border-gray-200 bg-white overflow-hidden flex flex-col"
+          style={{ height: msgHeight }}
+        >
+          <div className="border-b bg-zinc-50 px-3 py-2 flex items-center gap-2 shrink-0">
             <div className="text-sm font-semibold text-zinc-900">메세지 내용</div>
             <div className="ml-auto text-xs text-zinc-500">
               {selectedRow ? `${selectedRow.senddatetime || ""} / ${selectedRow.callphone || ""}` : ""}
             </div>
           </div>
 
-          <div className="h-40 overflow-auto px-3 py-3 text-sm text-zinc-800 whitespace-pre-wrap">
+          <div className="flex-1 min-h-0 overflow-auto px-3 py-3 text-sm text-zinc-800 whitespace-pre-wrap">
             {selectedRow?.msg || "선택된 항목이 없습니다."}
           </div>
         </div>

@@ -1,9 +1,11 @@
 // src/pages/estimate/ChemicalItemsPopup.jsx
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import FixedHeadTable from "../../components/FixedHeadTable";
+import TableLoadingOverlay from "../../components/TableLoadingOverlay";
 import { Search, X } from "lucide-react";
 import { useUrlContextSnapshot } from "../../hooks/useUrlContextSnapshot";
 import { useFetchMaterials } from "../../hooks/useChemicalItems";
+import { formatMoney } from "../../utils/numberFormat";
 
 /**
  * ChemicalItemsPage.jsx 기반(필드 매핑 동일)
@@ -15,12 +17,6 @@ import { useFetchMaterials } from "../../hooks/useChemicalItems";
  * 비고 : descr
  * key : material_seqno
  */
-
-function fmtMoney(n) {
-  const x = Number(n ?? 0);
-  if (!Number.isFinite(x)) return "0";
-  return x.toLocaleString("ko-KR");
-}
 
 export default function ChemicalItemsPopup() {
   const snapshotCtx = useUrlContextSnapshot({
@@ -39,13 +35,16 @@ export default function ChemicalItemsPopup() {
 
   const { fetchMaterials } = useFetchMaterials();
   const [materials, setMaterials] = useState([]);
+  const [matLoading, setMatLoading] = useState(false);
 
   useEffect(() => {
+    setMatLoading(true);
     fetchMaterials({ material_gubun: "1" })
       .then((json) => {
         if (json?.result === "OK") setMaterials(json.dataset ?? []);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setMatLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -173,7 +172,7 @@ export default function ChemicalItemsPopup() {
       className: "px-2 py-0",
       render: (_val, row) => (
         <div className="h-8 flex items-center justify-end tabular-nums pr-1">
-          {fmtMoney(row.price)}
+          {formatMoney(row.price)}
         </div>
       ),
     },
@@ -242,7 +241,8 @@ export default function ChemicalItemsPopup() {
 
       {/* 테이블 */}
       <div className="min-h-0 flex-1 px-5 pb-5 pt-3">
-        <div className="h-full rounded-md border border-zinc-200 bg-white overflow-hidden">
+        <div className="relative h-full rounded-md border border-zinc-200 bg-white overflow-hidden">
+          <TableLoadingOverlay loading={matLoading} />
           <FixedHeadTable
             columns={columns}
             rows={filtered}

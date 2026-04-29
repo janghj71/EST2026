@@ -37,7 +37,7 @@ export function LoadingProvider({ children }) {
     <LoadingContext.Provider value={api}>
       {children}
       {visible && (
-        <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/40 cursor-wait">
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/40 cursor-wait">
           <div className="flex flex-col items-center gap-3 rounded-xl bg-white px-10 py-8 shadow-2xl">
             <Loader2 className="h-10 w-10 animate-spin text-blue-500" />
             <span className="text-sm font-medium text-gray-600">{message}</span>

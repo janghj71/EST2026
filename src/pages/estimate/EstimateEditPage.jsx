@@ -20,6 +20,7 @@ import { useEstimateDetailSave } from "../../hooks/useEstimateDetailSave";
 import { useEstimateDetailDelete } from "../../hooks/useEstimateDetailDelete";
 import { useEstimateClaims } from "../../hooks/useEstimateClaims";
 import { useLoading } from "../../loading/useLoading";
+import TableLoadingOverlay from "../../components/TableLoadingOverlay";
 import { getUserid, getComcode } from "../../api/config";
 import { useTbCode } from "../../hooks/useTbCode";
 import { useLaborSettings } from "../../hooks/useLaborSettings";
@@ -66,6 +67,7 @@ export default function EstimateEditPage() {
   const { fetchClaims } = useEstimateClaims();
   const { error: alertError, info: alertInfo } = useAlert();
   const { withLoading } = useLoading();
+  const [detailLoading, setDetailLoading] = useState(false);
 
   const [master, setMaster] = useState({});
   const [rows, setRows] = useState([]);
@@ -90,10 +92,10 @@ export default function EstimateEditPage() {
   // est_serial 변경 시 견적상세 조회
   useEffect(() => {
     if (!est_serial) return;
-    withLoading(async () => {
-      const json = await fetchDetails(est_serial);
-      setRows(json?.dataset ?? []);
-    });
+    setDetailLoading(true);
+    fetchDetails(est_serial)
+      .then((json) => setRows(json?.dataset ?? []))
+      .finally(() => setDetailLoading(false));
   }, [est_serial]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // est_serial 변경 시 청구처(claims) 미리 로드 → calcPaysum 에서 사용
@@ -2362,7 +2364,8 @@ export default function EstimateEditPage() {
           <div className="min-h-0 flex-1 flex flex-col gap-2 min-w-0">
             <EstimateReception master={master} setMaster={setMaster} laborWinOpen={laborWinOpen || paintWinOpen} readOnly={isLocked} itemCount={rows.length} />
 
-            <div className="min-h-0 flex-1 flex flex-col min-w-0">
+            <div className="relative min-h-0 flex-1 flex flex-col min-w-0">
+              <TableLoadingOverlay loading={detailLoading} />
               <EstimateItemsTable
                 rows={rows}
                 setRows={setRows}

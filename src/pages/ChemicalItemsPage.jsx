@@ -1,10 +1,12 @@
 // src/pages/ChemicalItemsPage.jsx
 import React, { useMemo, useRef, useState, useCallback } from "react";
 import FixedHeadTable from "../components/FixedHeadTable";
+import TableLoadingOverlay from "../components/TableLoadingOverlay";
 import IconBtn from "../components/IconBtn";
 import { Search, Save, RefreshCcw } from "lucide-react";
 import { useChemicalItems } from "../hooks/useChemicalItems";
 import { useAlert } from "../alerts";
+import { formatMoney, unformatNumber } from "../utils/numberFormat";
 
 /**
  * 필드 매핑
@@ -23,19 +25,10 @@ const CELL_INPUT_BASE =
 const CELL_WRAP = "h-[40px] flex items-center"; 
 
 
-function onlyDigits(v) {
-  return String(v ?? "").replace(/[^\d]/g, "");
-}
 function toNumberOrZero(v) {
-  const s = onlyDigits(v);
+  const s = unformatNumber(v);
   return s ? Number(s) : 0;
 }
-function fmtMoney(n) {
-  const x = Number(n ?? 0);
-  if (!Number.isFinite(x)) return "0";
-  return x.toLocaleString("ko-KR");
-}
-
 // hour2: 소수(최대 2자리)만 허용
 function onlyHour(v) {
   const s = String(v ?? "").replace(/[^\d.]/g, "");
@@ -43,11 +36,11 @@ function onlyHour(v) {
   if (b == null) return a;
   return `${a}.${b.slice(0, 2)}`;
 }
-function toHourNumber(v) {
-  const s = onlyHour(v);
-  const n = Number(s);
-  return Number.isFinite(n) ? n : 0;
-}
+// function toHourNumber(v) {
+//   const s = onlyHour(v);
+//   const n = Number(s);
+//   return Number.isFinite(n) ? n : 0;
+// }
 
 export default function ChemicalItemsPage() {
   const { info, warning } = useAlert();
@@ -55,6 +48,9 @@ export default function ChemicalItemsPage() {
   const [rows, setRows] = useState([]);
   const [q, setQ] = useState("");
   const [selectedId, setSelectedId] = useState(null);
+
+  // key: material_cd, value: { price?, hour2? }
+  const [dirtyMap, setDirtyMap] = useState(() => new Map());
 
   // 조회 에러 → 메시지 표시
   React.useEffect(() => {
@@ -69,9 +65,6 @@ export default function ChemicalItemsPage() {
       setDirtyMap(new Map());
     }
   }, [items]);
-
-  // key: material_cd, value: { price?, hour2? }
-  const [dirtyMap, setDirtyMap] = useState(() => new Map());
 
   const priceRefs = useRef(new Map()); // material_cd -> input
   const hourRefs = useRef(new Map());  // material_cd -> input
@@ -187,9 +180,9 @@ export default function ChemicalItemsPage() {
     }
   }, [items, rows, saveItem, refetch, info, warning]);
 
-  const onReload = useCallback(() => {
-    refetch();
-  }, [refetch]);
+  // const onReload = useCallback(() => {
+  //   refetch();
+  // }, [refetch]);
 
   
   // 특정 필드로 포커스
@@ -270,7 +263,7 @@ export default function ChemicalItemsPage() {
                   !isSel ? "pointer-events-none" : "",    // 선택행 아닐땐 클릭/편집 불가(원하면 제거 가능)
                 ].join(" ")}
                 inputMode="numeric"
-                value={fmtMoney(row.price)}
+                value={formatMoney(row.price)}
                 onFocus={() => setSelectedId(id)}
                 onChange={(e) => setCell(id, "price", toNumberOrZero(e.target.value))}
                 onKeyDown={(e) => {
@@ -357,30 +350,30 @@ export default function ChemicalItemsPage() {
 
   return (
     <div className="h-full flex flex-col">
-      {/* 1) 타이틀 (sticky) - 보험견적 화면과 동일 톤 */}
-      <div className="sticky top-0 z-20 bg-white/90 backdrop-blur">
-        <div className="border-b border-zinc-400">
-          <div className="app-container py-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-lg font-semibold text-zinc-900">케미칼 항목 설정</div>
-                <div className="text-xs text-zinc-500">
-                  단가 · 작업시간을 수정하고, 기타 정보는 제공값을 표시
-                </div>
+      {/* 1) 타이틀 */}
+      <div className="sticky top-0 z-20 border-b bg-white/90 backdrop-blur">
+        <div className="app-container py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-lg font-semibold text-zinc-900">케미칼 항목 설정</div>
+              <div className="text-xs text-zinc-500">
+                단가 · 작업시간을 수정하고, 기타 정보는 제공값을 표시
               </div>
-
-              <button
-                type="button"
-                className="inline-flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm hover:bg-zinc-50"
-              >
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                케미칼
-              </button>
             </div>
+
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm hover:bg-zinc-50"
+            >
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              케미칼
+            </button>
           </div>
         </div>
-  
-        {/* 2) 툴바(검색/새로고침/저장) - 타이틀 다음 라인 */}
+      </div>
+
+      {/* 2) 툴바(검색/저장) */}
+      <div className="shrink-0">
         <div className="app-container py-2">
           <div className="flex items-center gap-2">
             <div className="relative">
@@ -392,7 +385,6 @@ export default function ChemicalItemsPage() {
                 onChange={(e) => setQ(e.target.value)}
               />
             </div>
-
 
             <div className="ml-auto flex gap-2">
               <IconBtn
@@ -407,12 +399,12 @@ export default function ChemicalItemsPage() {
             </div>
           </div>
         </div>
-        
       </div>
   
       {/* 3) 테이블 영역 */}
       <div className="app-container min-h-0 flex-1 pt-1 pb-4">
-        <div className="h-full rounded-md border border-gray-200 bg-white overflow-hidden">
+        <div className="relative h-full rounded-md border border-gray-200 bg-white overflow-hidden">
+          <TableLoadingOverlay loading={loading} />
           <FixedHeadTable
             columns={columns}
             rows={filtered}
