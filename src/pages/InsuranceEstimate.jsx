@@ -1,6 +1,11 @@
 ﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
+import {
+  Pencil, Trash2, ArrowRightLeft, Camera, MessageSquare,
+  Mail, Printer, StickyNote, Wallet,
+  Send, User, History, FileText, ChevronRight,
+} from "lucide-react";
 import FixedHeadTable from "../components/FixedHeadTable";
 import TableLoadingOverlay from "../components/TableLoadingOverlay";
 import { openCenteredWindow } from "../utils/popup";
@@ -188,6 +193,7 @@ export default function InsuranceEstimate() {
 
   // ====== Row Action Bar ======
   const [printOpen, setPrintOpen] = useState(false);
+  const [contextMenu, setContextMenu] = useState(null);  // { x, y, row } | null
 
   // ====== 신규견적 수가 선택 모달 ======
   const [newEstModalOpen, setNewEstModalOpen]   = useState(false);
@@ -1197,25 +1203,11 @@ export default function InsuranceEstimate() {
 
             {/* 4) 견적목록 */}
             <div className="rounded-md border border-zinc-200 bg-white shadow-sm flex flex-col min-h-0 flex-1">
-              <div className="border-b border-zinc-100 px-4 py-3">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm font-semibold text-zinc-900">견적목록</div>
-                  <div className="text-xs text-zinc-500">{insuranceEstimates.length}건</div>
-                </div>
-              </div>
-
-              <div className="relative min-h-0 flex-1 overflow-hidden">
-                <TableLoadingOverlay loading={estLoading} />
-                <FixedHeadTable
-                  columns={estimateColumns}
-                  rows={insuranceEstimates}
-                  rowKey={(r) => r.est_serial}
-                  selectedKey={selected?.est_serial}
-                  bodyScrollRef={estimateListBodyRef}
-                  onRowClick={(r) => { setSelected(r); setSelectedClaim(null); setPrintOpen(false); setMailOpen(false); }}
-                  // 선택 행 아래에 인라인 액션 표시 (기존 UX 그대로)
-                  expandedKey={selected?.est_serial}
-                  expandedRowRender={() => (
+              <div className="border-b border-zinc-100 px-4 h-11 shrink-0 flex items-center gap-3">
+                <div className="text-sm font-semibold text-zinc-900">견적목록</div>
+                <div className="text-xs text-zinc-500">{insuranceEstimates.length}건</div>
+                {selected && (
+                  <div className="ml-auto">
                     <InlineActions
                       onModify={onModify}
                       onDelete={onDelete}
@@ -1234,7 +1226,30 @@ export default function InsuranceEstimate() {
                       onMailHistory={openMailHistoryPage}
                       isest={selected?.isest}
                     />
-                  )}
+                  </div>
+                )}
+              </div>
+
+              <div className="relative min-h-0 flex-1 overflow-hidden">
+                <TableLoadingOverlay loading={estLoading} />
+                <FixedHeadTable
+                  columns={estimateColumns}
+                  rows={insuranceEstimates}
+                  rowKey={(r) => r.est_serial}
+                  selectedKey={selected?.est_serial}
+                  bodyScrollRef={estimateListBodyRef}
+                  onRowClick={(r) => { setSelected(r); setSelectedClaim(null); setPrintOpen(false); setMailOpen(false); }}
+                  onRowDoubleClick={(r) => { setSelected(r); openEstimateEdit(r, "edit"); }}
+                  getRowProps={(r) => ({
+                    onContextMenu: (e) => {
+                      e.preventDefault();
+                      setSelected(r);
+                      setSelectedClaim(null);
+                      setPrintOpen(false);
+                      setMailOpen(false);
+                      setContextMenu({ x: e.clientX, y: e.clientY, row: r });
+                    },
+                  })}
                   // 카드 안에서 바디만 스크롤
                   height="100%"
                   bodyClassName="min-h-0 flex-1"
@@ -1430,6 +1445,27 @@ export default function InsuranceEstimate() {
         </div>
       )}
 
+      {/* 우클릭 컨텍스트 메뉴 */}
+      {contextMenu && (
+        <RowContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          row={contextMenu.row}
+          onClose={() => setContextMenu(null)}
+          onModify={onModify}
+          onDelete={onDelete}
+          onEstToReq={() => handleEstToReq(contextMenu.row)}
+          onPhoto={openPhotoViewer}
+          onSms={openSmsPopup}
+          onMemo={openMemoPopup}
+          onDeposit={openDepositPopup}
+          onPrint={onPrint}
+          onMailClaim={openMailClaimSend}
+          onCustomerSend={openCustomerMailSend}
+          onMailHistory={openMailHistoryPage}
+        />
+      )}
+
     </div>
   );
 }
@@ -1568,6 +1604,155 @@ function InlineActions({
       <SmallBtn onClick={onDeposit}>입금</SmallBtn>
     </div>
   );
+}
+
+
+/**
+ * 우클릭 컨텍스트 메뉴.
+ * 화면 가장자리 자동 보정 + portal 렌더 + 외부 클릭/Esc로 닫힘.
+ * 메일/인쇄는 호버 시 우측 서브메뉴로 펼쳐짐.
+ */
+function RowContextMenu({
+  x, y, row, onClose,
+  onModify, onDelete, onEstToReq,
+  onPhoto, onSms, onMemo, onDeposit,
+  onPrint,
+  onMailClaim, onCustomerSend, onMailHistory,
+}) {
+  const isest = String(row?.isest);
+  const menuRef = useRef(null);
+  const [pos, setPos] = useState({ left: x, top: y });
+  const [openSub, setOpenSub] = useState(null);  // "mail" | "print" | null
+
+  // 화면 밖으로 나가지 않도록 보정
+  useEffect(() => {
+    if (!menuRef.current) return;
+    const rect = menuRef.current.getBoundingClientRect();
+    let left = x;
+    let top  = y;
+    if (left + rect.width  > window.innerWidth)  left = Math.max(8, window.innerWidth  - rect.width  - 8);
+    if (top  + rect.height > window.innerHeight) top  = Math.max(8, window.innerHeight - rect.height - 8);
+    setPos({ left, top });
+  }, [x, y]);
+
+  // 외부 클릭 / Esc / 스크롤 시 닫기
+  useEffect(() => {
+    const onDoc = (e) => {
+      if (!menuRef.current) return;
+      if (!menuRef.current.contains(e.target)) onClose?.();
+    };
+    const onKey = (e) => { if (e.key === "Escape") onClose?.(); };
+    const onScroll = () => onClose?.();
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [onClose]);
+
+  const fire = (fn) => () => { onClose?.(); fn?.(); };
+  const closeSub = () => setOpenSub(null);
+
+  const printItems = isest === "1"
+    ? ["점검정비 견적서", "개인정보 활용동의"]
+    : ["작업지시서", "수리비 청구서", "점검정비 명세서", "개인정보 활용동의"];
+  const customerMailLabel = isest === "1"
+    ? "점검정비 견적서 - 고객용"
+    : "점검정비 명세서 - 고객용";
+
+  return createPortal(
+    <div
+      ref={menuRef}
+      className="fixed z-[1200] w-56 rounded-md border border-zinc-200 bg-white shadow-xl py-1 select-none"
+      style={{ left: pos.left, top: pos.top }}
+    >
+      <CtxItem icon={Pencil}        onClick={fire(onModify)}   onMouseEnter={closeSub}>수정</CtxItem>
+      <CtxItem icon={Trash2}        onClick={fire(onDelete)}   onMouseEnter={closeSub}>삭제</CtxItem>
+      {isest === "1" && (
+        <CtxItem icon={ArrowRightLeft} onClick={fire(onEstToReq)} onMouseEnter={closeSub}>작업전환</CtxItem>
+      )}
+      <CtxDivider />
+      <CtxItem icon={Camera}        onClick={fire(onPhoto)}    onMouseEnter={closeSub}>사진</CtxItem>
+      <CtxItem icon={MessageSquare} onClick={fire(onSms)}      onMouseEnter={closeSub}>문자</CtxItem>
+      <CtxDivider />
+
+      <CtxSubmenu
+        icon={Mail}
+        label="메일"
+        isOpen={openSub === "mail"}
+        onOpen={() => setOpenSub("mail")}
+      >
+        <CtxItem icon={Send}    onClick={fire(onMailClaim)}>견적청구 - 보험사</CtxItem>
+        <CtxItem icon={User}    onClick={fire(onCustomerSend)}>{customerMailLabel}</CtxItem>
+        <CtxItem icon={History} onClick={fire(onMailHistory)}>발송메일 조회</CtxItem>
+      </CtxSubmenu>
+
+      <CtxSubmenu
+        icon={Printer}
+        label="인쇄"
+        isOpen={openSub === "print"}
+        onOpen={() => setOpenSub("print")}
+      >
+        {printItems.map((label) => (
+          <CtxItem key={label} icon={FileText} onClick={fire(() => onPrint?.(label))}>{label}</CtxItem>
+        ))}
+      </CtxSubmenu>
+
+      <CtxDivider />
+      <CtxItem icon={StickyNote} onClick={fire(onMemo)}    onMouseEnter={closeSub}>메모</CtxItem>
+      <CtxItem icon={Wallet}     onClick={fire(onDeposit)} onMouseEnter={closeSub}>입금</CtxItem>
+    </div>,
+    document.body
+  );
+}
+
+function CtxItem({ icon: Icon, children, onClick, hasArrow, onMouseEnter }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onMouseEnter={onMouseEnter}
+      className="flex w-full items-center gap-2.5 text-left text-sm text-zinc-800 hover:bg-zinc-100 px-3 py-1.5"
+    >
+      {Icon && <Icon className="h-4 w-4 text-zinc-500 shrink-0" />}
+      <span className="flex-1 truncate">{children}</span>
+      {hasArrow && <ChevronRight className="h-3.5 w-3.5 text-zinc-400 shrink-0" />}
+    </button>
+  );
+}
+
+function CtxSubmenu({ icon, label, isOpen, onOpen, children }) {
+  const itemRef = useRef(null);
+  const [side, setSide] = useState("right");
+
+  useEffect(() => {
+    if (!isOpen || !itemRef.current) return;
+    const rect = itemRef.current.getBoundingClientRect();
+    const submenuWidth = 224; // w-56
+    setSide(window.innerWidth - rect.right < submenuWidth + 16 ? "left" : "right");
+  }, [isOpen]);
+
+  return (
+    <div ref={itemRef} className="relative" onMouseEnter={onOpen}>
+      <CtxItem icon={icon} hasArrow>{label}</CtxItem>
+      {isOpen && (
+        <div
+          className={`absolute top-0 w-56 rounded-md border border-zinc-200 bg-white shadow-xl py-1 z-10 ${
+            side === "right" ? "left-full ml-1" : "right-full mr-1"
+          }`}
+        >
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CtxDivider() {
+  return <div className="my-1 h-px bg-zinc-100" />;
 }
 
 
