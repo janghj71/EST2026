@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import {
@@ -98,17 +98,17 @@ export default function InsuranceEstimate() {
   // _filter: 날짜·필터 복원용 (SS_FILTER_KEY, 삭제 안 함)
   const _filter = loadSavedFilter();
 
-  // StrictMode 이중 실행 방지 —— 컴포넌트 인스턴스 수명과 함께하는 ref를 sentinel(undefined)로
-  // 초기화하여 최초 1회만 loadSavedState + clearSavedState 실행
-  // (일반 변수로 하면 StrictMode 2번째 실행 시 이미 삭제된 값 → null이 됨)
+  // React 19: 렌더 중 ref 접근 금지 → useLayoutEffect 로 이동
+  // StrictMode 이중 실행 방지: sentinel(undefined) 체크로 최초 1회만 실행
   const restoredSerialRef = useRef(/** @type {string|null|undefined} */(undefined));
   const restoredScrollRef = useRef(0);
-  if (restoredSerialRef.current === undefined) {
+  useLayoutEffect(() => {
+    if (restoredSerialRef.current !== undefined) return; // 이미 초기화됨
     const _saved = loadSavedState();
     clearSavedState();
     restoredSerialRef.current = _saved?.selectedSerial ?? null;
     restoredScrollRef.current = _saved?.scrollTop ?? 0;
-  }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [dateFrom, setDateFrom] = useState(() => _filter?.dateFrom ?? monthRange(new Date()).from);
   const [dateTo, setDateTo] = useState(() => _filter?.dateTo ?? monthRange(new Date()).to);
@@ -1621,18 +1621,19 @@ function RowContextMenu({
 }) {
   const isest = String(row?.isest);
   const menuRef = useRef(null);
-  const [pos, setPos] = useState({ left: x, top: y });
   const [openSub, setOpenSub] = useState(null);  // "mail" | "print" | null
 
-  // 화면 밖으로 나가지 않도록 보정
-  useEffect(() => {
-    if (!menuRef.current) return;
-    const rect = menuRef.current.getBoundingClientRect();
+  // 화면 밖으로 나가지 않도록 보정 — setState 없이 DOM 직접 조작 (re-render 없음)
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
     let left = x;
     let top  = y;
     if (left + rect.width  > window.innerWidth)  left = Math.max(8, window.innerWidth  - rect.width  - 8);
     if (top  + rect.height > window.innerHeight) top  = Math.max(8, window.innerHeight - rect.height - 8);
-    setPos({ left, top });
+    el.style.left = `${left}px`;
+    el.style.top  = `${top}px`;
   }, [x, y]);
 
   // 외부 클릭 / Esc / 스크롤 시 닫기
@@ -1667,7 +1668,7 @@ function RowContextMenu({
     <div
       ref={menuRef}
       className="fixed z-[1200] w-56 rounded-md border border-zinc-200 bg-white shadow-xl py-1 select-none"
-      style={{ left: pos.left, top: pos.top }}
+      style={{ left: x, top: y }}
     >
       <CtxItem icon={Pencil}        onClick={fire(onModify)}   onMouseEnter={closeSub}>수정</CtxItem>
       <CtxItem icon={Trash2}        onClick={fire(onDelete)}   onMouseEnter={closeSub}>삭제</CtxItem>
@@ -1725,14 +1726,27 @@ function CtxItem({ icon: Icon, children, onClick, hasArrow, onMouseEnter }) {
 }
 
 function CtxSubmenu({ icon, label, isOpen, onOpen, children }) {
-  const itemRef = useRef(null);
-  const [side, setSide] = useState("right");
+  const itemRef   = useRef(null);
+  const submenuRef = useRef(null);
 
-  useEffect(() => {
-    if (!isOpen || !itemRef.current) return;
+  // 서브메뉴 방향 보정 — setState 없이 DOM 직접 조작 (re-render 없음)
+  useLayoutEffect(() => {
+    if (!isOpen || !itemRef.current || !submenuRef.current) return;
     const rect = itemRef.current.getBoundingClientRect();
     const submenuWidth = 224; // w-56
-    setSide(window.innerWidth - rect.right < submenuWidth + 16 ? "left" : "right");
+    const goLeft = window.innerWidth - rect.right < submenuWidth + 16;
+    const el = submenuRef.current;
+    if (goLeft) {
+      el.style.left  = "auto";
+      el.style.right = "100%";
+      el.style.marginLeft  = "";
+      el.style.marginRight = "0.25rem";
+    } else {
+      el.style.left  = "100%";
+      el.style.right = "auto";
+      el.style.marginLeft  = "0.25rem";
+      el.style.marginRight = "";
+    }
   }, [isOpen]);
 
   return (
@@ -1740,9 +1754,9 @@ function CtxSubmenu({ icon, label, isOpen, onOpen, children }) {
       <CtxItem icon={icon} hasArrow>{label}</CtxItem>
       {isOpen && (
         <div
-          className={`absolute top-0 w-56 rounded-md border border-zinc-200 bg-white shadow-xl py-1 z-10 ${
-            side === "right" ? "left-full ml-1" : "right-full mr-1"
-          }`}
+          ref={submenuRef}
+          className="absolute top-0 w-56 rounded-md border border-zinc-200 bg-white shadow-xl py-1 z-10"
+          style={{ left: "100%", marginLeft: "0.25rem" }}
         >
           {children}
         </div>

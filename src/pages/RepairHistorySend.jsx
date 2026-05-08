@@ -1,456 +1,31 @@
-// src/pages/RepairHistorySend.jsx
-import React, {useEffect, useMemo, useRef, useState } from "react";
+﻿// src/pages/RepairHistorySend.jsx
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import FixedHeadTable from "../components/FixedHeadTable";
-import { X , Save,  Pen, Tag , Wrench, RefreshCw, Send, Trash2, Search, Download, ClipboardList, Plus } from "lucide-react";
+import { X, Save, Pen, Pencil, Send, Trash2 } from "lucide-react";
 import IconBtn from "../components/IconBtn";
 import { useAlert } from "../alerts";
 import { moveFocusOnEnter } from "../utils/focusUtils";
-import { pad2, ymd } from "../utils/dateUtils";
+import { ymd, monthRange, addMonths } from "../utils/dateUtils";
+import { formatMoney, formatNumber } from "../utils/numberFormat";
+import { useAosEstimate, useAosEstimateUpdate, useAosEstbUpdate, useEstTsRstUpdate, useEstTsRepairUpdate, useEstTsRstDelete } from "../hooks/useAosEstimate";
+import { useTs_repart, useTsLogin, useTsRepairSend, useTsRepairState, useTsRepairDelete, useClientIp } from "../hooks/useTs_Repair";
+import { useCompanyInfo } from "../hooks/useCompanyInfo";
+import { useTbCode } from "../hooks/useTbCode";
+import TableLoadingOverlay from "../components/TableLoadingOverlay";
+import SimplePopover from "./estimate/SimplePopover";
 
 
 const inputCls =
   "h-9 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none " +
   "focus:outline-none focus:ring-2 focus:ring-gray-900/10"
 
-// ====== 국토부(ts_payno) 마스터(나중에 API로 교체) ======
-const PAYNO_MASTER = [
-  {
-    payno: "B01",
-    payno_name: "B01 : 헤드램프(전조등)(좌/우)",
-    payname: "헤드램프(전조등)(좌/우)",
-    payno_kind: "B",
-    payno_kind_nm: "바디"
-  },
-  {
-    payno: "B02",
-    payno_name: "B02 : 컴비네이션램프(후미등)(좌/우)",
-    payname: "컴비네이션램프(후미등)(좌/우)",
-    payno_kind: "B",
-    payno_kind_nm: "바디"
-  },
-  {
-    payno: "B03",
-    payno_name: "B03 : 프론트범퍼(전면범퍼)",
-    payname: "프론트범퍼(전면범퍼)",
-    payno_kind: "B",
-    payno_kind_nm: "바디"
-  },
-  {
-    payno: "B04",
-    payno_name: "B04 : 리어범퍼(후면범퍼)",
-    payname: "리어범퍼(후면범퍼)",
-    payno_kind: "B",
-    payno_kind_nm: "바디"
-  },
-  {
-    payno: "B05",
-    payno_name: "B05 : 후드(본넷)",
-    payname: "후드(본넷)",
-    payno_kind: "B",
-    payno_kind_nm: "바디"
-  },
-  {
-    payno: "B06",
-    payno_name: "B06 : 전.후패널",
-    payname: "전.후패널",
-    payno_kind: "B",
-    payno_kind_nm: "바디"
-  },
-  {
-    payno: "B07",
-    payno_name: "B07 : 전.후펜더(좌/우)",
-    payname: "전.후펜더(좌/우)",
-    payno_kind: "B",
-    payno_kind_nm: "바디"
-  },
-  {
-    payno: "B08",
-    payno_name: "B08 : 프론트도어(좌/우)",
-    payname: "프론트도어(좌/우)",
-    payno_kind: "B",
-    payno_kind_nm: "바디"
-  },
-  {
-    payno: "B09",
-    payno_name: "B09 : 사이드미러(좌/우)",
-    payname: "사이드미러(좌/우)",
-    payno_kind: "B",
-    payno_kind_nm: "바디"
-  },
-  {
-    payno: "B10",
-    payno_name: "B10 : 리어도어(좌,우)",
-    payname: "리어도어(좌,우)",
-    payno_kind: "B",
-    payno_kind_nm: "바디"
-  },
-  {
-    payno: "B11",
-    payno_name: "B11 : 트렁크리드",
-    payname: "트렁크리드",
-    payno_kind: "B",
-    payno_kind_nm: "바디"
-  },
-  {
-    payno: "B12",
-    payno_name: "B12 : 백도어",
-    payname: "백도어",
-    payno_kind: "B",
-    payno_kind_nm: "바디"
-  },
-  {
-    payno: "B13",
-    payno_name: "B13 : 윈도우모터",
-    payname: "윈도우모터",
-    payno_kind: "B",
-    payno_kind_nm: "바디"
-  },
-  {
-    payno: "B14",
-    payno_name: "B14 : 트렁크플로워",
-    payname: "트렁크플로워",
-    payno_kind: "B",
-    payno_kind_nm: "바디"
-  },
-  {
-    payno: "B15",
-    payno_name: "B15 : 휠하우스(좌.우)",
-    payname: "휠하우스(좌.우)",
-    payno_kind: "B",
-    payno_kind_nm: "바디"
-  },
-  {
-    payno: "B16",
-    payno_name: "B16 : 필러패널",
-    payname: "필러패널",
-    payno_kind: "B",
-    payno_kind_nm: "바디"
-  },
-  {
-    payno: "B17",
-    payno_name: "B17 : 사이드패널",
-    payname: "사이드패널",
-    payno_kind: "B",
-    payno_kind_nm: "바디"
-  },
-  {
-    payno: "B18",
-    payno_name: "B18 : 대쉬패널",
-    payname: "대쉬패널",
-    payno_kind: "B",
-    payno_kind_nm: "바디"
-  },
-  {
-    payno: "B19",
-    payno_name: "B19 : 크로스멤버",
-    payname: "크로스멤버",
-    payno_kind: "B",
-    payno_kind_nm: "바디"
-  },
-  {
-    payno: "B20",
-    payno_name: "B20 : 루프패널",
-    payname: "루프패널",
-    payno_kind: "B",
-    payno_kind_nm: "바디"
-  },
-  {
-    payno: "D01",
-    payno_name: "D01 : 대쉬보드(크러쉬패드)",
-    payname: "대쉬보드(크러쉬패드)",
-    payno_kind: "D",
-    payno_kind_nm: "의장"
-  },
-  {
-    payno: "D02",
-    payno_name: "D02 : 계기판",
-    payname: "계기판",
-    payno_kind: "D",
-    payno_kind_nm: "의장"
-  },
-  {
-    payno: "D03",
-    payno_name: "D03 : 히터유니트",
-    payname: "히터유니트",
-    payno_kind: "D",
-    payno_kind_nm: "의장"
-  },
-  {
-    payno: "D04",
-    payno_name: "D04 : 컴비네이션스위치",
-    payname: "컴비네이션스위치",
-    payno_kind: "D",
-    payno_kind_nm: "의장"
-  },
-  {
-    payno: "D05",
-    payno_name: "D05 : ECU(컴퓨터)",
-    payname: "ECU(컴퓨터)",
-    payno_kind: "D",
-    payno_kind_nm: "의장"
-  },
-  {
-    payno: "D06",
-    payno_name: "D06 : 와이퍼모터/링케이지",
-    payname: "와이퍼모터/링케이지",
-    payno_kind: "D",
-    payno_kind_nm: "의장"
-  },
-  {
-    payno: "D07",
-    payno_name: "D07 : 에어백모듈",
-    payname: "에어백모듈",
-    payno_kind: "D",
-    payno_kind_nm: "의장"
-  },
-  {
-    payno: "D08",
-    payno_name: "D08 : 안전벨트",
-    payname: "안전벨트",
-    payno_kind: "D",
-    payno_kind_nm: "의장"
-  },
-  {
-    payno: "D09",
-    payno_name: "D09 : 침수차량정비(엔진.전기.하체)",
-    payname: "침수차량정비(엔진.전기.하체)",
-    payno_kind: "D",
-    payno_kind_nm: "의장"
-  },
-  {
-    payno: "E01",
-    payno_name: "E01 : 엔진",
-    payname: "엔진",
-    payno_kind: "E",
-    payno_kind_nm: "엔진"
-  },
-  {
-    payno: "E02",
-    payno_name: "E02 : 엔진커버(타이밍커버)",
-    payname: "엔진커버(타이밍커버)",
-    payno_kind: "E",
-    payno_kind_nm: "엔진"
-  },
-  {
-    payno: "E03",
-    payno_name: "E03 : 드로틀바디",
-    payname: "드로틀바디",
-    payno_kind: "E",
-    payno_kind_nm: "엔진"
-  },
-  {
-    payno: "E04",
-    payno_name: "E04 : 인젝터",
-    payname: "인젝터",
-    payno_kind: "E",
-    payno_kind_nm: "엔진"
-  },
-  {
-    payno: "E05",
-    payno_name: "E05 : 타이밍벨트",
-    payname: "타이밍벨트",
-    payno_kind: "E",
-    payno_kind_nm: "엔진"
-  },
-  {
-    payno: "E06",
-    payno_name: "E06 : 에어컴프레서",
-    payname: "에어컴프레서",
-    payno_kind: "E",
-    payno_kind_nm: "엔진"
-  },
-  {
-    payno: "E07",
-    payno_name: "E07 : 디스트리뷰터(배전기)",
-    payname: "디스트리뷰터(배전기)",
-    payno_kind: "E",
-    payno_kind_nm: "엔진"
-  },
-  {
-    payno: "E08",
-    payno_name: "E08 : 에어컨컨덴서",
-    payname: "에어컨컨덴서",
-    payno_kind: "E",
-    payno_kind_nm: "엔진"
-  },
-  {
-    payno: "E09",
-    payno_name: "E09 : 에어컨컴프레서",
-    payname: "에어컨컴프레서",
-    payno_kind: "E",
-    payno_kind_nm: "엔진"
-  },
-  {
-    payno: "E10",
-    payno_name: "E10 : 라디에이터",
-    payname: "라디에이터",
-    payno_kind: "E",
-    payno_kind_nm: "엔진"
-  },
-  {
-    payno: "E11",
-    payno_name: "E11 : 발전기",
-    payname: "발전기",
-    payno_kind: "E",
-    payno_kind_nm: "엔진"
-  },
-  {
-    payno: "E12",
-    payno_name: "E12 : 시동전동기",
-    payname: "시동전동기",
-    payno_kind: "E",
-    payno_kind_nm: "엔진"
-  },
-  {
-    payno: "E13",
-    payno_name: "E13 : 헤드가스켓",
-    payname: "헤드가스켓",
-    payno_kind: "E",
-    payno_kind_nm: "엔진"
-  },
-  {
-    payno: "E14",
-    payno_name: "E14 : 연료분사펌프",
-    payname: "연료분사펌프",
-    payno_kind: "E",
-    payno_kind_nm: "엔진"
-  },
-  {
-    payno: "H01",
-    payno_name: "H01 : 구동축전지",
-    payname: "구동축전지",
-    payno_kind: "H",
-    payno_kind_nm: "고전원전기장치"
-  },
-  {
-    payno: "H02",
-    payno_name: "H02 : 전력변환장치",
-    payname: "전력변환장치",
-    payno_kind: "H",
-    payno_kind_nm: "고전원전기장치"
-  },
-  {
-    payno: "H03",
-    payno_name: "H03 : 구동전동기",
-    payname: "구동전동기",
-    payno_kind: "H",
-    payno_kind_nm: "고전원전기장치"
-  },
-  {
-    payno: "H04",
-    payno_name: "H04 : 연료전지",
-    payname: "연료전지",
-    payno_kind: "H",
-    payno_kind_nm: "고전원전기장치"
-  },
-  {
-    payno: "H05",
-    payno_name: "H05 : 감속기",
-    payname: "감속기",
-    payno_kind: "H",
-    payno_kind_nm: "고전원전기장치"
-  },
-  {
-    payno: "S01",
-    payno_name: "S01 : 트랜스미션",
-    payname: "트랜스미션",
-    payno_kind: "S",
-    payno_kind_nm: "샤시"
-  },
-  {
-    payno: "S02",
-    payno_name: "S02 : 등속조인트(CV조인트)",
-    payname: "등속조인트(CV조인트)",
-    payno_kind: "S",
-    payno_kind_nm: "샤시"
-  },
-  {
-    payno: "S03",
-    payno_name: "S03 : 프로펠러샤프트",
-    payname: "프로펠러샤프트",
-    payno_kind: "S",
-    payno_kind_nm: "샤시"
-  },
-  {
-    payno: "S04",
-    payno_name: "S04 : 프론트서스펜션",
-    payname: "프론트서스펜션",
-    payno_kind: "S",
-    payno_kind_nm: "샤시"
-  },
-  {
-    payno: "S05",
-    payno_name: "S05 : 리어서스펜션",
-    payname: "리어서스펜션",
-    payno_kind: "S",
-    payno_kind_nm: "샤시"
-  },
-  {
-    payno: "S06",
-    payno_name: "S06 : 제동마스터백/실린더",
-    payname: "제동마스터백/실린더",
-    payno_kind: "S",
-    payno_kind_nm: "샤시"
-  },
-  {
-    payno: "S07",
-    payno_name: "S07 : 쇽업소버",
-    payname: "쇽업소버",
-    payno_kind: "S",
-    payno_kind_nm: "샤시"
-  },
-  {
-    payno: "S08",
-    payno_name: "S08 : ABS",
-    payname: "ABS",
-    payno_kind: "S",
-    payno_kind_nm: "샤시"
-  },
-  {
-    payno: "S09",
-    payno_name: "S09 : 파워스티어링기어",
-    payname: "파워스티어링기어",
-    payno_kind: "S",
-    payno_kind_nm: "샤시"
-  },
-  {
-    payno: "S10",
-    payno_name: "S10 : 스티어링샤프트",
-    payname: "스티어링샤프트",
-    payno_kind: "S",
-    payno_kind_nm: "샤시"
-  },
-  {
-    payno: "S11",
-    payno_name: "S11 : 로우암",
-    payname: "로우암",
-    payno_kind: "S",
-    payno_kind_nm: "샤시"
-  },
-  {
-    payno: "S12",
-    payno_name: "S12 : 파워스티어링펌프",
-    payname: "파워스티어링펌프",
-    payno_kind: "S",
-    payno_kind_nm: "샤시"
-  },
-  {
-    payno: "S13",
-    payno_name: "S13 : 캘리퍼/휠실린더",
-    payname: "캘리퍼/휠실린더",
-    payno_kind: "S",
-    payno_kind_nm: "샤시"
-  },
-  {
-    payno: "S14",
-    payno_name: "S14 : 차동기어",
-    payname: "차동기어",
-    payno_kind: "S",
-    payno_kind_nm: "샤시"
-  }
-];
+const SS_FILTER_KEY = "repair_history_filter";
+function loadSavedFilter() {
+  try { return JSON.parse(sessionStorage.getItem(SS_FILTER_KEY)); } catch { return null; }
+}
 
-const PAYNO_KINDS = ["바디", "의장", "엔진", "고전원전기장치", "샤시"];
+
 
 
 function RepairHistoryEditModal({ open, initial, onClose, onSave }) {
@@ -648,159 +223,6 @@ function RepairHistoryEditModal({ open, initial, onClose, onSave }) {
   );
 }
 
-function PaynoPickerModal({ open, onClose, onSelect, recent = [] }) {
-  const [kind, setKind] = useState("바디");
-  const [q, setQ] = useState("");
-
-  useEffect(() => {
-    if (!open) return;
-    setKind("바디");
-    setQ("");
-  }, [open]);
-
-  // ✅ 훅 이후에 계산(조건 없이 항상 동일한 위치에서 실행)
-  const qq = q.trim().toLowerCase();
-  const list = PAYNO_MASTER
-    .filter((x) => x.payno_kind_nm === kind)
-    .filter((x) => {
-      if (!qq) return true;
-      return (
-        (x.payno || "").toLowerCase().includes(qq) ||
-        (x.payname || "").toLowerCase().includes(qq) ||
-        (x.payno_name || "").toLowerCase().includes(qq)
-      );
-    });
-
-  // ✅ “return null”은 반드시 훅/계산 뒤에
-  if (!open) return null;
-
-  return (
-    <div className="fixed inset-0 z-[60]">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="absolute inset-0 flex items-center justify-center p-4">
-        <div className="w-full max-w-[720px] rounded-md border border-zinc-200 bg-white shadow-xl overflow-hidden">
-          {/* header */}
-          <div className="flex items-center gap-2 border-b border-zinc-200 px-4 py-3">
-            <div className="flex items-center gap-2 text-base font-semibold text-zinc-900">
-              <Wrench className="h-4 w-4 text-zinc-700" />
-              <span>국토부 코드 선택</span>
-            </div>
-
-            <button
-              type="button"
-              className="ml-auto inline-flex items-center justify-center rounded-md border border-zinc-200 bg-white p-2 hover:bg-zinc-50"
-              onClick={onClose}
-              aria-label="닫기"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-
-          {/* body */}
-          <div className="p-4">
-            {recent.length > 0 && (
-              <div className="mb-3">
-                <div className="mb-2 text-xs font-semibold text-zinc-500">최근 사용</div>
-                <div className="flex flex-wrap gap-2">
-                  {recent.slice(0, 8).map((x) => (
-                    <button
-                      key={x.payno}
-                      type="button"
-                      className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-sm hover:bg-zinc-50"
-                      onClick={() => onSelect(x)}
-                    >
-                      {x.payno} · {x.payname}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* search */}
-            <div className="flex items-center gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
-                <input
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder="코드/작업명 검색"
-                  className="h-9 w-full rounded-md border border-zinc-300 bg-white pl-9 pr-3 text-sm outline-none focus:outline-none focus:ring-2 focus:ring-gray-900/10"
-                />
-              </div>
-            </div>
-
-            <div className="mt-3 grid grid-cols-[200px_1fr] gap-3">
-              {/* left kinds */}
-              <div className="rounded-md border border-zinc-200 overflow-hidden">
-                <div className="bg-zinc-50 px-3 py-2 text-sm font-semibold text-zinc-700">구분</div>
-                {/* <div className="p-1"> */}
-                <div className="h-[420px] overflow-auto p-1">
-                  {PAYNO_KINDS.map((k) => (
-                    <button
-                      key={k}
-                      type="button"
-                      onClick={() => setKind(k)}
-                      className={`w-full rounded-md px-3 py-2 text-left text-sm hover:bg-zinc-50 ${
-                        kind === k ? "bg-blue-50 text-blue-700 font-semibold" : "text-zinc-800"
-                      }`}
-                    >
-                      {k}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* right list */}
-              <div className="rounded-md border border-zinc-200 overflow-hidden">
-                <div className="flex items-center bg-zinc-50 px-3 py-2">
-                  <div className="text-sm font-semibold text-zinc-700">{kind}</div>
-                  <div className="ml-auto text-xs text-zinc-500">{list.length}건</div>
-                </div>
-
-                {/* <div className="max-h-[420px] overflow-auto"> */}
-                <div className="h-[420px] overflow-auto">
-                  {list.map((x) => (
-                    <button
-                      key={x.payno}
-                      type="button"
-                      onClick={() => onSelect(x)}
-                      className="w-full border-b border-zinc-100 px-3 py-2 text-left hover:bg-zinc-50"
-                    >
-                      <div className="text-sm text-zinc-900">
-                        {x.payno} · {x.payname}
-                      </div>
-                    </button>
-                  ))}
-
-                  {list.length === 0 && (
-                    // <div className="p-6 text-center text-sm text-zinc-500">검색 결과가 없습니다.</div>
-                    <div className="h-full flex items-center justify-center text-sm text-zinc-500">
-                      검색 결과가 없습니다.
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* footer */}
-          <div className="flex items-center justify-end gap-2 border-t border-zinc-200 px-4 py-3 bg-white">
-            
-            <IconBtn
-              icon={X}
-              label="닫기"
-              variant="primary"
-              className="h-10 w-25 justify-center"
-              onClick={onClose}
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-
 function Field({ label, children }) {
   return (
     <div className="grid grid-cols-[110px_1fr] items-center gap-2">
@@ -827,13 +249,12 @@ function Badge({ tone = "zinc", children }) {
   );
 }
 
-function SendStatusBadge({ code }) {
-  // ts_rstcode 예시 매핑(프로젝트 코드에 맞게 수정)
-  // 0:대기, 1:성공, 9:실패 ...
-  if (code === "1" || code === 1) return <Badge tone="ok">성공</Badge>;
-  if (code === "9" || code === 9) return <Badge tone="err">실패</Badge>;
-  if (code === "2" || code === 2) return <Badge tone="warn">진행중</Badge>;
-  return <Badge>대기</Badge>;
+function SendStatusBadge({ ts_serial, ts_rstcode }) {
+  if (!ts_serial)                          return null;
+  if (ts_rstcode === "MSG50000")           return <Badge tone="ok">성공</Badge>;
+  if (ts_serial && !ts_rstcode)            return <Badge tone="warn">처리중</Badge>;
+  if (ts_serial && ts_rstcode)             return <Badge tone="err">오류</Badge>;
+  return null;
 }
 
 function TopBtn({ icon: Icon, children, onClick, variant = "dark" }) {
@@ -854,25 +275,89 @@ function TopBtn({ icon: Icon, children, onClick, variant = "dark" }) {
   );
 }
 
-function SmallBtn({ children, onClick }) {
-  // InsuranceEstimate.jsx의 SmallBtn 톤 유지
+function MiniBtn({ children, onClick, title }) {
   return (
     <button
       type="button"
+      title={title}
       onClick={onClick}
-      className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-800 hover:bg-zinc-200"
+      className="rounded border border-zinc-200 bg-white px-2 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
     >
       {children}
     </button>
   );
 }
 
-function InlineRowActions({ onModify, onDelete }) {
+function SmallBtn({ children, onClick, disabled }) {
+  // InsuranceEstimate.jsx의 SmallBtn 톤 유지
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <SmallBtn onClick={onModify}>수정</SmallBtn>
-      <SmallBtn onClick={onDelete}>삭제</SmallBtn>
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-800 hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed"
+    >
+      {children}
+    </button>
+  );
+}
+
+/** 우클릭 컨텍스트 메뉴 (portal + 화면 밖 보정) */
+function RowContextMenu({ x, y, row, onClose, onModify, onDelete, onSend }) {
+  const menuRef = useRef(null);
+
+  // 화면 밖 보정 — DOM 직접 조작 (setState 없음)
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    let left = x;
+    let top  = y;
+    if (left + rect.width  > window.innerWidth)  left = Math.max(8, window.innerWidth  - rect.width  - 8);
+    if (top  + rect.height > window.innerHeight) top  = Math.max(8, window.innerHeight - rect.height - 8);
+    el.style.left = `${left}px`;
+    el.style.top  = `${top}px`;
+  }, [x, y]);
+
+  // 외부 클릭 / Esc / 스크롤 시 닫기
+  useEffect(() => {
+    const onDoc    = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) onClose?.(); };
+    const onKey    = (e) => { if (e.key === "Escape") onClose?.(); };
+    const onScroll = ()  => onClose?.();
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown",   onKey);
+    window.addEventListener("scroll",      onScroll, true);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown",   onKey);
+      window.removeEventListener("scroll",      onScroll, true);
+    };
+  }, [onClose]);
+
+  return createPortal(
+    <div
+      ref={menuRef}
+      className="fixed z-[1200] w-44 rounded-md border border-zinc-200 bg-white shadow-xl py-1 select-none"
+      style={{ left: x, top: y }}
+    >
+      <CtxItem icon={Pencil} onClick={onModify}>수정</CtxItem>
+      <CtxItem icon={Trash2} onClick={onDelete}>삭제</CtxItem>
+      <CtxItem icon={Send}   onClick={onSend}>정비이력전송</CtxItem>
+    </div>,
+    document.body
+  );
+}
+
+function CtxItem({ icon: Icon, children, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center gap-2.5 text-left text-sm text-zinc-800 hover:bg-zinc-100 px-3 py-1.5"
+    >
+      {Icon && <Icon className="h-4 w-4 text-zinc-500 shrink-0" />}
+      <span className="flex-1 truncate">{children}</span>
+    </button>
   );
 }
 
@@ -880,8 +365,13 @@ export default function RepairHistorySend() {
   const { info, success, warning } = useAlert();
 
   const today = useMemo(() => new Date(), []);
-  const [outFrom, setOutFrom] = useState(ymd(new Date(today.getFullYear(), today.getMonth(), 1)));
-  const [outTo, setOutTo] = useState(ymd(today));
+  const initRange = useMemo(() => monthRange(today), [today]);
+  const [outFrom, setOutFrom] = useState(() => loadSavedFilter()?.outFrom ?? initRange.from);
+  const [outTo, setOutTo] = useState(() => loadSavedFilter()?.outTo ?? initRange.to);
+  const [monthAnchor, setMonthAnchor] = useState(() => {
+    const saved = loadSavedFilter()?.outFrom;
+    return saved ? new Date(saved) : new Date(today.getFullYear(), today.getMonth(), 1);
+  });
   const [searchText, setSearchText] = useState("");
   const [sortKey, setSortKey] = useState("1"); // 1~6
   const [onlyUnsent, setOnlyUnsent] = useState(false);
@@ -893,42 +383,52 @@ export default function RepairHistorySend() {
   const [focusedId, setFocusedId] = useState(null);
   const [checkedIds, setCheckedIds] = useState(() => new Set());
   const [detailRows, setDetailRows] = useState([]);
-  const [paynoOpen, setPaynoOpen] = useState(false);
-  const [paynoTargetId, setPaynoTargetId] = useState(null);
-  const [recentPaynos, setRecentPaynos] = useState([]);
-  
+  const [tsPaynoPopover, setTsPaynoPopover] = useState(null);  // { anchorRect, rowOrgSeq }
+  const [tsPaynoSubRect, setTsPaynoSubRect] = useState(null);  // { rect, kind }
+  const [partStatePopover, setPartStatePopover] = useState(null); // { anchorRect, rowOrgSeq }
+  const { codes: wrk03Codes } = useTbCode("WRK03");
 
+  const [contextMenu, setContextMenu] = useState(null); // { x, y, row } | null
 
-  // ====== Demo 데이터(화면만) ======
-  const rows = useMemo(() => {
-    const cars = ["더 뉴 K7", "K9", "쏘나타", "K5", "아반떼", "그랜저"];
-    const names = ["장희정", "고객2", "고객3", "고객4", "고객5"];
-    const rst = ["0", "1", "2", "9"]; // 대기/성공/진행/실패
-    return Array.from({ length: 20 }).map((_, i) => {
-      const inD = new Date(today.getFullYear(), today.getMonth(), Math.max(1, (i % 28) + 1));
-      const outD = new Date(today.getFullYear(), today.getMonth(), Math.max(1, (i % 28) + 2));
-      return {
-        id: `M-${pad2(Math.floor(i / 10))}${pad2(i)}`,
-        inday: ymd(inD),
-        outday: ymd(outD),
-        carno: `${10 + (i % 80)}가${1000 + i}`,
-        carname: cars[i % cars.length],
-        lastkm: 12000 + i * 137,
-        custom_name: names[i % names.length],
-        tel: `010-37${pad2(i)}-****`,
-        ts_send_dt: i % 3 === 0 ? `${ymd(outD)} ${pad2((9 + i) % 24)}:${pad2((10 + i) % 60)}` : "",
-        ts_rstcode: rst[i % rst.length],
+  // 조회 조건 변경 시 sessionStorage 저장 (페이지 재진입 시 복원)
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(SS_FILTER_KEY, JSON.stringify({ outFrom, outTo }));
+    } catch { /* empty */ }
+  }, [outFrom, outTo]);
 
-        // 상태 정보 라인(요청: 경정상태, 전송일시, 국토부 전송상태)
-        ts_corr_state: i % 4 === 0 ? "경정" : "정상", // 예시
-        ts_payno: `PAY-${100000 + i}`, // 국토부(상세에 쓰임)
-      };
-    });
-  }, [today]);
+  // ====== API ======
+  const [rows, setRows] = useState([]);
+  const [allDetail, setAllDetail] = useState([]);
+  const { loading: listLoading, fetchAosEstimate } = useAosEstimate();
+  const { updateTsSerial } = useAosEstimateUpdate();
+  const { updateEstbTsPayno } = useAosEstbUpdate();
+  const { fetchTsPayno } = useTs_repart();
+  const { tsLogin } = useTsLogin();
+  const { loading: sending, sendRepairHistory } = useTsRepairSend();
+  const { fetchRepairState } = useTsRepairState();
+  const { loading: deleting, deleteRepairHistory } = useTsRepairDelete();
+  const { updateTsResult } = useEstTsRstUpdate();
+  const { clearTsSerial } = useEstTsRepairUpdate();
+  const { deleteTsRst } = useEstTsRstDelete();
+  const { fetchClientIp } = useClientIp();
+
+  // 로그인 후 캐시 — 재로그인 없이 재사용
+  const imprmnEntnumRef = useRef("");
+  const servicecodeRef  = useRef("");
+  const { form: companyForm } = useCompanyInfo();
+  const [paynoList, setPaynoList] = useState([]);
+
+  useEffect(() => {
+    fetchTsPayno()
+      .then((json) => { if (json?.result === "OK") setPaynoList(json.ts_payno ?? []); })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const filteredRows = useMemo(() => {
     let r = [...rows];
-  
+
     if (searchText.trim()) {
       const q = searchText.trim().toLowerCase();
       r = r.filter((x) => {
@@ -936,32 +436,32 @@ export default function RepairHistorySend() {
           (x.carno || "").toLowerCase().includes(q) ||
           (x.carname || "").toLowerCase().includes(q) ||
           (x.custom_name || "").toLowerCase().includes(q) ||
-          (x.tel || "").toLowerCase().includes(q)
+          (`${x.hp0 || ""}${x.hp1 || ""}${x.hp2 || ""}`).toLowerCase().includes(q)
         );
       });
     }
-  
+
     if (onlyUnsent) {
       r = r.filter((x) => !x.ts_send_dt);
     }
-  
+
     const cmp = {
-      "1": (a, b) => (a.id > b.id ? 1 : -1), // 입력순(예시)
-      "2": (a, b) => (a.inday > b.inday ? 1 : -1), // 입고일자순
-      "3": (a, b) => (a.carno > b.carno ? 1 : -1), // 차량번호순
+      "1": (a, b) => (a.est_serial > b.est_serial ? 1 : -1), // 입력순
+      "2": (a, b) => (a.inday > b.inday ? 1 : -1),           // 입고일자순
+      "3": (a, b) => (a.carno > b.carno ? 1 : -1),           // 차량번호순
       "4": (a, b) => (a.custom_name > b.custom_name ? 1 : -1), // 고객명순
-      "5": (a, b) => (a.carname > b.carname ? 1 : -1), // 차량명순
-      "6": (a, b) => (a.tel > b.tel ? 1 : -1), // 연락처순
+      "5": (a, b) => (a.carname > b.carname ? 1 : -1),       // 차량명순
+      "6": (a, b) => (`${a.hp0}${a.hp1}${a.hp2}` > `${b.hp0}${b.hp1}${b.hp2}` ? 1 : -1), // 연락처순
     }[sortKey];
-  
+
     if (cmp) r.sort(cmp);
     return r;
   }, [rows, searchText, sortKey, onlyUnsent]);
   
   const focusedRow = useMemo(() => {
-    const id = focusedId ?? filteredRows[0]?.id ?? null;
-    if (!id) return null;
-    return filteredRows.find((r) => r.id === id) || null;
+    const serial = focusedId ?? filteredRows[0]?.est_serial ?? null;
+    if (!serial) return null;
+    return filteredRows.find((r) => r.est_serial === serial) || null;
   }, [focusedId, filteredRows]);
   
   const toggleChecked = (id) => {
@@ -973,7 +473,7 @@ export default function RepairHistorySend() {
     });
   };
 
-  const filteredIds = useMemo(() => filteredRows.map((r) => r.id), [filteredRows]);
+  const filteredIds = useMemo(() => filteredRows.map((r) => r.est_serial), [filteredRows]);
   const allChecked = useMemo(
     () => filteredIds.length > 0 && filteredIds.every((id) => checkedIds.has(id)),
     [filteredIds, checkedIds]
@@ -1012,14 +512,14 @@ export default function RepairHistorySend() {
         width: "5%",
         align: "center",
         render: (_, row) => {
-          const checked = checkedIds.has(row.id);
+          const checked = checkedIds.has(row.est_serial);
           return (
             <div className="flex items-center justify-center">
               <input
                 type="checkbox"
                 className="h-4 w-4"
                 checked={checked}
-                onChange={() => toggleChecked(row.id)}
+                onChange={() => toggleChecked(row.est_serial)}
                 onClick={(e) => e.stopPropagation()}
                 aria-label="선택"
               />
@@ -1027,26 +527,35 @@ export default function RepairHistorySend() {
           );
         },
       },
-      { key: "inday", title: "입고일자", width: "9%", align: "left" },
-      { key: "outday", title: "출고일자", width: "9%", align: "left" },
-      { key: "carno", title: "차량번호", width: "10%", align: "left" },
-      { key: "carname", title: "차량명", width: "12%", align: "left" },
+      { key: "inday", title: "입고일자", width: "8%", align: "left" },
+      { key: "outday", title: "출고일자", width: "8%", align: "left", render: (v) => v?.replace(/[\s\-]/g, "") ? v.trim() : "" },
+      { key: "carno", title: "차량번호", width: "9%", align: "left" },
+      { key: "carname", title: "차량명", width: "16%", align: "left" },
       {
         key: "lastkm",
         title: "주행거리",
         width: "8%",
         align: "right",
-        render: (v) => (v ?? 0).toLocaleString(),
+        render: (v) => formatNumber(v),
       },
-      { key: "custom_name", title: "고객명", width: "9%", align: "left" },
-      { key: "tel", title: "연락처", width: "11%", align: "left" },
-      { key: "ts_send_dt", title: "전송일시", width: "12%", align: "left", render: (v) => v || "-" },
+      { key: "custom_name", title: "고객명", width: "16%", align: "left" },
+      {
+        key: "hp0",
+        title: "연락처",
+        width: "11%",
+        align: "left",
+        render: (_, row) => {
+          const parts = [row.hp0, row.hp1, row.hp2].filter(Boolean);
+          return parts.join("-");
+        },
+      },
+      { key: "ts_send_dt", title: "전송일시", width: "12%", align: "left", render: (v) => v || "" },
       {
         key: "ts_rstcode",
         title: "상태",
         width: "7%",
-        align: "left",
-        render: (v) => <SendStatusBadge code={v} />,
+        align: "center",
+        render: (v, row) => <SendStatusBadge ts_serial={row.ts_serial} ts_rstcode={v} />,
       },
     ],
     [checkedIds, allChecked, toggleAllFiltered, sortKey] // sortKey는 없어도 되지만 두는 게 안전
@@ -1061,27 +570,38 @@ export default function RepairHistorySend() {
       render: (v, row) => (
         <button
           type="button"
-          // className="text-left text-sky-700 hover:underline"
-          className="w-full text-left text-sky-700 hover:underline"
-          onClick={() => openPaynoPicker(row.id)}      // 클릭
-          onContextMenu={(e) => {                      // 우클릭도 지원
-            e.preventDefault();
-            openPaynoPicker(row.id);
-          }}
-          title="클릭(또는 우클릭)하여 변경"
+          className="w-full text-left hover:underline"
+          onClick={(e) => openTsPaynoPopover(e, row)}
         >
-          {/* {v || "-"} */}
-          {v ? v : <span className="text-zinc-400">선택</span>}
+          {v || <span className="text-zinc-400">선택</span>}
         </button>
       ),
     },
     { key: "part_makercode", title: "부품코드", width: "10%", align: "left" },
     { key: "payname", title: "작업내용", width: "22%", align: "left" },
     { key: "workcodename", title: "작업", width: "10%", align: "left" },
-    { key: "qty", title: "시간", width: "6%", align: "right" },
-    { key: "paysum", title: "공임액", width: "9%", align: "right", render: (v) => (v ?? 0).toLocaleString() },
-    { key: "partsum", title: "부품액", width: "9%", align: "right", render: (v) => (v ?? 0).toLocaleString() },
-    { key: "part_state", title: "부품구분", width: "8%", align: "left" },
+    { key: "qty", title: "시간", width: "6%", align: "right", render: (v) => v ? String(parseFloat(v)) : "" },
+    { key: "paysum",  title: "공임액", width: "9%", align: "right", render: (v) => formatMoney(v) },
+    { key: "partsum", title: "부품액", width: "9%", align: "right", render: (v) => formatMoney(v) },
+    {
+      key: "part_state",
+      title: "부품구분",
+      width: "8%",
+      align: "left",
+      render: (v, row) => {
+        const canEdit = String(row.paykind) === "3" || String(row.paykind) === "5";
+        if (!canEdit) return v || "";
+        return (
+          <button
+            type="button"
+            className="w-full text-left hover:underline"
+            onClick={(e) => openPartStatePopover(e, row)}
+          >
+            {v ? (wrk03Codes.find((c) => c.value === v)?.label ?? v) : <span className="text-zinc-400">선택</span>}
+          </button>
+        );
+      },
+    },
     { key: "statename", title: "작업상태", width: "8%", align: "left" },
   ];
   
@@ -1091,43 +611,52 @@ export default function RepairHistorySend() {
       setDetailRows([]);
       return;
     }
-    // 화면용 더미(나중에 API로 교체)
-    const demo = Array.from({ length: 8 }).map((_, i) => ({
-      id: `${focusedRow.id}-D-${i}`,
-      ts_payno: focusedRow.ts_payno, // 초기값
-      part_makercode: `P-${1000 + i}`,
-      payname: i % 2 === 0 ? "범퍼 탈착/교환" : "도장(부분)",
-      workcodename: i % 2 === 0 ? "판금" : "도장",
-      qty: (0.5 + i * 0.2).toFixed(1),
-      paysum: 35000 + i * 12000,
-      partsum: 22000 + i * 9000,
-      part_state: i % 3 === 0 ? "순정부품" : "대체부품",
-      statename: i % 3 === 0 ? "완료" : "진행",
-    }));
-    setDetailRows(demo);
-  }, [focusedRow]);
-
-  const openPaynoPicker = (detailRowId) => {
-    setPaynoTargetId(detailRowId);
-    setPaynoOpen(true);
-  };
-  
-  const applyPayno = (item) => {
-    // detailRows의 특정 행 ts_payno 변경
-    setDetailRows((prev) =>
-      prev.map((r) => (r.id === paynoTargetId ? { ...r, ts_payno: item.payno } : r))
+    setDetailRows(
+      allDetail.filter((d) => d.est_serial === focusedRow.est_serial)
     );
-  
-    // 최근 사용 업데이트
-    setRecentPaynos((prev) => {
-      const next = [item, ...prev.filter((x) => x.payno !== item.payno)];
-      return next.slice(0, 10);
-    });
-  
-    setPaynoOpen(false);
-    setPaynoTargetId(null);
-    // info(`국토부 코드 변경: ${item.payno} · ${item.payname}`);
-  };
+  }, [focusedRow, allDetail]);
+
+  const openTsPaynoPopover = useCallback((e, row) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setTsPaynoSubRect(null);
+    setTsPaynoPopover({ anchorRect: rect, rowOrgSeq: row.estb_orgseqno });
+  }, []);
+
+  const closeTsPaynoPopover = useCallback(() => {
+    setTsPaynoPopover(null);
+    setTsPaynoSubRect(null);
+  }, []);
+
+  const openPartStatePopover = useCallback((e, row) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setPartStatePopover({ anchorRect: rect, rowOrgSeq: row.estb_orgseqno });
+  }, []);
+
+  const closePartStatePopover = useCallback(() => {
+    setPartStatePopover(null);
+  }, []);
+
+  const applyPartState = useCallback((value, orgseqno) => {
+    setDetailRows((prev) =>
+      prev.map((r) => r.estb_orgseqno === orgseqno ? { ...r, part_state: value } : r)
+    );
+    setAllDetail((prev) =>
+      prev.map((r) => r.estb_orgseqno === orgseqno ? { ...r, part_state: value } : r)
+    );
+    closePartStatePopover();
+  }, [closePartStatePopover]);
+
+  const applyTsPayno = useCallback((payno, orgseqno) => {
+    // detailRows 업데이트
+    setDetailRows((prev) =>
+      prev.map((r) => r.estb_orgseqno === orgseqno ? { ...r, ts_payno: payno } : r)
+    );
+    // allDetail도 동기화 (onSend에서 allDetail 기준으로 jsondata 생성)
+    setAllDetail((prev) =>
+      prev.map((r) => r.estb_orgseqno === orgseqno ? { ...r, ts_payno: payno } : r)
+    );
+    closeTsPaynoPopover();
+  }, [closeTsPaynoPopover]);
   
 
 
@@ -1143,16 +672,362 @@ export default function RepairHistorySend() {
 
   const onNew = () => info("신규");
   const onAosLoad = () => info("AOS 견적 불러오기");
-  const onSend = () => {
-    if (checkedIds.size === 0) return warning("전송할 건을 체크하세요.");
-    const ids = Array.from(checkedIds);
-    info(`정비이력 전송 ${ids.length}건: ${ids.join(", ")}`);
-  };
-  
-  const onRefresh = () => info("새로고침");
-  const onSendDelete = () => requireFocused() && info(`정비이력 삭제(국토부): ${focusedRow.id}`);
+
+  /**
+   * 정비이력 jsondata 빌더 — 실제 국토부 API 구조
+   * @param {{ master, details, imprmn_entnum: string }} param
+   */
+  /**
+   * codecar 3번째 문자(1-index) → 차종코드
+   *  1·2·5 → '1'(승용), 4 → '2'(화물), 3 → '3'(승합)
+   */
+  function resolveVhctyAsortCode(codecar) {
+    const ch = (codecar || "").charAt(2); // 3번째 문자 (0-index=2)
+    if (["1", "2", "5"].includes(ch)) return "1";
+    if (ch === "4") return "2";
+    if (ch === "3") return "3";
+    return "";
+  }
+
+  /**
+   * paykind → cmpnt_se_code
+   *  paykind 1·2·4·6 → 'X'  (부품)
+   *  paykind 3·5     → detail.part_state (작업)
+   */
+  function resolveCmpntSeCode(d) {
+    const pk = String(d.paykind ?? "");
+    if (["1", "2", "4", "6"].includes(pk)) return "X";
+    if (["3", "5"].includes(pk))           return d.part_state || "";
+    return "";
+  }
+
+  function buildRepairJsondata({ master, details, imprmn_entnum }) {
+    return JSON.stringify({
+      ot_vhcle_imprmn_hist: [
+        {
+          imprmn_entnum:       imprmn_entnum                    || "",
+          prgcom:              "01_EST",
+          upd_code:            master.ts_serial ? "U" : "N",
+          upd_reason:          "",
+          vhrno:               master.carno                     || "",
+          cnm:                 master.carname                   || "",
+          wrhousng_de:         (master.inday  || "").slice(0, 10),
+          imprmn_compt_de:     (master.outday || "").slice(0, 10),
+          dlivy_de:            (master.outday || "").slice(0, 10),
+          imprmn_dt:           (master.inday  || "").slice(0, 10),
+          vhcty_asort_code:    resolveVhctyAsortCode(master.codecar),
+          imprmn_rspnber_nm:   companyForm.supman               || "",
+          mber_nm:             master.custom_name               || "",
+          telno:               [master.hp0, master.hp1, master.hp2].filter(Boolean).join(""),
+          trvl_dstnc:          String(master.lastkm             || "0"),
+          inner_imprmn_no:     master.ts_serial                 || "",
+          adit_imprmn_agre_at: "Y",
+          acdnt_at:            master.seccode === "12" ? "Y" : "N",
+        },
+      ],
+      ot_vhcle_imprmn_hist_dtls: details.filter((d) => d.ts_payno).map((d) => ({
+        cmpnt_se_code:        resolveCmpntSeCode(d),
+        cmpnt_detail_nm:      d.payname                        || "",
+        work_id:              d.ts_payno                       || "",
+        car_maker_part_cls:   d.part_makercode                 || "",
+        cmpnt_co:             parseInt(d.qty     || 0, 10)     || 0,
+        cmpnt_by_wage_amount: parseInt(d.paysum  || 0, 10)     || 0,
+        cmpnt_amount_tot:     parseInt(d.partsum || 0, 10)     || 0,
+        insurance_yn:         master.seccode === "12" ? "Y" : "N",
+      })),
+    });
+  }
+
+  /**
+   * 국토부 정비이력 전송 (체크된 건 순차 처리)
+   * @param {Set<string>|undefined} idsOverride  undefined → checkedIds 사용
+   */
+  const onSend = useCallback(async (idsOverride) => {
+    const ids = idsOverride ?? checkedIds;
+    if (ids.size === 0) return warning("전송할 건을 체크하세요.");
+
+    // MSG50000(성공) 건이 포함되어 있으면 안내
+    const hasSuccess = filteredRows.some(
+      (r) => ids.has(r.est_serial) && r.ts_serial && r.ts_rstcode === "MSG50000"
+    );
+    if (hasSuccess) warning("전송완료(성공) 건은 [정비이력 삭제] 버튼을 사용하세요.");
+
+    // ts_serial = '' 인 건만 전송 대상
+    const validIds = new Set(
+      filteredRows
+        .filter((r) => ids.has(r.est_serial) && !r.ts_serial)
+        .map((r) => r.est_serial)
+    );
+    if (validIds.size === 0) return warning("전송할 건이 없습니다. (미전송 건만 전송 가능합니다)");
+    // 이하 validIds 로 처리
+
+    const userid = companyForm.ts_userid;
+    const passwd = companyForm.ts_userpwd;
+    const idno   = companyForm.idNo;
+    if (!userid || !passwd) return warning("업체정보에 국토부 아이디/비밀번호를 설정하세요.");
+
+    // 1. 국토부 로그인
+    let loginRes;
+    try {
+      loginRes = await tsLogin({ idno, userid, passwd });
+    } catch (e) {
+      return warning(`국토부 로그인 실패: ${e?.message || "알 수 없는 오류"}`);
+    }
+
+    if (!loginRes) return warning("국토부 로그인 응답이 없습니다.");
+
+    // msgcode 104/105: 약관동의 / 비밀번호 변경 팝업
+    const mc = String(loginRes.msgcode || "");
+    if (mc === "104" || mc === "105") {
+      if (loginRes.url) window.open(loginRes.url, "_blank", "width=900,height=700");
+      return warning(loginRes.msgtext || `국토부 인증 필요 (코드 ${mc})`);
+    }
+
+    if (String(loginRes.result).toLowerCase() === "false" || loginRes.result === false) {
+      return warning(`국토부 로그인 실패: ${loginRes.msgtext || ""}`);
+    }
+
+    // 로그인 응답에서 필요한 값 추출 + ref 캐시
+    const imprmn_entnum = loginRes.imprmn_entnum || "";
+    const servicecode   = loginRes.servicecode   || "";
+    if (imprmn_entnum) imprmnEntnumRef.current = imprmn_entnum;
+    if (servicecode)   servicecodeRef.current   = servicecode;
+
+    // IP 조회 (실패해도 빈 문자열로 계속 진행)
+    let ip_adres = "";
+    try { ip_adres = await fetchClientIp(); } catch { /* empty */ }
+
+    // 2. 체크된 행 순차 전송 (validIds 기준)
+    const targetRows = filteredRows.filter((r) => validIds.has(r.est_serial));
+    let okCount = 0;
+    const failMessages = [];
+
+    for (const master of targetRows) {
+      const details = allDetail.filter((d) => d.est_serial === master.est_serial);
+      const jsondata = buildRepairJsondata({ master, details, imprmn_entnum });
+
+      let sendRes;
+      try {
+        sendRes = await sendRepairHistory({
+          servicecode,
+          ip_adres,
+          // macadrs: 브라우저 보안 정책상 불가 → ""
+          jsondata,
+        });
+      } catch (e) {
+        failMessages.push(`[${master.carno}] ${e?.message || "전송 오류"}`);
+        continue;
+      }
+
+      const sendMsg = sendRes?.msg || sendRes?.msgtext || "";
+      const sendMc  = String(sendRes?.msgcode || "");
+      if (sendMc === "104" || sendMc === "105") {
+        if (sendRes.url) window.open(sendRes.url, "_blank", "width=900,height=700");
+        failMessages.push(`[${master.carno}] ${sendMsg || `코드 ${sendMc}`}`);
+        continue;
+      }
+
+      if (String(sendRes?.result).toLowerCase() === "false" || sendRes?.result === false) {
+        failMessages.push(`[${master.carno}] ${sendMsg || "전송 실패"}`);
+        continue;
+      }
+
+      // 3-a. 전송 성공 → inner_imprmn_no 로 ts_serial 갱신
+      const newTsSerial = sendRes?.inner_imprmn_no || "";
+      if (newTsSerial) {
+        try {
+          await updateTsSerial(master.est_serial, newTsSerial);
+        } catch {
+          // ts_serial 갱신 실패는 전송 성공으로 처리 (경고만)
+          failMessages.push(`[${master.carno}] 전송은 성공했으나 ts_serial 갱신 실패`);
+        }
+      }
+
+      // 3-b. 전송 성공 → 정비상세 국토부코드(ts_payno) 갱신
+      try {
+        const estDetails = allDetail.filter((d) => d.est_serial === master.est_serial);
+        await updateEstbTsPayno(master.est_serial, estDetails);
+      } catch {
+        // 상세 갱신 실패는 전송 성공으로 처리 (경고만)
+        failMessages.push(`[${master.carno}] 전송은 성공했으나 상세 국토부코드 갱신 실패`);
+      }
+
+      okCount++;
+    }
+
+    // 3. 결과 알림
+    if (failMessages.length === 0) {
+      success(`정비이력 ${okCount}건 전송 완료`);
+    } else {
+      const failText = failMessages.join("\n");
+      if (okCount > 0) {
+        warning(`${okCount}건 성공 / ${failMessages.length}건 실패\n${failText}`);
+      } else {
+        warning(`전송 실패\n${failText}`);
+      }
+    }
+
+    // 4. 목록 새로고침
+    const res = await fetchAosEstimate(outFrom, outTo);
+    setRows(res?.dataset ?? []);
+    setAllDetail(res?.dataset2 ?? []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checkedIds, companyForm, filteredRows, allDetail, outFrom, outTo]);
+
+  const onRefresh = () => onQuery();
+
+  /**
+   * 정비이력 삭제 (ts_serial ≠ '' && ts_rstcode = 'MSG50000' 인 건만)
+   * @param {Set<string>|undefined} idsOverride
+   */
+  const onSendDelete = useCallback(async (idsOverride) => {
+    const ids = idsOverride ?? checkedIds;
+    if (ids.size === 0) return warning("삭제할 건을 체크하세요.");
+
+    const targetRows = filteredRows.filter(
+      (r) => ids.has(r.est_serial) && r.ts_serial && r.ts_rstcode === "MSG50000"
+    );
+    if (targetRows.length === 0)
+      return warning("삭제할 건이 없습니다. (전송완료(성공) 건만 삭제 가능합니다)");
+
+    // imprmn_entnum 캐시 없으면 로그인
+    if (!imprmnEntnumRef.current) {
+      const userid = companyForm.ts_userid;
+      const passwd = companyForm.ts_userpwd;
+      const idno   = companyForm.idNo;
+      if (!userid || !passwd) return warning("업체정보에 국토부 아이디/비밀번호를 설정하세요.");
+      try {
+        const loginRes = await tsLogin({ idno, userid, passwd });
+        imprmnEntnumRef.current = loginRes?.imprmn_entnum || "";
+        servicecodeRef.current  = loginRes?.servicecode   || "";
+      } catch (e) {
+        return warning(`국토부 로그인 실패: ${e?.message || ""}`);
+      }
+    }
+
+    let okCount = 0;
+    const failMessages = [];
+
+    for (const row of targetRows) {
+      // 1. 국토부 삭제
+      try {
+        await deleteRepairHistory({
+          imprmn_entnum:  imprmnEntnumRef.current,
+          servicecode:    servicecodeRef.current,
+          inner_imprmn_no: row.ts_serial,
+        });
+      } catch (e) {
+        failMessages.push(`[${row.carno}] ${e?.message || "삭제 오류"}`);
+        continue;
+      }
+
+      // 2. ts_serial 초기화
+      try { await clearTsSerial(row.est_serial); } catch { /* continue */ }
+
+      // 3. 전송결과 삭제
+      try { await deleteTsRst(row.est_serial); } catch { /* continue */ }
+
+      okCount++;
+    }
+
+    if (failMessages.length === 0) {
+      success(`정비이력 ${okCount}건 삭제 완료`);
+    } else {
+      const failText = failMessages.join("\n");
+      okCount > 0
+        ? warning(`${okCount}건 성공 / ${failMessages.length}건 실패\n${failText}`)
+        : warning(`삭제 실패\n${failText}`);
+    }
+
+    // 완료 후 새로고침
+    await onQuery();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checkedIds, filteredRows, companyForm, tsLogin, deleteRepairHistory, clearTsSerial, deleteTsRst]);
+
   const onSendInquiry = () => requireFocused() && info(`정비이력 전송조회: ${focusedRow.id}`);
-  const onQuery = () => info(`조회: ${outFrom} ~ ${outTo}`);
+  const onQuery = useCallback(async () => {
+    // ① 목록 조회
+    const res = await fetchAosEstimate(outFrom, outTo);
+    const newRows      = res?.dataset  ?? [];
+    const newAllDetail = res?.dataset2 ?? [];
+    setRows(newRows);
+    setAllDetail(newAllDetail);
+    setFocusedId(null);
+    setCheckedIds(new Set());
+
+    // ② 전송상태 조회 대상: ts_serial 있고 아직 최종확인(MSG50000) 아닌 행
+    const stateTargets = newRows.filter(
+      (r) => r.ts_serial && r.ts_rstcode !== "MSG50000"
+    );
+    if (stateTargets.length === 0) return;
+
+    // ③ imprmn_entnum 캐시 없으면 로그인 1회
+    if (!imprmnEntnumRef.current) {
+      const userid = companyForm.ts_userid;
+      const passwd = companyForm.ts_userpwd;
+      const idno   = companyForm.idNo;
+      if (!userid || !passwd) return;
+      try {
+        const loginRes = await tsLogin({ idno, userid, passwd });
+        imprmnEntnumRef.current = loginRes?.imprmn_entnum || "";
+        servicecodeRef.current  = loginRes?.servicecode   || "";
+      } catch { return; }
+    }
+    if (!imprmnEntnumRef.current) return;
+
+    // ④ otvhcle_imprmn_hist_state.aspx 호출
+    let stateList;
+    try {
+      const stateRes = await fetchRepairState({
+        imprmn_entnum: imprmnEntnumRef.current,
+        servicecode:   servicecodeRef.current,
+        ts_serials:    stateTargets.map((r) => r.ts_serial),
+      });
+      stateList = stateRes?.ts_repair_state ?? [];
+      if (!Array.isArray(stateList) || stateList.length === 0) return;
+    } catch (e) {
+      warning(`전송상태 조회 실패: ${e?.message || "알 수 없는 오류"}`);
+      return;
+    }
+
+    // ⑤ 결과 순회 → est_ts_rst_c.aspx 저장 + 로컬 rows 갱신
+    const updMap = {}; // { est_serial: { ts_rstcode, ts_send_dt } }
+
+    for (const st of stateList) {
+      const matchRow = newRows.find(
+        (r) => r.ts_serial === (st.inner_imprmn_no || "").trim()
+      );
+      if (!matchRow) continue;
+
+      try {
+        await updateTsResult({
+          est_serial: matchRow.est_serial,
+          ts_rstcode: st.cntc_result_code || "",
+          ts_rst:     st.cntc_result_dtls || "",
+          upd_code:   st.upd_code         || "",
+          send_de:    st.send_de          || "",
+        });
+      } catch { /* 저장 실패해도 계속 */ }
+
+      updMap[matchRow.est_serial] = {
+        ts_rstcode:  st.cntc_result_code || "",
+        ts_result_msg: st.cntc_result_dtls || "",
+        send_de:     st.send_de          || "",
+      };
+    }
+
+    // 로컬 갱신
+    if (Object.keys(updMap).length > 0) {
+      setRows((prev) =>
+        prev.map((r) => updMap[r.est_serial] ? { ...r, ...updMap[r.est_serial] } : r)
+      );
+    }
+  }, [fetchAosEstimate, outFrom, outTo, companyForm, tsLogin, fetchRepairState, updateTsResult]);
+
+  // ====== 초기 조회 (복원된 출고일자 or 금월) ======
+  useEffect(() => {
+    onQuery();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // const onModify = () => requireFocused() && info(`수정: ${focusedRow.id}`);
   const onDelete  = () => requireFocused() && info(`삭제: ${focusedRow.id}`);
 
@@ -1220,17 +1095,19 @@ export default function RepairHistorySend() {
             </button>
 
             <button
-              className="rounded-md bg-sky-200 px-4 py-2 text-sm font-semibold text-zinc-900 hover:bg-sky-100"
-              onClick={onSend}
+              className="rounded-md bg-sky-200 px-4 py-2 text-sm font-semibold text-zinc-900 hover:bg-sky-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={() => onSend()}
+              disabled={sending}
             >
-              정비이력 전송
+              {sending ? "전송 중…" : "정비이력 전송"}
             </button>
 
             <button
-              className="rounded-md border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-50"
-              onClick={onSendDelete}
+              className="rounded-md border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={() => onSendDelete()}
+              disabled={deleting}
             >
-              정비이력 삭제
+              {deleting ? "삭제 중…" : "정비이력 삭제"}
             </button>
 
             <button
@@ -1258,7 +1135,10 @@ export default function RepairHistorySend() {
               <input
                 type="date"
                 value={outFrom}
-                onChange={(e) => setOutFrom(e.target.value)}
+                onChange={(e) => {
+                  setOutFrom(e.target.value);
+                  setMonthAnchor(new Date(e.target.value));
+                }}
                 className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-800 outline-none"
               />
               <span className="text-zinc-400">~</span>
@@ -1268,6 +1148,49 @@ export default function RepairHistorySend() {
                 onChange={(e) => setOutTo(e.target.value)}
                 className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-800 outline-none"
               />
+
+              {/* 전달 / 금월 / < > */}
+              <div className="flex items-center gap-1">
+                <MiniBtn
+                  onClick={() => {
+                    const d = addMonths(monthAnchor, -1);
+                    const r = monthRange(d);
+                    setOutFrom(r.from); setOutTo(r.to); setMonthAnchor(d);
+                  }}
+                >
+                  전달
+                </MiniBtn>
+                <MiniBtn
+                  onClick={() => {
+                    const d = new Date();
+                    const r = monthRange(d);
+                    setOutFrom(r.from); setOutTo(r.to);
+                    setMonthAnchor(new Date(d.getFullYear(), d.getMonth(), 1));
+                  }}
+                >
+                  금월
+                </MiniBtn>
+                <MiniBtn
+                  title="-1개월"
+                  onClick={() => {
+                    const d = addMonths(monthAnchor, -1);
+                    const r = monthRange(d);
+                    setOutFrom(r.from); setOutTo(r.to); setMonthAnchor(d);
+                  }}
+                >
+                  {"<"}
+                </MiniBtn>
+                <MiniBtn
+                  title="+1개월"
+                  onClick={() => {
+                    const d = addMonths(monthAnchor, +1);
+                    const r = monthRange(d);
+                    setOutFrom(r.from); setOutTo(r.to); setMonthAnchor(d);
+                  }}
+                >
+                  {">"}
+                </MiniBtn>
+              </div>
 
               <button
                 className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
@@ -1322,48 +1245,61 @@ export default function RepairHistorySend() {
 
         {/* ===== 메인 목록 ===== */}
         <div className="rounded-md border border-zinc-200 bg-white shadow-sm flex flex-col min-h-0 flex-1 overflow-hidden">
-          <div className="border-b border-zinc-100 px-4 py-3">
-            <div className="flex items-center justify-between">
-              <div className="text-sm font-semibold text-zinc-900">견적 목록</div>
-              <div className="text-xs text-zinc-500">{filteredRows.length}건</div>
-            </div>
+          <div className="border-b border-zinc-100 px-4 h-11 shrink-0 flex items-center gap-3">
+            <div className="text-sm font-semibold text-zinc-900">견적 목록</div>
+            <div className="text-xs text-zinc-500">{filteredRows.length}건</div>
+            {focusedRow && (
+              <div className="ml-auto flex items-center gap-1.5">
+                <SmallBtn onClick={onModify}>수정</SmallBtn>
+                <SmallBtn onClick={onDelete}>삭제</SmallBtn>
+                <SmallBtn
+                  onClick={() => onSend(new Set([focusedRow.est_serial]))}
+                  disabled={sending}
+                >
+                  {sending ? "전송 중…" : "정비이력전송"}
+                </SmallBtn>
+              </div>
+            )}
           </div>
 
-          <div className="min-h-0 flex-1 overflow-hidden">
+          <div className="relative min-h-0 flex-1 overflow-hidden">
+            <TableLoadingOverlay loading={listLoading} />
             <FixedHeadTable
               columns={mainColumns}
               rows={filteredRows}
-              rowKey={(r) => r.id}
+              rowKey={(r) => r.est_serial}
               selectedKey={focusedId}
-              onRowClick={(r) => setFocusedId(r.id)}
+              onRowClick={(r) => setFocusedId(r.est_serial)}
+              onRowDoubleClick={(r) => { setFocusedId(r.est_serial); onModify(); }}
+              getRowProps={(r) => ({
+                onContextMenu: (e) => {
+                  e.preventDefault();
+                  setFocusedId(r.est_serial);
+                  setContextMenu({ x: e.clientX, y: e.clientY, row: r });
+                },
+              })}
               height="100%"
               bodyClassName="min-h-0 flex-1"
               rowSelectedClass="!bg-blue-100 hover:!bg-blue-100"
               rowHoverClass="hover:!bg-gray-50"
               gutterSelectedClass="!bg-blue-100"
               gutterHoverClass="!bg-gray-50"
-              expandedKey={focusedId}
-
-              expandedRowRender={() => (
-                <InlineRowActions
-                  onModify={onModify}
-                  onDelete={onDelete}
-                />
-              )}
             />
           </div>
 
           {/* ===== 국토부 전송 상태 정보 라인 ===== */}
           <div className="border-t border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-800">
-            <div className="flex flex-wrap items-center gap-8">
+            <div className="grid grid-cols-2 items-center">
               <div>
                 <span className="font-semibold">경정상태 :</span>
-                <span className="ml-1">{focusedRow?.ts_corr_state || "-"}</span>
+                <span className="ml-1 font-bold text-blue-600">
+                  {{ N: "신규", U: "수정", D: "삭제" }[focusedRow?.upd_code] ?? ""}
+                </span>
               </div>
 
-              <div className="ml-auto">
-                <span className="font-semibold ">전송일시 :</span>
-                <span className="ml-1">{focusedRow?.ts_send_dt || "2020-03-04 오전 10:20:43"}</span>
+              <div>
+                <span className="font-semibold">전송일시 :</span>
+                <span className="ml-1">{focusedRow?.send_de}</span>
               </div>
             </div>
 
@@ -1372,8 +1308,7 @@ export default function RepairHistorySend() {
                 국토부 전송상태 :
               </span>
               <span className="ml-1 text-zinc-700">
-                {focusedRow?.ts_result_msg ||
-                  "등록되지 않은 관리사업자이거나 관리사업자 사업자정보가 없습니다. 사업자정보는 관할 지자체에 문의하시기 바랍니다."}
+                {focusedRow?.ts_result_msg }
               </span>
             </div>
           </div>
@@ -1396,7 +1331,7 @@ export default function RepairHistorySend() {
             <FixedHeadTable
               columns={detailColumns}
               rows={focusedRow ? detailRows : []}
-              rowKey={(r) => r.id}
+              rowKey={(r) => r.estb_orgseqno}
               emptyText={focusedRow ? "정비상세가 없습니다." : "목록에서 선택하면 정비상세가 표시됩니다."}
               height="100%"
               bodyClassName="min-h-0 flex-1"
@@ -1419,15 +1354,108 @@ export default function RepairHistorySend() {
       />
 
 
-      <PaynoPickerModal
-        open={paynoOpen}
-        onClose={() => {
-          setPaynoOpen(false);
-          setPaynoTargetId(null);
-        }}
-        onSelect={applyPayno}
-        recent={recentPaynos}
-      />
+      {/* 국토부 대분류 팝오버 */}
+      {tsPaynoPopover && (
+        <SimplePopover
+          anchorRect={tsPaynoPopover.anchorRect}
+          onClose={closeTsPaynoPopover}
+          placement="bottom-left"
+          minWidth="140px"
+          noTitle
+        >
+          <div className="p-1 flex flex-col gap-0.5">
+            <button
+              type="button"
+              className="text-left rounded px-2 py-1 text-sm hover:bg-zinc-50 text-zinc-400"
+              onClick={() => applyTsPayno("", tsPaynoPopover.rowOrgSeq)}
+            >
+              (없음)
+            </button>
+            {[...new Set(paynoList.map((r) => r.payno_kind_nm))].map((kind) => (
+              <button
+                key={kind}
+                type="button"
+                className="text-left rounded px-2 py-1 text-sm hover:bg-zinc-50 flex justify-between items-center gap-4"
+                onClick={(e) => setTsPaynoSubRect({ rect: e.currentTarget.getBoundingClientRect(), kind })}
+              >
+                <span>{kind}</span>
+                <span className="text-zinc-400">{">"}</span>
+              </button>
+            ))}
+          </div>
+        </SimplePopover>
+      )}
+
+      {/* 국토부 소분류 flyout */}
+      {tsPaynoSubRect && tsPaynoPopover && (
+        <div
+          className="fixed rounded-md border border-zinc-200 bg-white shadow-lg z-[51] overflow-y-auto"
+          style={{
+            top:      Math.min(tsPaynoSubRect.rect.top, window.innerHeight - 320),
+            left:     tsPaynoSubRect.rect.right + 4,
+            maxHeight: "300px",
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="p-1 flex flex-col gap-0.5">
+            {paynoList
+              .filter((r) => r.payno_kind_nm === tsPaynoSubRect.kind)
+              .map((item) => (
+                <button
+                  key={item.payno}
+                  type="button"
+                  className="text-left rounded px-2 py-1 text-sm whitespace-nowrap hover:bg-zinc-50"
+                  onClick={() => applyTsPayno(item.payno, tsPaynoPopover.rowOrgSeq)}
+                >
+                  {item.payno_name}
+                </button>
+              ))}
+          </div>
+        </div>
+      )}
+
+      {/* 부품구분 WRK03 팝오버 */}
+      {partStatePopover && (
+        <SimplePopover
+          anchorRect={partStatePopover.anchorRect}
+          onClose={closePartStatePopover}
+          placement="bottom-left"
+          minWidth="140px"
+          noTitle
+        >
+          <div className="p-1 flex flex-col gap-0.5">
+            <button
+              type="button"
+              className="text-left rounded px-2 py-1 text-sm hover:bg-zinc-50 text-zinc-400"
+              onClick={() => applyPartState("", partStatePopover.rowOrgSeq)}
+            >
+              (없음)
+            </button>
+            {wrk03Codes.filter((c) => String(c.state) === "1").map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                className="text-left rounded px-2 py-1 text-sm whitespace-nowrap hover:bg-zinc-50"
+                onClick={() => applyPartState(item.value, partStatePopover.rowOrgSeq)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </SimplePopover>
+      )}
+
+      {contextMenu && (
+        <RowContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          row={contextMenu.row}
+          onClose={() => setContextMenu(null)}
+          onModify={() => { setContextMenu(null); onModify(); }}
+          onDelete={() => { setContextMenu(null); onDelete(); }}
+          onSend={() => { const ids = new Set([contextMenu.row.est_serial]); setContextMenu(null); onSend(ids); }}
+        />
+      )}
 
     </div>
 

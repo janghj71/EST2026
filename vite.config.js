@@ -49,6 +49,11 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/tsservice/, ""),
         },
+        "/asservice": {
+          target: env.VITE_ASSERVICE || "http://as.intravan.co.kr",
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/asservice/, ""),
+        },
       },
     },
   };

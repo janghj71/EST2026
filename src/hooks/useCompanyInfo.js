@@ -11,6 +11,7 @@ const EMPTY_FORM = {
   zipCode: "", addr1: "", addr2: "",
   email: "",
   yellowidKeyJmt: "",
+  ts_userid: "", ts_userpwd: "",
 };
 
 
@@ -48,6 +49,8 @@ function mapToForm(json) {
     addr2:       m.address2  ?? "",
     email:       m.email     ?? "",
     yellowidKeyJmt: m.yellowid_key_jmt ?? "",
+    ts_userid:      m.ts_userid  ?? "",
+    ts_userpwd:     m.ts_userpwd ?? "",
   };
 }
 
