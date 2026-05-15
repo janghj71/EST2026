@@ -6,14 +6,17 @@ import { X, Save, Pen, Pencil, Send, Trash2 } from "lucide-react";
 import IconBtn from "../components/IconBtn";
 import { useAlert } from "../alerts";
 import { moveFocusOnEnter } from "../utils/focusUtils";
-import { ymd, monthRange, addMonths } from "../utils/dateUtils";
+import { getUserid } from "../api/config";
+import { monthRange, addMonths } from "../utils/dateUtils";
 import { formatMoney, formatNumber } from "../utils/numberFormat";
-import { useAosEstimate, useAosEstimateUpdate, useAosEstbUpdate, useEstTsRstUpdate, useEstTsRepairUpdate, useEstTsRstDelete } from "../hooks/useAosEstimate";
+import { useAosEstimate, useAosEstimateUpdate, useAosEstbUpdate, useEstTsRstUpdate, useEstTsRepairUpdate, useEstTsRstDelete, useTsRepairList, useMasterEstimatebUpdate, useAosEstDelete, useAosEstSave, useAosEstSingle, useAosEstCreate, useAosEstbSave, useAosEstbDelete } from "../hooks/useAosEstimate";
 import { useTs_repart, useTsLogin, useTsRepairSend, useTsRepairState, useTsRepairDelete, useClientIp } from "../hooks/useTs_Repair";
 import { useCompanyInfo } from "../hooks/useCompanyInfo";
 import { useTbCode } from "../hooks/useTbCode";
+import { buildRepairJsondata } from "../utils/repairJsondata";
 import TableLoadingOverlay from "../components/TableLoadingOverlay";
 import SimplePopover from "./estimate/SimplePopover";
+import AosLoadModal from "./AosLoadModal";
 
 
 const inputCls =
@@ -28,197 +31,538 @@ function loadSavedFilter() {
 
 
 
-function RepairHistoryEditModal({ open, initial, onClose, onSave }) {
-  const modalRef = useRef(null);
-  const [form, setForm] = useState(() => initial || {});
-  const handleKeyDown = (e) => {
-    if (e.key !== "Enter") return;
+const WORK_OPTIONS = [
+  { code: "R", label: "탈착" },
+  { code: "X", label: "교환" },
+  { code: "B", label: "판금" },
+  { code: "A", label: "조정" },
+  { code: "O", label: "오버홀" },
+  { code: "S", label: "수리" },
+  { code: "P", label: "도장" },
+  { code: "T", label: "견인" },
+  { code: "G", label: "구난" },
+  { code: "W", label: "세차" },
+];
 
-    // 모달 내부에서만 이동
-    const moved = moveFocusOnEnter(e, modalRef.current);
-    // (원하면) 마지막에서 Enter면 저장
-    if (!e.shiftKey && !moved) {
-      onSave(form);
+/**
+ * AOS 견적 신규/수정 통합 모달
+ * - estSerial prop: 신규 채번 후 전달된 est_serial (또는 수정 대상)
+ * - 마운트 시 est_aosest_s.aspx 단건 조회 → 마스터 + 상세 편집
+ * - 상세: est_aosestb_c.aspx (upsert), est_aosestb_d.aspx (삭제)
+ */
+function RepairHistoryEditModal({ open, estSerial, isNew, onClose, onSaved, wrk03Codes, paynoList }) {
+  const { fetchAosEstSingle } = useAosEstSingle();
+  const { loading: savingMaster, saveAosEst } = useAosEstSave();
+  const { loading: savingDetail, saveAosEstb } = useAosEstbSave();
+  const { loading: deletingDetail, deleteAosEstb } = useAosEstbDelete();
+  const { warning, success } = useAlert();
+
+  const modalRef = useRef(null);
+  const masterFormRef = useRef(null);
+  const [loadingData, setLoadingData] = useState(false);
+  const [master, setMaster] = useState({});
+  const [details, setDetails] = useState([]);
+  // 편집 중인 상세 행 (null = 없음)
+  const [editingDetailIdx, setEditingDetailIdx] = useState(null);
+  // 팝오버
+  const [detailTsPopover, setDetailTsPopover] = useState(null);   // { anchorRect, idx }
+  const [detailTsSubRect, setDetailTsSubRect] = useState(null);   // { rect, kind }
+  const [detailWkPopover, setDetailWkPopover] = useState(null);   // { anchorRect, idx }
+  const [detailPsPopover, setDetailPsPopover]  = useState(null);  // { anchorRect, idx }
+
+  // estSerial 변경 시 단건 조회
+  useEffect(() => {
+    if (!open || !estSerial) return;
+    setLoadingData(true);
+    setDetails([]);
+    setEditingDetailIdx(null);
+    fetchAosEstSingle(estSerial)
+      .then((res) => {
+        const m = res?.dataset?.[0] ?? {};
+        setMaster({
+          carno: m.carno || "",
+          carname: m.carname || "",
+          lastkm: m.lastkm ?? "",
+          vinno: m.vinno || "",
+          w_manname: m.w_manname || "",
+          custom_name: m.custom_name || "",
+          hp0: m.hp0 || "",
+          hp1: m.hp1 || "",
+          hp2: m.hp2 || "",
+          car_registday: m.car_registday || "",
+          inday: m.inday || "",
+          outday: m.outday || "",
+          accday: m.accday || "",
+          add_repair: m.add_repair ?? "1",
+        });
+        setDetails(res?.dataset2 ?? []);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingData(false));
+  }, [open, estSerial]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const setM = (key) => (e) => setMaster((p) => ({ ...p, [key]: e.target.value }));
+
+  // ── 마스터 저장 ──
+  const handleSaveMaster = async () => {
+    try {
+      const res = await saveAosEst({ ...master, est_serial: estSerial });
+      if (String(res?.result) === "false") { warning(res?.msg || "저장 중 오류"); return; }
+      success("저장되었습니다.");
+      onSaved?.();
+    } catch (e) { warning(e?.message || "저장 오류"); }
+  };
+
+  // ── 상세 행 추가 ──
+  const addDetailRow = () => {
+    const newRow = {
+      estb_orgseqno: "", est_serial: estSerial,
+      payname: "", workcode: "",
+      part_makercode: "", part_state: "", ts_payno: "", paykind: "1",
+      _isNew: true,
+    };
+    setDetails((p) => [...p, newRow]);
+    setEditingDetailIdx(details.length);
+  };
+
+  // ── 상세 인라인 편집 ──
+  const setDField = (idx, key) => (e) => {
+    setDetails((p) => p.map((r, i) => i === idx ? { ...r, [key]: e.target.value } : r));
+  };
+  const setDVal = (idx, key, val) => {
+    setDetails((p) => p.map((r, i) => i === idx ? { ...r, [key]: val } : r));
+  };
+
+  // ── 상세 저장 ──
+  const handleSaveDetail = async (idx) => {
+    const d = details[idx];
+    if (!d) return;
+    const paykind = d.part_state ? "5" : "1";
+    try {
+      const res = await saveAosEstb({
+        est_serial: estSerial,
+        estb_orgseqno: d.estb_orgseqno || "",
+        paykind,
+        payname: d.payname || "",
+        workcode: d.workcode || "",
+        part_makercode: d.part_makercode || "",
+        part_state: d.part_state || "",
+        ts_payno: d.ts_payno || "",
+      });
+      if (String(res?.result) === "false") { warning(res?.msg || "저장 오류"); return; }
+      // 저장 후 재조회
+      const fresh = await fetchAosEstSingle(estSerial);
+      setDetails(fresh?.dataset2 ?? []);
+      setEditingDetailIdx(null);
+    } catch (e) { warning(e?.message || "저장 오류"); }
+  };
+
+  // ── 상세 행 Enter 키 이동 (input/select만 대상, 마지막에서 Enter → 저장) ──
+  const makeDetailKeyDown = (idx) => (e) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    e.stopPropagation();
+    const tr = e.currentTarget.closest("tr");
+    if (!tr) return;
+    const inputs = Array.from(tr.querySelectorAll("input:not([disabled]), select:not([disabled])"));
+    const i = inputs.indexOf(e.currentTarget);
+    if (i === -1) return;
+    if (i + 1 < inputs.length) {
+      inputs[i + 1].focus();
+    } else {
+      handleSaveDetail(idx);
     }
   };
 
-  useEffect(() => {
-    if (open) setForm(initial || {});
-  }, [open, initial]);
+  // ── 상세 삭제 ──
+  const handleDeleteDetail = async (idx) => {
+    const d = details[idx];
+    if (!d) return;
+    if (d._isNew) { setDetails((p) => p.filter((_, i) => i !== idx)); setEditingDetailIdx(null); return; }
+    try {
+      const res = await deleteAosEstb(d.estb_orgseqno);
+      if (String(res?.result) === "false") { warning(res?.msg || "삭제 오류"); return; }
+      setDetails((p) => p.filter((_, i) => i !== idx));
+      setEditingDetailIdx(null);
+    } catch (e) { warning(e?.message || "삭제 오류"); }
+  };
+
+  // ── 모달 정비상세 컬럼 정의 ──
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const modalDetailColumns = useMemo(() => [
+    {
+      key: "ts_payno",
+      title: "국토부",
+      width: "12%",
+      align: "left",
+      render: (v, row) => {
+        const idx = details.findIndex((r) => r === row);
+        const isEditing = editingDetailIdx === idx;
+        if (!isEditing) return <span>{v || ""}</span>;
+        return (
+          <button
+            type="button"
+            className={`${inputCls} w-full text-left text-xs py-1`}
+            onClick={(e) => {
+              e.stopPropagation();
+              setDetailTsSubRect(null);
+              setDetailTsPopover({ anchorRect: e.currentTarget.getBoundingClientRect(), idx });
+            }}
+          >
+            {v || <span className="text-zinc-400">선택</span>}
+          </button>
+        );
+      },
+    },
+    {
+      key: "part_makercode",
+      title: "부품코드",
+      width: "10%",
+      align: "left",
+      render: (v, row) => {
+        const idx = details.findIndex((r) => r === row);
+        const isEditing = editingDetailIdx === idx;
+        if (!isEditing) return <span>{v || ""}</span>;
+        return (
+          <input
+            value={v || ""}
+            onChange={setDField(idx, "part_makercode")}
+            onKeyDown={makeDetailKeyDown(idx)}
+            className={`${inputCls} w-full text-xs py-1`}
+            onClick={(e) => e.stopPropagation()}
+          />
+        );
+      },
+    },
+    {
+      key: "payname",
+      title: "작업내용",
+      width: "26%",
+      align: "left",
+      render: (v, row) => {
+        const idx = details.findIndex((r) => r === row);
+        const isEditing = editingDetailIdx === idx;
+        if (!isEditing) return <span className="block truncate">{v || ""}</span>;
+        return (
+          <input
+            value={v || ""}
+            onChange={setDField(idx, "payname")}
+            onKeyDown={makeDetailKeyDown(idx)}
+            className={`${inputCls} w-full text-xs py-1`}
+            onClick={(e) => e.stopPropagation()}
+          />
+        );
+      },
+    },
+    {
+      key: "workcode",
+      title: "작업",
+      width: "10%",
+      align: "left",
+      render: (v, row) => {
+        const idx = details.findIndex((r) => r === row);
+        const isEditing = editingDetailIdx === idx;
+        if (!isEditing) return <span>{row.workcodename || WORK_OPTIONS.find((c) => c.code === v)?.label || v || ""}</span>;
+        return (
+          <button
+            type="button"
+            className={`${inputCls} w-full text-left text-xs py-1`}
+            onClick={(e) => {
+              e.stopPropagation();
+              setDetailWkPopover({ anchorRect: e.currentTarget.getBoundingClientRect(), idx });
+            }}
+          >
+            {v ? (WORK_OPTIONS.find((c) => c.code === v)?.label ?? v) : <span className="text-zinc-400">선택</span>}
+          </button>
+        );
+      },
+    },
+    {
+      key: "part_state",
+      title: "부품구분",
+      width: "10%",
+      align: "left",
+      render: (v, row) => {
+        const idx = details.findIndex((r) => r === row);
+        const isEditing = editingDetailIdx === idx;
+        const label = (wrk03Codes || []).find((c) => c.value === v)?.label || v || "";
+        if (!isEditing) return <span>{label}</span>;
+        return (
+          <button
+            type="button"
+            className={`${inputCls} w-full text-left text-xs py-1`}
+            onClick={(e) => {
+              e.stopPropagation();
+              setDetailPsPopover({ anchorRect: e.currentTarget.getBoundingClientRect(), idx });
+            }}
+          >
+            {v ? label : <span className="text-zinc-400">선택</span>}
+          </button>
+        );
+      },
+    },
+    {
+      key: "__actions",
+      title: "",
+      width: "12%",
+      align: "center",
+      render: (_, row) => {
+        const idx = details.findIndex((r) => r === row);
+        const isEditing = editingDetailIdx === idx;
+        if (!isEditing) return null;
+        return (
+          <div className="flex gap-1 items-center justify-center whitespace-nowrap">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); handleSaveDetail(idx); }}
+              disabled={savingDetail}
+              className="rounded border border-zinc-200 bg-white px-2 py-1 text-xs font-semibold hover:bg-zinc-100 disabled:opacity-50"
+            >저장</button>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); handleDeleteDetail(idx); }}
+              disabled={deletingDetail}
+              className="rounded border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+            >삭제</button>
+          </div>
+        );
+      },
+    },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [details, editingDetailIdx, savingDetail, deletingDetail, wrk03Codes]);
 
   if (!open) return null;
 
-  const set = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value }));
+  const isBusy = loadingData || savingMaster || savingDetail || deletingDetail;
 
   return (
     <div className="fixed inset-0 z-50">
-      {/* dim */}
-      <div
-        className="absolute inset-0 bg-black/40"
-        onClick={onClose}
-      />
-      {/* panel */}
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className="absolute inset-0 flex items-center justify-center p-4">
-        <div 
+        <div
           ref={modalRef}
-          onKeyDown={handleKeyDown}
-          className="w-full max-w-[860px] rounded-md border border-zinc-200 bg-white shadow-xl overflow-hidden"
+          className="w-full max-w-[960px] rounded-md border border-zinc-200 bg-white shadow-xl overflow-hidden flex flex-col"
+          style={{ maxHeight: "92vh" }}
         >
           {/* header */}
-          <div className="flex items-center gap-2 border-b border-zinc-200 px-4 py-3">
-            <div className="flex items-center gap-2 text-base font-semibold text-zinc-900">
-              <Pen className="h-4 w-4 text-zinc-700" />
-              <span>정비이력 수정</span>
-            </div>
-
-            <button
-              type="button"
-              className="ml-auto inline-flex items-center justify-center rounded-md border border-zinc-200 bg-white p-2 hover:bg-zinc-50"
-              onClick={onClose}
-              aria-label="닫기"
-            >
+          <div className="flex items-center gap-2 border-b border-zinc-200 px-4 py-3 shrink-0">
+            <Pen className="h-4 w-4 text-zinc-700" />
+            <span className="text-base font-semibold text-zinc-900">{isNew ? "신규 정비이력" : "정비이력 수정"}</span>
+            {estSerial && <span className="text-xs text-zinc-400 ml-1">({estSerial})</span>}
+            <button type="button" className="ml-auto rounded-md border border-zinc-200 bg-white p-2 hover:bg-zinc-50" onClick={onClose}>
               <X className="h-4 w-4" />
             </button>
-
           </div>
 
-          {/* body */}
-          <div className="p-4">
-            <div className="grid grid-cols-2 gap-x-8 gap-y-3">
-              {/* 좌측 */}
-              <Field label="차량번호">
-                <input
-                  value={form.carno || ""}
-                  onChange={set("carno")}
-                  className={`${inputCls} w-full`}
-                />
-              </Field>
+          {/* body – scrollable */}
+          <div className="overflow-y-auto flex-1 p-4 flex flex-col gap-4">
+            {loadingData && <div className="text-center text-sm text-zinc-400 py-4">불러오는 중…</div>}
 
-              {/* 우측 */}
-              <Field label="고객명">
-                <input
-                  value={form.custom_name || ""}
-                  onChange={set("custom_name")}
-                  className={`${inputCls} w-full`}
-                />
-              </Field>
+            {/* ── 마스터 입력 ── */}
+            <div
+              ref={masterFormRef}
+              className="grid grid-cols-2 gap-x-8 gap-y-3"
+              onKeyDown={(e) => moveFocusOnEnter(e, masterFormRef.current)}
+            >
+              {/* 좌 1 */}
+              <Field label="차량번호"><input value={master.carno || ""} onChange={setM("carno")} className={`${inputCls} w-full`} /></Field>
+              {/* 우 1 */}
+              <Field label="고객명"><input value={master.custom_name || ""} onChange={setM("custom_name")} className={`${inputCls} w-full`} /></Field>
 
-              <Field label="차량명">
-                <input
-                  value={form.carname || ""}
-                  onChange={set("carname")}
-                  className={`${inputCls} w-full`}
-                />
-              </Field>
-
+              {/* 좌 2 */}
+              <Field label="차량명"><input value={master.carname || ""} onChange={setM("carname")} className={`${inputCls} w-full`} /></Field>
+              {/* 우 2 */}
               <Field label="연락처">
                 <div className="flex items-center gap-2">
-                  <input 
-                    value={form.hp0 || ""} 
-                    onChange={set("hp0")} 
-                    className={`${inputCls} w-[75px]`}
-                  />
+                  <input value={master.hp0 || ""} onChange={setM("hp0")} className={`${inputCls} w-[75px]`} />
                   <span className="text-zinc-500">-</span>
-                  <input 
-                    value={form.hp1 || ""} 
-                    onChange={set("hp1")} 
-                    className={`${inputCls} w-[80px]`}
-                  />
+                  <input value={master.hp1 || ""} onChange={setM("hp1")} className={`${inputCls} w-[80px]`} />
                   <span className="text-zinc-500">-</span>
-                  <input 
-                    value={form.hp2 || ""} 
-                    onChange={set("hp2")} 
-                    className={`${inputCls} w-[80px]`}
-                  />
+                  <input value={master.hp2 || ""} onChange={setM("hp2")} className={`${inputCls} w-[80px]`} />
                 </div>
               </Field>
 
-              <Field label="주행거리">
-                <input
-                  value={form.lastkm || ""}
-                  onChange={set("lastkm")}
-                  className={`${inputCls} w-full text-right`}
-                  inputMode="numeric"
-                />
-              </Field>
+              {/* 좌 3 */}
+              <Field label="주행거리"><input value={master.lastkm || ""} onChange={setM("lastkm")} className={`${inputCls} w-full text-right`} inputMode="numeric" /></Field>
+              {/* 우 3 */}
+              <Field label="등록일자"><input type="date" value={master.car_registday || ""} onChange={setM("car_registday")} className={`${inputCls} w-full`} /></Field>
 
-              <Field label="등록일자">
-                <input
-                  type="date"
-                  value={form.car_registday || ""}
-                  onChange={set("car_registday")}
-                  className={`${inputCls} w-full`}
-                />
-              </Field>
+              {/* 좌 4 */}
+              <Field label="차대번호"><input value={master.vinno || ""} onChange={setM("vinno")} className={`${inputCls} w-full`} /></Field>
+              {/* 우 4 — 사고일자 (입고일자 위) */}
+              <Field label="사고일자"><input type="date" value={master.accday || ""} onChange={setM("accday")} className={`${inputCls} w-full`} /></Field>
 
-              <Field label="차대번호">
-                <input
-                  value={form.vinno || ""}
-                  onChange={set("vinno")}
-                  className={`${inputCls} w-full`}
-                />
-              </Field>
+              {/* 좌 5 */}
+              <Field label="정비책임자"><input value={master.w_manname || ""} onChange={setM("w_manname")} className={`${inputCls} w-full`} /></Field>
+              {/* 우 5 — 입고일자 */}
+              <Field label="입고일자"><input type="date" value={master.inday || ""} onChange={setM("inday")} className={`${inputCls} w-full`} /></Field>
 
-              <Field label="입고일자">
-                <input
-                  type="date"
-                  value={form.inday || ""}
-                  onChange={set("inday")}
-                  className={`${inputCls} w-full`}
-                />
-              </Field>
+              {/* 좌 6 — 추가수리비 동의함 체크박스 */}
+              <div className="grid grid-cols-[110px_1fr] items-center gap-2">
+                <div className="text-sm font-semibold text-zinc-700">추가수리비</div>
+                <label className="inline-flex items-center gap-2 text-sm text-zinc-700 select-none cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={master.add_repair === "1"}
+                    onChange={(e) => setMaster((p) => ({ ...p, add_repair: e.target.checked ? "1" : "0" }))}
+                  />
+                  동의함
+                </label>
+              </div>
+              {/* 우 6 — 출고일자 */}
+              <Field label="출고일자"><input type="date" value={master.outday || ""} onChange={setM("outday")} className={`${inputCls} w-full`} /></Field>
+            </div>
 
-              <Field label="정비책임자">
-                <input
-                  value={form.w_manname || ""}
-                  onChange={set("w_manname")}
-                  className={`${inputCls} w-full`}
-                />
-              </Field>
+            {/* 마스터 저장 버튼 */}
+            <div className="flex justify-end">
+              <button
+                type="button"
+                disabled={isBusy}
+                onClick={handleSaveMaster}
+                className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-50"
+              >
+                기본정보 저장
+              </button>
+            </div>
 
-              <Field label="출고일자">
-                <input
-                  type="date"
-                  value={form.outday || ""}
-                  onChange={set("outday")}
-                  className={`${inputCls} w-full`}
+            {/* ── 정비상세 ── */}
+            <div className="rounded-md border border-zinc-200 overflow-hidden">
+              <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-100 bg-zinc-50">
+                <span className="text-sm font-semibold text-zinc-800">정비상세</span>
+                <button
+                  type="button"
+                  onClick={addDetailRow}
+                  className="rounded-md border border-zinc-200 bg-white px-3 py-1 text-xs font-semibold text-zinc-700 hover:bg-zinc-100"
+                >
+                  + 행 추가
+                </button>
+              </div>
+              <div style={{ height: 240 }} className="min-h-0">
+                <FixedHeadTable
+                  columns={modalDetailColumns}
+                  rows={details}
+                  rowKey={(r, i) => r.estb_orgseqno || `_new_${i}`}
+                  height="100%"
+                  tableTextClass="text-xs"
+                  emptyText={loadingData ? "불러오는 중…" : "정비상세가 없습니다. [+ 행 추가]를 클릭하세요."}
+                  onRowClick={(row) => {
+                    const idx = details.findIndex((r) => r === row);
+                    if (editingDetailIdx !== idx) setEditingDetailIdx(idx);
+                  }}
+                  getRowClassName={(row) => {
+                    const idx = details.findIndex((r) => r === row);
+                    return editingDetailIdx === idx ? "!bg-blue-50" : "";
+                  }}
+                  rowSelectedClass=""
+                  rowHoverClass="hover:!bg-zinc-50"
+                  gutterSelectedClass=""
+                  gutterHoverClass="!bg-zinc-50"
+                  wheelSelect={false}
                 />
-              </Field>
-
-              {/* 우측 하단 */}
-              <Field label="사고일자">
-                <input
-                  type="date"
-                  value={form.accday || ""}
-                  onChange={set("accday")}
-                  className={`${inputCls} w-full`}
-                />
-              </Field>
-
-              {/* 좌측 하단 자리 맞춤용 빈칸 */}
-              <div />
+              </div>
             </div>
           </div>
 
           {/* footer */}
-          <div className="flex items-center justify-end gap-2 border-t border-zinc-200 px-4 py-3 bg-white">
-            <IconBtn
-              icon={X}
-              label="닫기"
-              className="h-10 w-25 justify-center"
-              onClick={onClose}
-            />
-
-            <IconBtn
-              icon={Save}
-              label="저장"
-              variant="primary"
-              className="h-10 w-25 justify-center"
-              onClick={onSave}
-            />
+          <div className="flex items-center justify-end gap-2 border-t border-zinc-200 px-4 py-3 bg-white shrink-0">
+            <IconBtn icon={X} label="닫기" className="h-10 w-25 justify-center" onClick={onClose} />
           </div>
         </div>
       </div>
+
+      {/* 상세 국토부 대분류 팝오버 */}
+      {detailTsPopover && (
+        <SimplePopover
+          anchorRect={detailTsPopover.anchorRect}
+          onClose={() => { setDetailTsPopover(null); setDetailTsSubRect(null); }}
+          placement="bottom-left"
+          minWidth="140px"
+          noTitle
+        >
+          <div className="p-1 flex flex-col gap-0.5">
+            <button type="button" className="text-left rounded px-2 py-1 text-sm hover:bg-zinc-50 text-zinc-400"
+              onClick={() => { setDVal(detailTsPopover.idx, "ts_payno", ""); setDetailTsPopover(null); setDetailTsSubRect(null); }}>
+              (없음)
+            </button>
+            {[...new Set((paynoList || []).map((r) => r.payno_kind_nm))].map((kind) => (
+              <button key={kind} type="button"
+                className="text-left rounded px-2 py-1 text-sm hover:bg-zinc-50 flex justify-between items-center gap-4"
+                onClick={(e) => setDetailTsSubRect({ rect: e.currentTarget.getBoundingClientRect(), kind })}>
+                <span>{kind}</span><span className="text-zinc-400">{">"}</span>
+              </button>
+            ))}
+          </div>
+        </SimplePopover>
+      )}
+      {detailTsSubRect && detailTsPopover && (
+        <div className="fixed rounded-md border border-zinc-200 bg-white shadow-lg z-[9999] overflow-y-auto"
+          style={{ top: Math.min(detailTsSubRect.rect.top, window.innerHeight - 320), left: detailTsSubRect.rect.right + 4, maxHeight: "300px" }}
+          onMouseDown={(e) => e.stopPropagation()}>
+          <div className="p-1 flex flex-col gap-0.5">
+            {(paynoList || []).filter((r) => r.payno_kind_nm === detailTsSubRect.kind).map((item) => (
+              <button key={item.payno} type="button"
+                className="text-left rounded px-2 py-1 text-sm whitespace-nowrap hover:bg-zinc-50"
+                onClick={() => {
+                  setDVal(detailTsPopover.idx, "ts_payno", item.payno);
+                  setDetailTsPopover(null); setDetailTsSubRect(null);
+                }}>
+                {item.payno_name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 상세 작업 팝오버 */}
+      {detailWkPopover && (
+        <SimplePopover
+          anchorRect={detailWkPopover.anchorRect}
+          onClose={() => setDetailWkPopover(null)}
+          placement="bottom-left"
+          minWidth="100px"
+          noTitle
+        >
+          <div className="p-1 flex flex-col gap-0.5">
+            <button type="button" className="text-left rounded px-2 py-1 text-sm hover:bg-zinc-50 text-zinc-400"
+              onClick={() => { setDVal(detailWkPopover.idx, "workcode", ""); setDetailWkPopover(null); }}>
+              (없음)
+            </button>
+            {WORK_OPTIONS.map((item) => (
+              <button key={item.code} type="button"
+                className="text-left rounded px-2 py-1 text-sm whitespace-nowrap hover:bg-zinc-50"
+                onClick={() => { setDVal(detailWkPopover.idx, "workcode", item.code); setDetailWkPopover(null); }}>
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </SimplePopover>
+      )}
+
+      {/* 상세 부품구분 팝오버 */}
+      {detailPsPopover && (
+        <SimplePopover
+          anchorRect={detailPsPopover.anchorRect}
+          onClose={() => setDetailPsPopover(null)}
+          placement="bottom-left"
+          minWidth="140px"
+          noTitle
+        >
+          <div className="p-1 flex flex-col gap-0.5">
+            <button type="button" className="text-left rounded px-2 py-1 text-sm hover:bg-zinc-50 text-zinc-400"
+              onClick={() => { setDVal(detailPsPopover.idx, "part_state", ""); setDetailPsPopover(null); }}>
+              (없음)
+            </button>
+            {(wrk03Codes || []).filter((c) => String(c.state) === "1").map((item) => (
+              <button key={item.value} type="button"
+                className="text-left rounded px-2 py-1 text-sm whitespace-nowrap hover:bg-zinc-50"
+                onClick={() => { setDVal(detailPsPopover.idx, "part_state", item.value); setDetailPsPopover(null); }}>
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </SimplePopover>
+      )}
     </div>
   );
 }
@@ -249,12 +593,51 @@ function Badge({ tone = "zinc", children }) {
   );
 }
 
-function SendStatusBadge({ ts_serial, ts_rstcode }) {
-  if (!ts_serial)                          return null;
-  if (ts_rstcode === "MSG50000")           return <Badge tone="ok">성공</Badge>;
-  if (ts_serial && !ts_rstcode)            return <Badge tone="warn">처리중</Badge>;
-  if (ts_serial && ts_rstcode)             return <Badge tone="err">오류</Badge>;
-  return null;
+/** 경정사유 입력 모달 */
+function AmendReasonModal({ open, onConfirm, onCancel }) {
+  const [value, setValue] = React.useState("");
+  React.useEffect(() => { if (open) setValue(""); }, [open]);
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/40" onClick={onCancel} />
+      <div className="relative w-full max-w-sm rounded-md border border-zinc-200 bg-white shadow-xl p-5 flex flex-col gap-4">
+        <div className="text-sm font-semibold text-zinc-900">경정사유 입력</div>
+        <input
+          autoFocus
+          className="h-9 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-gray-900/10 w-full"
+          placeholder="경정사유를 입력하세요"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") onConfirm(value); if (e.key === "Escape") onCancel(); }}
+        />
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            className="h-9 rounded-md border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
+            onClick={onCancel}
+          >취소</button>
+          <button
+            type="button"
+            className="h-9 rounded-md bg-zinc-900 px-4 text-sm font-semibold text-white hover:bg-zinc-800"
+            onClick={() => onConfirm(value)}
+          >확인</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const UPD_CODE_LABEL = { N: "신규", U: "수정", D: "삭제" };
+
+function SendStatusBadge({ ts_serial, ts_rstcode, upd_code }) {
+  if (!ts_serial) return null;
+  const prefix = UPD_CODE_LABEL[upd_code] ?? "";
+  const label  = (s) => prefix ? `${prefix} ${s}` : s;
+
+  if (ts_rstcode === "MSG50000") return <Badge tone="ok">{label("성공")}</Badge>;
+  if (!ts_rstcode)               return <Badge tone="warn">{label("처리중")}</Badge>;
+  return                                <Badge tone="err">{label("오류")}</Badge>;
 }
 
 function TopBtn({ icon: Icon, children, onClick, variant = "dark" }) {
@@ -303,7 +686,7 @@ function SmallBtn({ children, onClick, disabled }) {
 }
 
 /** 우클릭 컨텍스트 메뉴 (portal + 화면 밖 보정) */
-function RowContextMenu({ x, y, row, onClose, onModify, onDelete, onSend }) {
+function RowContextMenu({ x, y, row, onClose, onModify, onDelete, onSend, showEditDelete = true }) {
   const menuRef = useRef(null);
 
   // 화면 밖 보정 — DOM 직접 조작 (setState 없음)
@@ -340,8 +723,8 @@ function RowContextMenu({ x, y, row, onClose, onModify, onDelete, onSend }) {
       className="fixed z-[1200] w-44 rounded-md border border-zinc-200 bg-white shadow-xl py-1 select-none"
       style={{ left: x, top: y }}
     >
-      <CtxItem icon={Pencil} onClick={onModify}>수정</CtxItem>
-      <CtxItem icon={Trash2} onClick={onDelete}>삭제</CtxItem>
+      {showEditDelete && <CtxItem icon={Pencil} onClick={onModify}>수정</CtxItem>}
+      {showEditDelete && <CtxItem icon={Trash2} onClick={onDelete}>삭제</CtxItem>}
       <CtxItem icon={Send}   onClick={onSend}>정비이력전송</CtxItem>
     </div>,
     document.body
@@ -362,7 +745,7 @@ function CtxItem({ icon: Icon, children, onClick }) {
 }
 
 export default function RepairHistorySend() {
-  const { info, success, warning } = useAlert();
+  const { info, success, warning, remove } = useAlert();
 
   const today = useMemo(() => new Date(), []);
   const initRange = useMemo(() => monthRange(today), [today]);
@@ -374,9 +757,16 @@ export default function RepairHistorySend() {
   });
   const [searchText, setSearchText] = useState("");
   const [sortKey, setSortKey] = useState("1"); // 1~6
-  const [onlyUnsent, setOnlyUnsent] = useState(false);
+  const [onlyUnsent,  setOnlyUnsent]  = useState(false);
+  const [onlySuccess, setOnlySuccess] = useState(false);
+  const [onlyError,   setOnlyError]   = useState(false);
+  const [onlyNew,     setOnlyNew]     = useState(false); // upd_code = N
+  const [onlyUpdated, setOnlyUpdated] = useState(false); // upd_code = U
+  const [onlyDeleted, setOnlyDeleted] = useState(false); // upd_code = D
+  const [activeTab,   setActiveTab]   = useState("aos"); // "aos" | "adl"
   const [editOpen, setEditOpen] = useState(false);
-  const [editInit, setEditInit] = useState(null);
+  const [editEstSerial, setEditEstSerial] = useState(null);
+  const [isNewEdit, setIsNewEdit] = useState(false);
 
   // ====== 선택/상세 ======
   const detailBodyElRef = useRef(null);
@@ -386,6 +776,14 @@ export default function RepairHistorySend() {
   const [tsPaynoPopover, setTsPaynoPopover] = useState(null);  // { anchorRect, rowOrgSeq }
   const [tsPaynoSubRect, setTsPaynoSubRect] = useState(null);  // { rect, kind }
   const [partStatePopover, setPartStatePopover] = useState(null); // { anchorRect, rowOrgSeq }
+  const [amendModalOpen, setAmendModalOpen] = useState(false);
+  const amendResolverRef = useRef(null);
+
+  /** 경정사유 모달을 열고 입력값(또는 null)을 Promise로 반환 */
+  const promptAmendReason = useCallback(() => {
+    setAmendModalOpen(true);
+    return new Promise((resolve) => { amendResolverRef.current = resolve; });
+  }, []);
   const { codes: wrk03Codes } = useTbCode("WRK03");
 
   const [contextMenu, setContextMenu] = useState(null); // { x, y, row } | null
@@ -401,17 +799,31 @@ export default function RepairHistorySend() {
   const [rows, setRows] = useState([]);
   const [allDetail, setAllDetail] = useState([]);
   const { loading: listLoading, fetchAosEstimate } = useAosEstimate();
-  const { updateTsSerial } = useAosEstimateUpdate();
-  const { updateEstbTsPayno } = useAosEstbUpdate();
-  const { fetchTsPayno } = useTs_repart();
-  const { tsLogin } = useTsLogin();
+  const { loading: adlLoading,  fetchTsRepairList } = useTsRepairList();
+  const { updateTsSerial }                  = useAosEstimateUpdate();
+  const { updateEstbTsPayno }               = useAosEstbUpdate();
+  const { updateMasterEstimatebTsPayno }    = useMasterEstimatebUpdate();
+  const { fetchTsPayno }                    = useTs_repart();
+  const { tsLogin }                         = useTsLogin();
   const { loading: sending, sendRepairHistory } = useTsRepairSend();
-  const { fetchRepairState } = useTsRepairState();
+  const { fetchRepairState }                = useTsRepairState();
   const { loading: deleting, deleteRepairHistory } = useTsRepairDelete();
-  const { updateTsResult } = useEstTsRstUpdate();
-  const { clearTsSerial } = useEstTsRepairUpdate();
-  const { deleteTsRst } = useEstTsRstDelete();
-  const { fetchClientIp } = useClientIp();
+  const { updateTsResult }                  = useEstTsRstUpdate();
+  const { clearTsSerial, updateTsRepairSerial } = useEstTsRepairUpdate();
+  const { deleteAosEst }                    = useAosEstDelete();
+  const { loading: creating, createAosEst } = useAosEstCreate();
+  const { deleteTsRst }                     = useEstTsRstDelete();
+  const { fetchClientIp }                   = useClientIp();
+
+  // 탭별 분기 설정
+  const tabConfig = useMemo(() => ({
+    fetchFn:           activeTab === "aos" ? fetchAosEstimate          : fetchTsRepairList,
+    updateTsSerialFn:  activeTab === "aos" ? updateTsSerial            : updateTsRepairSerial,
+    updateEstbFn:      activeTab === "aos" ? updateEstbTsPayno         : updateMasterEstimatebTsPayno,
+    gubun:             activeTab === "aos" ? "1"                       : "0",
+  }), [activeTab, fetchAosEstimate, fetchTsRepairList, updateTsSerial, updateTsRepairSerial, updateEstbTsPayno, updateMasterEstimatebTsPayno]);
+
+  const listLoading2 = activeTab === "aos" ? listLoading : adlLoading;
 
   // 로그인 후 캐시 — 재로그인 없이 재사용
   const imprmnEntnumRef = useRef("");
@@ -441,13 +853,30 @@ export default function RepairHistorySend() {
       });
     }
 
-    if (onlyUnsent) {
-      r = r.filter((x) => !x.ts_send_dt);
+    // 미전송 / 성공 / 오류 중 하나라도 체크되면 OR 조건으로 필터링
+    if (onlyUnsent || onlySuccess || onlyError) {
+      r = r.filter((x) => {
+        if (onlyUnsent  && !x.ts_serial) return true;
+        if (onlySuccess && x.ts_rstcode === "MSG50000") return true;
+        if (onlyError   && x.ts_serial && x.ts_rstcode && x.ts_rstcode !== "MSG50000") return true;
+        return false;
+      });
+    }
+
+    // 신규 / 수정 / 삭제 — 위 결과에 AND 조건으로 추가 필터링 (그룹 내 OR)
+    if (onlyNew || onlyUpdated || onlyDeleted) {
+      r = r.filter((x) => {
+        if (onlyNew     && x.upd_code === "N") return true;
+        if (onlyUpdated && x.upd_code === "U") return true;
+        if (onlyDeleted && x.upd_code === "D") return true;
+        return false;
+      });
     }
 
     const cmp = {
-      "1": (a, b) => (a.est_serial > b.est_serial ? 1 : -1), // 입력순
-      "2": (a, b) => (a.inday > b.inday ? 1 : -1),           // 입고일자순
+      "1": (a, b) => (a.est_serial > b.est_serial ? -1 : 1), // 입력순 역순(최신↑)
+      "2": (a, b) => (a.inday  > b.inday  ? -1 : 1),          // 입고일자 역순(최신↑)
+      "7": (a, b) => (a.outday > b.outday ? -1 : 1),          // 출고일자 역순(최신↑)
       "3": (a, b) => (a.carno > b.carno ? 1 : -1),           // 차량번호순
       "4": (a, b) => (a.custom_name > b.custom_name ? 1 : -1), // 고객명순
       "5": (a, b) => (a.carname > b.carname ? 1 : -1),       // 차량명순
@@ -456,7 +885,7 @@ export default function RepairHistorySend() {
 
     if (cmp) r.sort(cmp);
     return r;
-  }, [rows, searchText, sortKey, onlyUnsent]);
+  }, [rows, searchText, sortKey, onlyUnsent, onlySuccess, onlyError, onlyNew, onlyUpdated, onlyDeleted]);
   
   const focusedRow = useMemo(() => {
     const serial = focusedId ?? filteredRows[0]?.est_serial ?? null;
@@ -553,9 +982,9 @@ export default function RepairHistorySend() {
       {
         key: "ts_rstcode",
         title: "상태",
-        width: "7%",
+        width: "10%",
         align: "center",
-        render: (v, row) => <SendStatusBadge ts_serial={row.ts_serial} ts_rstcode={v} />,
+        render: (v, row) => <SendStatusBadge ts_serial={row.ts_serial} ts_rstcode={v} upd_code={row.upd_code} />,
       },
     ],
     [checkedIds, allChecked, toggleAllFiltered, sortKey] // sortKey는 없어도 되지만 두는 게 안전
@@ -578,8 +1007,8 @@ export default function RepairHistorySend() {
       ),
     },
     { key: "part_makercode", title: "부품코드", width: "10%", align: "left" },
-    { key: "payname", title: "작업내용", width: "22%", align: "left" },
-    { key: "workcodename", title: "작업", width: "10%", align: "left" },
+    { key: "payname", title: "작업내용", width: "30%", align: "left" },
+    { key: "workcodename", title: "작업", width: "8%", align: "left" },
     { key: "qty", title: "시간", width: "6%", align: "right", render: (v) => v ? String(parseFloat(v)) : "" },
     { key: "paysum",  title: "공임액", width: "9%", align: "right", render: (v) => formatMoney(v) },
     { key: "partsum", title: "부품액", width: "9%", align: "right", render: (v) => formatMoney(v) },
@@ -670,73 +1099,27 @@ export default function RepairHistorySend() {
     return true;
   };
 
-  const onNew = () => info("신규");
-  const onAosLoad = () => info("AOS 견적 불러오기");
+  const onNew = async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    try {
+      const res = await createAosEst({
+        inday: today,
+        userid: getUserid(),
+        w_manname: companyForm.supman || "",
+      });
+      if (String(res?.result) === "false") { warning(res?.msg || "채번 실패"); return; }
+      const newSerial = res?.newserial || res?.est_serial || "";
+      if (!newSerial) { warning("채번된 견적번호가 없습니다."); return; }
+      setEditEstSerial(newSerial);
+      setIsNewEdit(true);
+      setEditOpen(true);
+    } catch (e) { warning(e?.message || "채번 오류"); }
+  };
+  const [aosLoadOpen, setAosLoadOpen] = useState(false);
+  const onAosLoad = () => setAosLoadOpen(true);
 
   /**
-   * 정비이력 jsondata 빌더 — 실제 국토부 API 구조
-   * @param {{ master, details, imprmn_entnum: string }} param
-   */
-  /**
-   * codecar 3번째 문자(1-index) → 차종코드
-   *  1·2·5 → '1'(승용), 4 → '2'(화물), 3 → '3'(승합)
-   */
-  function resolveVhctyAsortCode(codecar) {
-    const ch = (codecar || "").charAt(2); // 3번째 문자 (0-index=2)
-    if (["1", "2", "5"].includes(ch)) return "1";
-    if (ch === "4") return "2";
-    if (ch === "3") return "3";
-    return "";
-  }
-
-  /**
-   * paykind → cmpnt_se_code
-   *  paykind 1·2·4·6 → 'X'  (부품)
-   *  paykind 3·5     → detail.part_state (작업)
-   */
-  function resolveCmpntSeCode(d) {
-    const pk = String(d.paykind ?? "");
-    if (["1", "2", "4", "6"].includes(pk)) return "X";
-    if (["3", "5"].includes(pk))           return d.part_state || "";
-    return "";
-  }
-
-  function buildRepairJsondata({ master, details, imprmn_entnum }) {
-    return JSON.stringify({
-      ot_vhcle_imprmn_hist: [
-        {
-          imprmn_entnum:       imprmn_entnum                    || "",
-          prgcom:              "01_EST",
-          upd_code:            master.ts_serial ? "U" : "N",
-          upd_reason:          "",
-          vhrno:               master.carno                     || "",
-          cnm:                 master.carname                   || "",
-          wrhousng_de:         (master.inday  || "").slice(0, 10),
-          imprmn_compt_de:     (master.outday || "").slice(0, 10),
-          dlivy_de:            (master.outday || "").slice(0, 10),
-          imprmn_dt:           (master.inday  || "").slice(0, 10),
-          vhcty_asort_code:    resolveVhctyAsortCode(master.codecar),
-          imprmn_rspnber_nm:   companyForm.supman               || "",
-          mber_nm:             master.custom_name               || "",
-          telno:               [master.hp0, master.hp1, master.hp2].filter(Boolean).join(""),
-          trvl_dstnc:          String(master.lastkm             || "0"),
-          inner_imprmn_no:     master.ts_serial                 || "",
-          adit_imprmn_agre_at: "Y",
-          acdnt_at:            master.seccode === "12" ? "Y" : "N",
-        },
-      ],
-      ot_vhcle_imprmn_hist_dtls: details.filter((d) => d.ts_payno).map((d) => ({
-        cmpnt_se_code:        resolveCmpntSeCode(d),
-        cmpnt_detail_nm:      d.payname                        || "",
-        work_id:              d.ts_payno                       || "",
-        car_maker_part_cls:   d.part_makercode                 || "",
-        cmpnt_co:             parseInt(d.qty     || 0, 10)     || 0,
-        cmpnt_by_wage_amount: parseInt(d.paysum  || 0, 10)     || 0,
-        cmpnt_amount_tot:     parseInt(d.partsum || 0, 10)     || 0,
-        insurance_yn:         master.seccode === "12" ? "Y" : "N",
-      })),
-    });
-  }
+   * buildRepairJsondata → src/utils/repairJsondata.js 공통 유틸 사용
 
   /**
    * 국토부 정비이력 전송 (체크된 건 순차 처리)
@@ -746,19 +1129,32 @@ export default function RepairHistorySend() {
     const ids = idsOverride ?? checkedIds;
     if (ids.size === 0) return warning("전송할 건을 체크하세요.");
 
-    // MSG50000(성공) 건이 포함되어 있으면 안내
-    const hasSuccess = filteredRows.some(
-      (r) => ids.has(r.est_serial) && r.ts_serial && r.ts_rstcode === "MSG50000"
-    );
-    if (hasSuccess) warning("전송완료(성공) 건은 [정비이력 삭제] 버튼을 사용하세요.");
-
-    // ts_serial = '' 인 건만 전송 대상
+    // 전송 대상 필터링
+    // - 첫 전송: ts_serial = ''
+    // - 재전송:  ts_serial ≠ '' && ts_rstcode ≠ '' (처리중 제외)
     const validIds = new Set(
       filteredRows
-        .filter((r) => ids.has(r.est_serial) && !r.ts_serial)
+        .filter((r) => {
+          if (!ids.has(r.est_serial)) return false;
+          if (!r.ts_serial) return true;              // 첫 전송
+          if (!r.ts_rstcode) return false;            // 처리중 → 불가
+          return true;                                // 재전송 가능
+        })
         .map((r) => r.est_serial)
     );
-    if (validIds.size === 0) return warning("전송할 건이 없습니다. (미전송 건만 전송 가능합니다)");
+    if (validIds.size === 0) return warning("전송할 건이 없습니다.\n(처리중인 건은 결과 수신 후 재전송 가능합니다)");
+
+    // 경정사유 필요 여부 확인 (MSG50000 성공 건이 포함된 경우)
+    const targetRows = filteredRows.filter((r) => validIds.has(r.est_serial));
+    const needsAmend = (r) => r.ts_rstcode === "MSG50000" && r.upd_code !== "D";
+    const hasAmendRows = targetRows.some(needsAmend);
+
+    let upd_reason = "";
+    if (hasAmendRows) {
+      const input = await promptAmendReason();
+      if (input === null) return; // 취소 → stop
+      upd_reason = input;
+    }
     // 이하 validIds 로 처리
 
     const userid = companyForm.ts_userid;
@@ -798,13 +1194,27 @@ export default function RepairHistorySend() {
     try { ip_adres = await fetchClientIp(); } catch { /* empty */ }
 
     // 2. 체크된 행 순차 전송 (validIds 기준)
-    const targetRows = filteredRows.filter((r) => validIds.has(r.est_serial));
     let okCount = 0;
     const failMessages = [];
 
     for (const master of targetRows) {
       const details = allDetail.filter((d) => d.est_serial === master.est_serial);
-      const jsondata = buildRepairJsondata({ master, details, imprmn_entnum });
+
+      // row별 upd_code / inner_imprmn_no 결정
+      const rowIsAmend   = needsAmend(master);
+      const rowUpdCode   = rowIsAmend ? "U" : "N";
+      const rowUpdReason = rowIsAmend ? upd_reason : "";
+      const rowInnerNo   = rowIsAmend ? (master.ts_serial || "") : "";
+
+      const jsondata = buildRepairJsondata({
+        master,
+        details,
+        imprmn_entnum,
+        supman:          companyForm.supman || "",
+        upd_code:        rowUpdCode,
+        upd_reason:      rowUpdReason,
+        inner_imprmn_no: rowInnerNo,
+      });
 
       let sendRes;
       try {
@@ -832,23 +1242,24 @@ export default function RepairHistorySend() {
         continue;
       }
 
-      // 3-a. 전송 성공 → inner_imprmn_no 로 ts_serial 갱신
+      // 3-a. 전송 성공 → inner_imprmn_no 로 ts_serial 갱신 (탭별 API 분기)
       const newTsSerial = sendRes?.inner_imprmn_no || "";
       if (newTsSerial) {
         try {
-          await updateTsSerial(master.est_serial, newTsSerial);
+          await tabConfig.updateTsSerialFn(master.est_serial, newTsSerial);
         } catch {
-          // ts_serial 갱신 실패는 전송 성공으로 처리 (경고만)
           failMessages.push(`[${master.carno}] 전송은 성공했으나 ts_serial 갱신 실패`);
         }
       }
 
-      // 3-b. 전송 성공 → 정비상세 국토부코드(ts_payno) 갱신
+      // 3-a2. 기존 전송결과 삭제 (재전송 시 이전 결과 초기화)
+      try { await deleteTsRst(master.est_serial); } catch { /* continue */ }
+
+      // 3-b. 전송 성공 → 정비상세 국토부코드(ts_payno) 갱신 (탭별 API 분기)
       try {
         const estDetails = allDetail.filter((d) => d.est_serial === master.est_serial);
-        await updateEstbTsPayno(master.est_serial, estDetails);
+        await tabConfig.updateEstbFn(master.est_serial, estDetails);
       } catch {
-        // 상세 갱신 실패는 전송 성공으로 처리 (경고만)
         failMessages.push(`[${master.carno}] 전송은 성공했으나 상세 국토부코드 갱신 실패`);
       }
 
@@ -867,14 +1278,14 @@ export default function RepairHistorySend() {
       }
     }
 
-    // 4. 목록 새로고침
-    const res = await fetchAosEstimate(outFrom, outTo);
+    // 4. 목록 새로고침 (탭별 fetch 분기)
+    const res = await tabConfig.fetchFn(outFrom, outTo);
     setRows(res?.dataset ?? []);
     setAllDetail(res?.dataset2 ?? []);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [checkedIds, companyForm, filteredRows, allDetail, outFrom, outTo]);
+  }, [checkedIds, companyForm, filteredRows, allDetail, outFrom, outTo, tabConfig]);
 
-  const onRefresh = () => onQuery();
+  const onRefresh = () => onQuery(activeTab);
 
   /**
    * 정비이력 삭제 (ts_serial ≠ '' && ts_rstcode = 'MSG50000' 인 건만)
@@ -921,11 +1332,11 @@ export default function RepairHistorySend() {
         continue;
       }
 
-      // 2. ts_serial 초기화
-      try { await clearTsSerial(row.est_serial); } catch { /* continue */ }
-
-      // 3. 전송결과 삭제
+      // 2. 전송결과 삭제
       try { await deleteTsRst(row.est_serial); } catch { /* continue */ }
+
+      // 3. ts_serial 동일값 전달 → 서버에서 전송일자 갱신 (탭별 API 분기)
+      try { await tabConfig.updateTsSerialFn(row.est_serial, row.ts_serial); } catch { /* continue */ }
 
       okCount++;
     }
@@ -939,15 +1350,18 @@ export default function RepairHistorySend() {
         : warning(`삭제 실패\n${failText}`);
     }
 
-    // 완료 후 새로고침
-    await onQuery();
+    // 완료 후 새로고침 (activeTab을 명시적으로 전달해 stale closure 방지)
+    await onQuery(activeTab);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [checkedIds, filteredRows, companyForm, tsLogin, deleteRepairHistory, clearTsSerial, deleteTsRst]);
+  }, [checkedIds, filteredRows, companyForm, tsLogin, deleteRepairHistory, deleteTsRst, activeTab, tabConfig]);
 
   const onSendInquiry = () => requireFocused() && info(`정비이력 전송조회: ${focusedRow.id}`);
-  const onQuery = useCallback(async () => {
-    // ① 목록 조회
-    const res = await fetchAosEstimate(outFrom, outTo);
+  const onQuery = useCallback(async (tabOverride) => {
+    const tab = tabOverride ?? activeTab;
+    // ① 목록 조회 (탭별 API 분기)
+    const res = await (tab === "aos"
+      ? fetchAosEstimate(outFrom, outTo)
+      : fetchTsRepairList(outFrom, outTo));
     const newRows      = res?.dataset  ?? [];
     const newAllDetail = res?.dataset2 ?? [];
     setRows(newRows);
@@ -955,9 +1369,9 @@ export default function RepairHistorySend() {
     setFocusedId(null);
     setCheckedIds(new Set());
 
-    // ② 전송상태 조회 대상: ts_serial 있고 아직 최종확인(MSG50000) 아닌 행
+    // ② 전송상태 조회 대상: ts_serial 있고 아직 결과 미수신(ts_rstcode='') 인 행
     const stateTargets = newRows.filter(
-      (r) => r.ts_serial && r.ts_rstcode !== "MSG50000"
+      (r) => r.ts_serial && r.ts_rstcode === ""
     );
     if (stateTargets.length === 0) return;
 
@@ -999,20 +1413,28 @@ export default function RepairHistorySend() {
       );
       if (!matchRow) continue;
 
-      try {
-        await updateTsResult({
-          est_serial: matchRow.est_serial,
-          ts_rstcode: st.cntc_result_code || "",
-          ts_rst:     st.cntc_result_dtls || "",
-          upd_code:   st.upd_code         || "",
-          send_de:    st.send_de          || "",
-        });
-      } catch { /* 저장 실패해도 계속 */ }
+      const cntcCode = st.cntc_result_code || "";
+
+      // ts_rstcode = '' (처리중) 이면 est_ts_rst_c.aspx 호출 안 함
+      if (cntcCode) {
+        try {
+          await updateTsResult({
+            est_serial: matchRow.est_serial,
+            ts_serial:  matchRow.ts_serial  || "",
+            ts_rstcode: cntcCode,
+            ts_rst:     st.cntc_result_dtls || "",
+            upd_code:   st.upd_code         || "",
+            send_de:    st.send_de          || "",
+            gubun:      tab === "aos" ? "1" : "0",
+          });
+        } catch { /* 저장 실패해도 계속 */ }
+      }
 
       updMap[matchRow.est_serial] = {
-        ts_rstcode:  st.cntc_result_code || "",
-        ts_result_msg: st.cntc_result_dtls || "",
-        send_de:     st.send_de          || "",
+        ts_rstcode: cntcCode,
+        ts_rst:     st.cntc_result_dtls || "",
+        upd_code:   st.upd_code         || "",
+        send_de:    st.send_de          || "",
       };
     }
 
@@ -1022,32 +1444,46 @@ export default function RepairHistorySend() {
         prev.map((r) => updMap[r.est_serial] ? { ...r, ...updMap[r.est_serial] } : r)
       );
     }
-  }, [fetchAosEstimate, outFrom, outTo, companyForm, tsLogin, fetchRepairState, updateTsResult]);
+  }, [activeTab, fetchAosEstimate, fetchTsRepairList, outFrom, outTo, companyForm, tsLogin, fetchRepairState, updateTsResult]);
+
+  /** 탭 전환: 목록 초기화 후 해당 탭 조회 */
+  const handleTabChange = useCallback(async (tab) => {
+    if (tab === activeTab) return;
+    setActiveTab(tab);
+    setRows([]);
+    setAllDetail([]);
+    setFocusedId(null);
+    setCheckedIds(new Set());
+    await onQuery(tab); // tabOverride로 전달해 stale closure 회피
+  }, [activeTab, onQuery]);
 
   // ====== 초기 조회 (복원된 출고일자 or 금월) ======
   useEffect(() => {
     onQuery();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  // const onModify = () => requireFocused() && info(`수정: ${focusedRow.id}`);
-  const onDelete  = () => requireFocused() && info(`삭제: ${focusedRow.id}`);
+
+  const onDelete = async () => {
+    if (!requireFocused()) return;
+    const ok = await remove(`[${focusedRow.carno}] 견적을 삭제하시겠습니까?`, "견적 삭제");
+    if (!ok) return;
+
+    try {
+      const res = await deleteAosEst(focusedRow.est_serial);
+      if (String(res?.result) === "false") {
+        warning(res?.msg || "삭제 중 오류가 발생했습니다.");
+        return;
+      }
+      success("삭제되었습니다.");
+      await onQuery(activeTab);
+    } catch (e) {
+      warning(e?.message || "삭제 중 오류가 발생했습니다.");
+    }
+  };
 
   const onModify = () => {
     if (!requireFocused()) return;
-    setEditInit({
-      carno: focusedRow.carno || "",
-      carname: focusedRow.carname || "",
-      lastkm: focusedRow.lastkm ?? "",
-      vinno: focusedRow.vinno || "",
-      w_manname: focusedRow.w_manname || "",
-      custom_name: focusedRow.custom_name || "",
-      hp0: focusedRow.hp0 || "",
-      hp1: focusedRow.hp1 || "",
-      hp2: focusedRow.hp2 || "",
-      car_registday: focusedRow.car_registday || "",
-      inday: focusedRow.inday || "",
-      outday: focusedRow.outday || "",
-      accday: focusedRow.accday || "",
-    });
+    setEditEstSerial(focusedRow.est_serial);
+    setIsNewEdit(false);
     setEditOpen(true);
   };
   
@@ -1077,29 +1513,55 @@ export default function RepairHistorySend() {
       </div>
 
       <div className="mx-auto max-w-[1400px] w-full px-4 py-4 flex-1 min-h-0 overflow-hidden flex flex-col">
+        {/* 1-b) 탭 — AOS 견적 / ADL 견적 */}
+        <div className="mb-3 flex gap-0 border-b border-zinc-200">
+          {[
+            { key: "aos", label: "AOS 견적" },
+            { key: "adl", label: "ADL 견적" },
+          ].map(({ key, label }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => handleTabChange(key)}
+              className={`px-5 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+                activeTab === key
+                  ? "border-zinc-900 text-zinc-900"
+                  : "border-transparent text-zinc-400 hover:text-zinc-700"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         {/* 2) Global Action (버튼 나열: 보험견적처럼 별도 라인) */}
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
-              onClick={onNew}
-            >
-              + 신규
-            </button>
+            {activeTab === "aos" && (
+              <button
+                className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={onNew}
+                disabled={creating}
+              >
+                {creating ? "처리 중…" : "+ 신규"}
+              </button>
+            )}
 
-            <button
-              className="rounded-md border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-50"
-              onClick={onAosLoad}
-            >
-              AOS 견적 불러오기
-            </button>
+            {activeTab === "aos" && (
+              <button
+                className="rounded-md border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-50"
+                onClick={onAosLoad}
+              >
+                AOS 견적 불러오기
+              </button>
+            )}
 
             <button
               className="rounded-md bg-sky-200 px-4 py-2 text-sm font-semibold text-zinc-900 hover:bg-sky-100 disabled:opacity-50 disabled:cursor-not-allowed"
               onClick={() => onSend()}
               disabled={sending}
             >
-              {sending ? "전송 중…" : "정비이력 전송"}
+              정비이력 전송
             </button>
 
             <button
@@ -1107,7 +1569,7 @@ export default function RepairHistorySend() {
               onClick={() => onSendDelete()}
               disabled={deleting}
             >
-              {deleting ? "삭제 중…" : "정비이력 삭제"}
+              정비이력 삭제
             </button>
 
             <button
@@ -1194,7 +1656,7 @@ export default function RepairHistorySend() {
 
               <button
                 className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
-                onClick={onQuery}
+                onClick={() => onQuery(activeTab)}
               >
                 조회
               </button>
@@ -1225,17 +1687,71 @@ export default function RepairHistorySend() {
                 미전송건
               </label>
 
+              <label className="inline-flex items-center gap-2 text-sm text-zinc-700 select-none">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={onlySuccess}
+                  onChange={(e) => setOnlySuccess(e.target.checked)}
+                />
+                성공건
+              </label>
+
+              <label className="inline-flex items-center gap-2 text-sm text-zinc-700 select-none">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={onlyError}
+                  onChange={(e) => setOnlyError(e.target.checked)}
+                />
+                오류건
+              </label>
+
+              {/* 구분선 */}
+              <span className="text-zinc-300 select-none">|</span>
+
+              <label className="inline-flex items-center gap-2 text-sm text-zinc-700 select-none">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={onlyNew}
+                  onChange={(e) => setOnlyNew(e.target.checked)}
+                />
+                신규
+              </label>
+
+              <label className="inline-flex items-center gap-2 text-sm text-zinc-700 select-none">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={onlyUpdated}
+                  onChange={(e) => setOnlyUpdated(e.target.checked)}
+                />
+                수정
+              </label>
+
+              <label className="inline-flex items-center gap-2 text-sm text-zinc-700 select-none">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={onlyDeleted}
+                  onChange={(e) => setOnlyDeleted(e.target.checked)}
+                />
+                삭제
+              </label>
+
               <select
                 value={sortKey}
                 onChange={(e) => setSortKey(e.target.value)}
                 className="select-base ml-auto"
               >
-                <option value="1">1.입력순</option>
+                <option value="1">1. 입력순</option>
                 <option value="2">2. 입고일자순</option>
-                <option value="3">3. 차량번호순</option>
-                <option value="4">4. 고객명순</option>
-                <option value="5">5. 차량명순</option>
-                <option value="6">6. 연락처순</option>
+                <option value="7">3. 출고일자순</option>
+                <option value="3">4. 차량번호순</option>
+                <option value="4">5. 고객명순</option>
+                <option value="5">6. 차량명순</option>
+                <option value="6">7. 연락처순</option>
               </select>
             </div>
 
@@ -1250,8 +1766,8 @@ export default function RepairHistorySend() {
             <div className="text-xs text-zinc-500">{filteredRows.length}건</div>
             {focusedRow && (
               <div className="ml-auto flex items-center gap-1.5">
-                <SmallBtn onClick={onModify}>수정</SmallBtn>
-                <SmallBtn onClick={onDelete}>삭제</SmallBtn>
+                {activeTab === "aos" && <SmallBtn onClick={onModify}>수정</SmallBtn>}
+                {activeTab === "aos" && <SmallBtn onClick={onDelete}>삭제</SmallBtn>}
                 <SmallBtn
                   onClick={() => onSend(new Set([focusedRow.est_serial]))}
                   disabled={sending}
@@ -1263,14 +1779,14 @@ export default function RepairHistorySend() {
           </div>
 
           <div className="relative min-h-0 flex-1 overflow-hidden">
-            <TableLoadingOverlay loading={listLoading} />
+            <TableLoadingOverlay loading={listLoading2} />
             <FixedHeadTable
               columns={mainColumns}
               rows={filteredRows}
               rowKey={(r) => r.est_serial}
               selectedKey={focusedId}
               onRowClick={(r) => setFocusedId(r.est_serial)}
-              onRowDoubleClick={(r) => { setFocusedId(r.est_serial); onModify(); }}
+              onRowDoubleClick={(r) => { setFocusedId(r.est_serial); if (activeTab === "aos") onModify(); }}
               getRowProps={(r) => ({
                 onContextMenu: (e) => {
                   e.preventDefault();
@@ -1308,7 +1824,7 @@ export default function RepairHistorySend() {
                 국토부 전송상태 :
               </span>
               <span className="ml-1 text-zinc-700">
-                {focusedRow?.ts_result_msg }
+                {focusedRow?.ts_rst}
               </span>
             </div>
           </div>
@@ -1342,15 +1858,27 @@ export default function RepairHistorySend() {
 
       </div>
 
+      <AosLoadModal
+        open={aosLoadOpen}
+        onClose={async () => {
+          setAosLoadOpen(false);
+          await onQuery(activeTab);
+        }}
+      />
+
       <RepairHistoryEditModal
         open={editOpen}
-        initial={editInit}
-        onClose={() => setEditOpen(false)}
-        onSave={(form) => {
-          // TODO: 실제 저장 API 연결(useApi 훅)
-          // useAlert().success("저장되었습니다.");
+        estSerial={editEstSerial}
+        isNew={isNewEdit}
+        wrk03Codes={wrk03Codes}
+        paynoList={paynoList}
+        onClose={async () => {
+          const savedId = editEstSerial;
           setEditOpen(false);
+          await onQuery(activeTab);
+          if (savedId) setFocusedId(savedId);
         }}
+        onSaved={() => { /* 개별 저장은 모달 내에서 처리 */ }}
       />
 
 
@@ -1445,6 +1973,20 @@ export default function RepairHistorySend() {
         </SimplePopover>
       )}
 
+      <AmendReasonModal
+        open={amendModalOpen}
+        onConfirm={(val) => {
+          setAmendModalOpen(false);
+          amendResolverRef.current?.(val);
+          amendResolverRef.current = null;
+        }}
+        onCancel={() => {
+          setAmendModalOpen(false);
+          amendResolverRef.current?.(null);
+          amendResolverRef.current = null;
+        }}
+      />
+
       {contextMenu && (
         <RowContextMenu
           x={contextMenu.x}
@@ -1454,6 +1996,7 @@ export default function RepairHistorySend() {
           onModify={() => { setContextMenu(null); onModify(); }}
           onDelete={() => { setContextMenu(null); onDelete(); }}
           onSend={() => { const ids = new Set([contextMenu.row.est_serial]); setContextMenu(null); onSend(ids); }}
+          showEditDelete={activeTab === "aos"}
         />
       )}
 

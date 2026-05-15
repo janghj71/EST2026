@@ -143,6 +143,7 @@ export function useTsRepairDelete() {
   const deleteRepairHistory = useCallback(
     async ({ imprmn_entnum, servicecode, inner_imprmn_no }) => {
       const res = await refetch({ imprmn_entnum, servicecode, inner_imprmn_no });
+      console.log("[deleteRepairHistory] response:", res);
       throwIfFalse(res);
       return res;
     },

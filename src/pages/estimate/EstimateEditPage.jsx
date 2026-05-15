@@ -15,10 +15,14 @@ import { openCenteredWindow } from "../../utils/popup";
 // import { formatNumber } from "../../utils/numberFormat";
 import { useEstimate } from "../../hooks/useEstimate";
 import { useMasterEstimateSave } from "../../hooks/useMasterEstimateSave";
+import { useCompanyInfo } from "../../hooks/useCompanyInfo";
+import { useTsLogin, useTsRepairSend, useTsRepairState, useClientIp } from "../../hooks/useTs_Repair";
+import { buildRepairJsondata } from "../../utils/repairJsondata";
 import { useEstimateClaimSave } from "../../hooks/useEstimateClaimSave";
 import { useEstimateDetailSave } from "../../hooks/useEstimateDetailSave";
 import { useEstimateDetailDelete } from "../../hooks/useEstimateDetailDelete";
 import { useEstimateClaims } from "../../hooks/useEstimateClaims";
+import { useEstTsRstDelete, useMasterEstimatebUpdate } from "../../hooks/useAosEstimate";
 import { useLoading } from "../../loading/useLoading";
 import TableLoadingOverlay from "../../components/TableLoadingOverlay";
 import { getUserid, getComcode } from "../../api/config";
@@ -57,17 +61,68 @@ const coatStatename = (coatKind, pntkind) => {
   }[coatKind] ?? "";
 };
 
+function AmendReasonModal({ open, onConfirm, onCancel }) {
+  const [value, setValue] = React.useState("");
+  React.useEffect(() => { if (open) setValue(""); }, [open]);
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/40" onClick={onCancel} />
+      <div className="relative w-full max-w-sm rounded-md border border-zinc-200 bg-white shadow-xl p-5 flex flex-col gap-4">
+        <div className="text-sm font-semibold text-zinc-900">경정사유 입력</div>
+        <input
+          autoFocus
+          className="h-9 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-gray-900/10 w-full"
+          placeholder="경정사유를 입력하세요"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onConfirm(value);
+            if (e.key === "Escape") onCancel();
+          }}
+        />
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            className="h-9 rounded-md border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
+            onClick={onCancel}
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            className="h-9 rounded-md bg-zinc-900 px-4 text-sm font-semibold text-white hover:bg-zinc-800"
+            onClick={() => onConfirm(value)}
+          >
+            확인
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function EstimateEditPage() {
   const navigate = useNavigate();
   const { est_serial } = useParams();
 
   const { fetchMasterById, fetchDetails, fetchOverlap } = useEstimate();
   const { save, saving } = useMasterEstimateSave();
+  const { form: companyForm } = useCompanyInfo();
+  const { tsLogin } = useTsLogin();
+  const { sendRepairHistory } = useTsRepairSend();
+  const { fetchRepairState } = useTsRepairState();
+  const { fetchClientIp } = useClientIp();
+  const { deleteTsRst } = useEstTsRstDelete();
+  const { updateMasterEstimatebTsPayno } = useMasterEstimatebUpdate();
   const { saveClaim } = useEstimateClaimSave();
   const { fetchClaims } = useEstimateClaims();
-  const { error: alertError, info: alertInfo } = useAlert();
+  const { error: alertError, info: alertInfo, warning: alertWarning, success: alertSuccess } = useAlert();
   const { withLoading } = useLoading();
   const [detailLoading, setDetailLoading] = useState(false);
+  const [amendModalOpen, setAmendModalOpen] = useState(false);
+  const amendResolverRef = useRef(null);
 
   const [master, setMaster] = useState({});
   const [rows, setRows] = useState([]);
@@ -2173,6 +2228,124 @@ export default function EstimateEditPage() {
       .catch(() => {});
   }, [sideActive, saveSingleDetail]);
 
+  // 국토부 정비이력 전송
+  const promptAmendReason = useCallback(() => {
+    setAmendModalOpen(true);
+    return new Promise((resolve) => { amendResolverRef.current = resolve; });
+  }, []);
+
+  const handleTsRepairSend = useCallback(async () => {
+    // ① 입력값 체크
+    if (!master.carno)  return alertWarning("차량번호를 입력하세요.");
+    if (!master.lastkm) return alertWarning("주행거리를 입력하세요.");
+
+    // ② 로그인
+    const userid = companyForm.ts_userid;
+    const passwd = companyForm.ts_userpwd;
+    const idno   = companyForm.idNo;
+    if (!userid || !passwd) return alertWarning("업체정보에 국토부 아이디/비밀번호를 설정하세요.");
+
+    let loginRes;
+    try {
+      loginRes = await tsLogin({ idno, userid, passwd });
+    } catch (e) {
+      return alertError(`국토부 로그인 실패: ${e?.message || ""}`);
+    }
+    const imprmn_entnum = loginRes?.imprmn_entnum || "";
+    const servicecode   = loginRes?.servicecode   || "";
+
+    // ④ ts_serial 있으면 상태조회
+    let inner_imprmn_no = master.ts_serial || "";
+    let upd_code;
+    let upd_reason = "";
+    if (master.ts_serial) {
+      let stateRes;
+      try {
+        stateRes = await fetchRepairState({
+          imprmn_entnum,
+          servicecode,
+          ts_serials: [master.ts_serial],
+        });
+      } catch (e) {
+        return alertError(`상태조회 실패: ${e?.message || ""}`);
+      }
+
+      const stateItem = (stateRes?.ts_repair_state ?? [])[0];
+      const cntcCode  = stateItem?.cntc_result_code ?? "";
+
+      if (cntcCode === "") {
+        // 미전송(처리중) → stop
+        return alertWarning("전송 처리 중입니다. 잠시 후 다시 시도하세요.");
+      }
+
+      if (cntcCode === "MSG50000") {
+        // 전송완료 → upd_code 확인
+        const updCode = stateItem?.upd_code ?? "";
+        if (updCode !== "D") {
+          const input = await promptAmendReason();
+          if (input === null) return;
+          upd_code = "U";
+          upd_reason = input;
+        }
+        if (updCode === "D") {
+          upd_code = "N";
+          inner_imprmn_no = ""; // 삭제됨 → 신규전송
+        }
+        // 그 외 upd_code → inner_imprmn_no = ts_serial 유지
+      }
+      // cntcCode 가 그 외(오류 등)이면 그냥 진행
+    }
+
+    // ⑤ IP 조회
+    let ip_adres = "";
+    try { ip_adres = await fetchClientIp(); } catch { /* 무시 */ }
+
+    // ⑥ 전송
+    const jsondata = buildRepairJsondata({
+      master,
+      details: rows,
+      imprmn_entnum,
+      supman: companyForm.supman || "",
+      inner_imprmn_no,
+      upd_code,
+      upd_reason,
+    });
+
+    let sendRes;
+    try {
+      sendRes = await sendRepairHistory({ servicecode, ip_adres, macadrs: "", jsondata });
+    } catch (e) {
+      return alertError(`전송 실패: ${e?.message || ""}`);
+    }
+
+    // ⑦ 성공 후 master 저장 (ts_serial 갱신 포함) → 단건 재조회
+    const newTsSerial = sendRes?.inner_imprmn_no || master.ts_serial || "";
+    try {
+      await save(est_serial, { ...masterWithSums(), ts_serial: newTsSerial, ts_send_dt: "" });
+    } catch { /* 저장 실패는 무시 */ }
+
+    try {
+      await deleteTsRst(est_serial);
+    } catch { /* ignore delete failure */ }
+
+    try {
+      await updateMasterEstimatebTsPayno(est_serial, rows);
+    } catch { /* ignore detail update failure */ }
+
+    try {
+      const json = await fetchMasterById(est_serial);
+      const row  = json?.dataset?.[0];
+      if (row) setMaster((prev) => ({ ...prev, ...row }));
+    } catch { /* 재조회 실패는 무시 */ }
+
+    alertSuccess("정비이력 전송 완료");
+  }, [
+    master, rows, companyForm, est_serial,
+    save, masterWithSums, fetchMasterById,
+    tsLogin, fetchRepairState, fetchClientIp, sendRepairHistory, deleteTsRst, updateMasterEstimatebTsPayno, promptAmendReason,
+    alertWarning, alertError, alertSuccess,
+  ]);
+
   // 견적정산 탭 진입 시: 먼저 저장 후 SettlePanel 재조회 트리거
   const handleSettleEnter = useCallback(async () => {
     try {
@@ -2385,6 +2558,8 @@ export default function EstimateEditPage() {
                 sidePanelOpen={sidePanelOpen}
                 est_serial={est_serial}
                 onSharedEstimateSelect={handleSharedEstimateSelect}
+                onTsRepairSend={handleTsRepairSend}
+                masterSendState={master.ts_send_dt || ""}
                 readOnly={isLocked}
               />
               
@@ -2412,6 +2587,20 @@ export default function EstimateEditPage() {
       </div>
 
       {/* 청구처 선택 */}
+      <AmendReasonModal
+        open={amendModalOpen}
+        onConfirm={(val) => {
+          setAmendModalOpen(false);
+          amendResolverRef.current?.(val);
+          amendResolverRef.current = null;
+        }}
+        onCancel={() => {
+          setAmendModalOpen(false);
+          amendResolverRef.current?.(null);
+          amendResolverRef.current = null;
+        }}
+      />
+
       <ClaimSelectModal
         open={claimSelectOpen}
         onClose={() => setClaimSelectOpen(false)}

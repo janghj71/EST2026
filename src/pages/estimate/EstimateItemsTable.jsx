@@ -279,6 +279,8 @@ export default function EstimateItemsTable({
   sidePanelOpen = false,
   est_serial,
   onSharedEstimateSelect,
+  onTsRepairSend,
+  masterSendState = "",
   readOnly = false,
 }) {
   const sensors = useSensors(
@@ -1190,7 +1192,6 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
     return { sumLabor: labor, sumPart: part, sumSupply: supply, sumVat: vat, sumTotal: supply + vat };
   }, [rows, paysumEditingOrgSeq, paysumBeforeEdit, partsumEditingOrgSeq, partsumBeforeEdit]);
 
-  const masterSendState = ""; // TODO (지금은 화면만)
 
   const insertAfterSelected = useCallback(
     (paykind) => {
@@ -1509,7 +1510,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
           </div>
 
           <IconBtn icon={ArrowDownWideNarrow} label="도장 하단정렬" disabled={readOnly} onClick={onMovePaintToBottom} />
-          <IconBtn icon={Send} label="정비이력전송" onClick={() => alert("TODO")} />
+          <IconBtn icon={Send} label="정비이력전송" onClick={onTsRepairSend} />
           <IconBtn icon={Share2} label="공유견적" disabled={readOnly} onClick={() => setSharedEstOpen(true)} />
         </div>
       </div>
@@ -1575,7 +1576,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
 
       <div className="border-t border-zinc-200" />
         <div className="px-4 py-2 text-sm text-zinc-700">
-          정비이력 전송: <span className="text-zinc-500">{masterSendState || ""}</span>
+          <span className="font-bold">정비이력 전송 : </span> <span className="text-zinc-500">{masterSendState || ""}</span>
         </div>
       </div>
 

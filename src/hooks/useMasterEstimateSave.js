@@ -2,7 +2,7 @@
 import { useCallback } from "react";
 import { useApi } from "./useApi";
 import { apiOk } from "../api/apiOk";
-import { toInt } from "../utils/numberFormat";
+import { toInt, toDecimal } from "../utils/numberFormat";
 import { getUserid } from "../api/config";
 
 /** master 객체 + serial → est_masterestimate_u.aspx 파라미터로 변환 */
@@ -43,18 +43,18 @@ function masterToParams(serial, master) {
     reqday:         master.reqday         ?? "",
     isest:          master.isest          ?? "",
     lastkm:         toInt(master.lastkm),
-    xpay:        master.seccode === "12"
-                   ? (master.claims?.[0]?.xpay        ?? master.xpay        ?? "")
-                   : (master.xpay        ?? ""),
-    bpay:        master.seccode === "12"
-                   ? (master.claims?.[0]?.bpay        ?? master.bpay        ?? "")
-                   : (master.bpay        ?? ""),
-    ppay:        master.seccode === "12"
-                   ? (master.claims?.[0]?.ppay        ?? master.ppay        ?? "")
-                   : (master.ppay        ?? ""),
-    pntrate_sec: master.seccode === "12"
-                   ? (master.claims?.[0]?.pntrate_sec ?? master.pntrate_sec ?? "")
-                   : (master.pntrate_sec ?? ""),
+    xpay:        toInt(master.seccode === "12"
+                   ? (master.claims?.[0]?.xpay        ?? master.xpay)
+                   : master.xpay),
+    bpay:        toInt(master.seccode === "12"
+                   ? (master.claims?.[0]?.bpay        ?? master.bpay)
+                   : master.bpay),
+    ppay:        toInt(master.seccode === "12"
+                   ? (master.claims?.[0]?.ppay        ?? master.ppay)
+                   : master.ppay),
+    pntrate_sec: toDecimal(master.seccode === "12"
+                   ? (master.claims?.[0]?.pntrate_sec ?? master.pntrate_sec)
+                   : master.pntrate_sec),
     paint:          master.paint          ?? "",
     driver_nm:      master.driver_nm      ?? "",
     carsale_amt:    toInt(master.carsale_amt),
@@ -118,4 +118,30 @@ export function useMasterEstimateSave() {
   );
 
   return { save, saving, updateEstPrint, printUpdating };
+}
+
+/**
+ * 국토부 전송 후 ts_serial / ts_send_dt 갱신
+ * params: comcode(자동), est_serial, ts_serial, ts_send_dt
+ */
+export function useMasterEstimateTsUpdate() {
+  const { refetch } = useApi({
+    path: "/est_masterestimate_u.aspx",
+    method: "POST",
+    bodyType: "form",
+    immediate: false,
+  });
+
+  /**
+   * @param {string} est_serial
+   * @param {string} ts_serial   국토부 정비이력번호 (inner_imprmn_no)
+   * @param {string} ts_send_dt  전송일시 ('' 로 초기화 시 사용)
+   */
+  const updateMasterTsSerial = useCallback(
+    (est_serial, ts_serial, ts_send_dt = "") =>
+      refetch({ est_serial, ts_serial, ts_send_dt }),
+    [refetch]
+  );
+
+  return { updateMasterTsSerial };
 }
