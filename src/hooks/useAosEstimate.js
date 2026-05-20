@@ -32,7 +32,10 @@ export function useAosEstimate() {
    * @returns {{ dataset: any[], dataset2: any[] }}
    */
   const fetchAosEstimate = useCallback(
-    (outday1, outday2) => refetch({ outday1, outday2 }),
+    (day1, day2, byTsSend = false) =>
+      byTsSend
+        ? refetch({ ts_send_dt1: day1, ts_send_dt2: day2 })
+        : refetch({ outday1: day1, outday2: day2 }),
     [refetch]
   );
 
@@ -158,7 +161,10 @@ export function useTsRepairList() {
   });
 
   const fetchTsRepairList = useCallback(
-    (outday1, outday2) => refetch({ outday1, outday2 }),
+    (day1, day2, byTsSend = false) =>
+      byTsSend
+        ? refetch({ ts_send_dt1: day1, ts_send_dt2: day2 })
+        : refetch({ outday1: day1, outday2: day2 }),
     [refetch]
   );
 
@@ -372,4 +378,40 @@ export function useAosEstimateUpdate() {
   );
 
   return { loading, updateTsSerial };
+}
+
+/** 대시보드 국토부 전송오류 카운트 (AOS + ADL 합산) */
+export function useDashboardTsErrors() {
+  const { refetch: aosRefetch } = useApi({
+    path: "/est_aosest_s.aspx",
+    method: "POST",
+    bodyType: "form",
+    immediate: false,
+  });
+
+  const { refetch: adlRefetch } = useApi({
+    path: "/est_ts_repair_s.aspx",
+    method: "POST",
+    bodyType: "form",
+    immediate: false,
+  });
+
+  const isError = (r) =>
+    r.ts_serial && r.ts_rstcode && r.ts_rstcode !== "MSG50000";
+
+  const fetchTsErrors = useCallback(
+    async (ts_send_dt1, ts_send_dt2) => {
+      const [aosRes, adlRes] = await Promise.all([
+        aosRefetch({ ts_send_dt1, ts_send_dt2 }),
+        adlRefetch({ ts_send_dt1, ts_send_dt2 }),
+      ]);
+      return {
+        aosErrors: (aosRes?.dataset ?? []).filter(isError),
+        adlErrors: (adlRes?.dataset ?? []).filter(isError),
+      };
+    },
+    [aosRefetch, adlRefetch]
+  );
+
+  return { fetchTsErrors };
 }

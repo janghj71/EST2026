@@ -227,3 +227,20 @@ export function useEstimate() {
   };
 }
 
+/** 대시보드 최근 작업 목록 (lupdate_dt='1') */
+export function useRecentWork() {
+  const { refetch } = useApi({
+    path: "/est_masterestimate_s.aspx",
+    method: "POST",
+    bodyType: "form",
+    immediate: false,
+  });
+
+  const fetchRecentWork = useCallback(
+    () => refetch({ lupdate_dt: "1" }),
+    [refetch]
+  );
+
+  return { fetchRecentWork };
+}
+

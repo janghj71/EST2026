@@ -1,12 +1,13 @@
 ﻿// src/pages/RepairHistorySend.jsx
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useLocation } from "react-router-dom";
 import FixedHeadTable from "../components/FixedHeadTable";
 import { X, Save, Pen, Pencil, Send, Trash2 } from "lucide-react";
 import IconBtn from "../components/IconBtn";
 import { useAlert } from "../alerts";
 import { moveFocusOnEnter } from "../utils/focusUtils";
-import { getUserid } from "../api/config";
+import { getUserid, API_TSSERVICE } from "../api/config";
 import { monthRange, addMonths } from "../utils/dateUtils";
 import { formatMoney, formatNumber } from "../utils/numberFormat";
 import { useAosEstimate, useAosEstimateUpdate, useAosEstbUpdate, useEstTsRstUpdate, useEstTsRepairUpdate, useEstTsRstDelete, useTsRepairList, useMasterEstimatebUpdate, useAosEstDelete, useAosEstSave, useAosEstSingle, useAosEstCreate, useAosEstbSave, useAosEstbDelete } from "../hooks/useAosEstimate";
@@ -17,6 +18,7 @@ import { buildRepairJsondata } from "../utils/repairJsondata";
 import TableLoadingOverlay from "../components/TableLoadingOverlay";
 import SimplePopover from "./estimate/SimplePopover";
 import AosLoadModal from "./AosLoadModal";
+import { openCenteredWindow } from "../utils/popup";
 
 
 const inputCls =
@@ -746,12 +748,23 @@ function CtxItem({ icon: Icon, children, onClick }) {
 
 export default function RepairHistorySend() {
   const { info, success, warning, remove } = useAlert();
+  const location = useLocation();
+
+  // 대시보드에서 전송일자로 진입했는지 여부 (마운트 시 고정)
+  const tsSendMode = !!location.state?.ts_send_dt1;
 
   const today = useMemo(() => new Date(), []);
   const initRange = useMemo(() => monthRange(today), [today]);
-  const [outFrom, setOutFrom] = useState(() => loadSavedFilter()?.outFrom ?? initRange.from);
-  const [outTo, setOutTo] = useState(() => loadSavedFilter()?.outTo ?? initRange.to);
+  const [outFrom, setOutFrom] = useState(() => {
+    if (location.state?.ts_send_dt1) return location.state.ts_send_dt1;
+    return loadSavedFilter()?.outFrom ?? initRange.from;
+  });
+  const [outTo, setOutTo] = useState(() => {
+    if (location.state?.ts_send_dt2) return location.state.ts_send_dt2;
+    return loadSavedFilter()?.outTo ?? initRange.to;
+  });
   const [monthAnchor, setMonthAnchor] = useState(() => {
+    if (location.state?.ts_send_dt1) return new Date(location.state.ts_send_dt1);
     const saved = loadSavedFilter()?.outFrom;
     return saved ? new Date(saved) : new Date(today.getFullYear(), today.getMonth(), 1);
   });
@@ -759,11 +772,11 @@ export default function RepairHistorySend() {
   const [sortKey, setSortKey] = useState("1"); // 1~6
   const [onlyUnsent,  setOnlyUnsent]  = useState(false);
   const [onlySuccess, setOnlySuccess] = useState(false);
-  const [onlyError,   setOnlyError]   = useState(false);
+  const [onlyError,   setOnlyError]   = useState(() => location.state?.onlyError ?? false);
   const [onlyNew,     setOnlyNew]     = useState(false); // upd_code = N
   const [onlyUpdated, setOnlyUpdated] = useState(false); // upd_code = U
   const [onlyDeleted, setOnlyDeleted] = useState(false); // upd_code = D
-  const [activeTab,   setActiveTab]   = useState("aos"); // "aos" | "adl"
+  const [activeTab,   setActiveTab]   = useState(() => location.state?.activeTab ?? "aos"); // "aos" | "adl"
   const [editOpen, setEditOpen] = useState(false);
   const [editEstSerial, setEditEstSerial] = useState(null);
   const [isNewEdit, setIsNewEdit] = useState(false);
@@ -1355,13 +1368,20 @@ export default function RepairHistorySend() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [checkedIds, filteredRows, companyForm, tsLogin, deleteRepairHistory, deleteTsRst, activeTab, tabConfig]);
 
-  const onSendInquiry = () => requireFocused() && info(`정비이력 전송조회: ${focusedRow.id}`);
+  const onSendInquiry = () => {
+    const userid = companyForm.ts_userid;
+    const passwd = companyForm.ts_userpwd;
+    if (!userid || !passwd) return warning("업체정보에 국토부 아이디/비밀번호를 설정하세요.");
+    const encodedPasswd = btoa(unescape(encodeURIComponent(passwd)));
+    const url = `${API_TSSERVICE}/login.aspx?userid=${encodeURIComponent(userid)}&passwd=${encodeURIComponent(encodedPasswd)}`;
+    openCenteredWindow(url, "정비이력전송조회", 1200, 800);
+  };
   const onQuery = useCallback(async (tabOverride) => {
     const tab = tabOverride ?? activeTab;
-    // ① 목록 조회 (탭별 API 분기)
+    // ① 목록 조회 (탭별 API 분기, 전송일자/출고일자 모드 분기)
     const res = await (tab === "aos"
-      ? fetchAosEstimate(outFrom, outTo)
-      : fetchTsRepairList(outFrom, outTo));
+      ? fetchAosEstimate(outFrom, outTo, tsSendMode)
+      : fetchTsRepairList(outFrom, outTo, tsSendMode));
     const newRows      = res?.dataset  ?? [];
     const newAllDetail = res?.dataset2 ?? [];
     setRows(newRows);
@@ -1592,7 +1612,7 @@ export default function RepairHistorySend() {
         <div className="mb-3 rounded-md border border-zinc-200 bg-white p-3 shadow-sm">
           <div className="flex flex-col gap-3">
             <div className="flex flex-wrap items-center gap-2">
-              <div className="text-sm font-semibold text-zinc-800">출고일자</div>
+              <div className="text-sm font-semibold text-zinc-800">{tsSendMode ? "전송일자" : "출고일자"}</div>
 
               <input
                 type="date"

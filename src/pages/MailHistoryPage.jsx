@@ -26,23 +26,32 @@ function sendResultLabel(row) {
 /* ═══════════════════════════════════════════════════════
    메인 페이지
 ═══════════════════════════════════════════════════════ */
+const STORAGE_KEY = "mailHistoryCtx";
+const MSG_TYPE    = "MAIL_HISTORY_SET_CTX";
+
 export default function MailHistoryPage() {
   const now = new Date();
 
   const [monthAnchor, setMonthAnchor] = useState(
     new Date(now.getFullYear(), now.getMonth(), 1)
   );
-  const [dateFrom, setDateFrom] = useState(() => monthRange(now).from);
-  const [dateTo,   setDateTo]   = useState(() => monthRange(now).to);
+  const [dateFrom, setDateFrom] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem(STORAGE_KEY))?.day1 || monthRange(now).from; } catch { return monthRange(now).from; }
+  });
+  const [dateTo, setDateTo] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem(STORAGE_KEY))?.day2 || monthRange(now).to; } catch { return monthRange(now).to; }
+  });
 
   const [rows,           setRows]           = useState([]);
   const [selectedSerial, setSelectedSerial] = useState(null);
   const [detail,         setDetail]         = useState(null);
 
   /* ── 필터 ────────────────────────────────────────────── */
-  const [filterName,    setFilterName]    = useState("");
-  const [filterTitle,   setFilterTitle]   = useState("");
-  const [filterFailOnly, setFilterFailOnly] = useState(false);
+  const [filterName,     setFilterName]    = useState("");
+  const [filterTitle,    setFilterTitle]   = useState("");
+  const [filterFailOnly, setFilterFailOnly] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem(STORAGE_KEY))?.filterFailOnly ?? false; } catch { return false; }
+  });
 
   const filteredRows = useMemo(() => {
     let list = rows;
@@ -79,6 +88,23 @@ export default function MailHistoryPage() {
   useEffect(() => {
     loadList(dateFrom, dateTo);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* postMessage 수신 — 대시보드에서 날짜 전달 */
+  useEffect(() => {
+    const handler = (ev) => {
+      if (ev.origin !== window.location.origin) return;
+      if (ev.data?.type !== MSG_TYPE) return;
+      const { day1, day2, filterFailOnly } = ev.data.payload || {};
+      if (!day1 || !day2) return;
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ day1, day2, filterFailOnly }));
+      setDateFrom(day1);
+      setDateTo(day2);
+      if (filterFailOnly != null) setFilterFailOnly(filterFailOnly);
+      loadList(day1, day2);
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, [loadList]);
 
   /* ── 월 이동 ─────────────────────────────────────────── */
   const moveMonth = (delta) => {
