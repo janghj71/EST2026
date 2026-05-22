@@ -76,6 +76,7 @@ export default function EstimateClaimPanel({ master, setMaster, inputCls, select
             bocomname: "", boman_nm: "", regno: "", misrate: "",
             dambo: "", insura_exemp: "", insura_person: "",
             insura_carno: "", xpay: "", bpay: "", ppay: "",
+            vatrate: "10",
           },
         ],
       };
@@ -184,6 +185,7 @@ return (
                 onChange={(e) => {
                   const bocom = findBocom(e.target.value);
                   if (!bocom) return;
+                  onClaimDirty?.();
                   const isDomestic = (master?.makercode ?? "") <= "05";
                   setMaster((m) => {
                     const prev = Array.isArray(m?.claims) ? m.claims : [];

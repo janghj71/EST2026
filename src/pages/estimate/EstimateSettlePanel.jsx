@@ -44,6 +44,7 @@ function SettleStat({ label, valueText, emphasize = false, red = false, labelRed
 }
 
 export default function EstimateSettlePanel({ master, inputCls, refreshKey, readOnly = false }) {
+  const isInsurance = (master?.seccode ?? "12") !== "11";
   const claims = Array.isArray(master?.claims) ? master.claims : [];
   const [selectedIdx, setSelectedIdx] = useState(() => (claims.length ? 0 : -1));
 
@@ -65,6 +66,7 @@ export default function EstimateSettlePanel({ master, inputCls, refreshKey, read
     if (!serial) return;
     fetchSettle({ est_serial: serial }).then((json) => {
       const rows = json?.dataset ?? [];
+      console.log("[est_bocal1_s] est_serial:", serial, "/ rows:", rows.length, rows);
       const map = {};
       rows.forEach((r) => { map[r.estbo_seqno] = r; });
       setSettleMap(map);
@@ -145,31 +147,33 @@ export default function EstimateSettlePanel({ master, inputCls, refreshKey, read
   return (
     <div className="flex flex-col gap-3">
 
-      {/* 상단: 보험사 목록 */}
-      <div className="rounded-md border border-zinc-200 bg-white overflow-hidden">
-        <div className="px-2 py-2 border-b border-zinc-200 text-sm font-semibold text-zinc-800">보험사</div>
-        <div className="p-2">
-          {claims.length === 0 ? (
-            <div className="text-sm text-zinc-500 px-1 py-2">청구처 보험사가 없습니다.</div>
-          ) : (
-            <div className="grid grid-cols-1 gap-2">
-              {claims.map((c, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  className={leftItemCls(idx === safeSelectedIdx)}
-                  onClick={() => setSelectedIdx(idx)}
-                >
-                  <div className="text-sm font-semibold text-zinc-900 truncate">{c?.bocomname || `보험사 ${idx + 1}`}</div>
-                  <div className="mt-1 text-xs text-zinc-500 truncate">
-                    접수번호 {c?.regno || "--"} · 담보 {c?.dambo || "--"} · 담당자 {c?.boman_nm || "--"}
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
+      {/* 상단: 보험사 목록 — 보험건만 표시 */}
+      {isInsurance && (
+        <div className="rounded-md border border-zinc-200 bg-white overflow-hidden">
+          <div className="px-2 py-2 border-b border-zinc-200 text-sm font-semibold text-zinc-800">보험사</div>
+          <div className="p-2">
+            {claims.length === 0 ? (
+              <div className="text-sm text-zinc-500 px-1 py-2">청구처 보험사가 없습니다.</div>
+            ) : (
+              <div className="grid grid-cols-1 gap-2">
+                {claims.map((c, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    className={leftItemCls(idx === safeSelectedIdx)}
+                    onClick={() => setSelectedIdx(idx)}
+                  >
+                    <div className="text-sm font-semibold text-zinc-900 truncate">{c?.bocomname || `보험사 ${idx + 1}`}</div>
+                    <div className="mt-1 text-xs text-zinc-500 truncate">
+                      접수번호 {c?.regno || "--"} · 담보 {c?.dambo || "--"} · 담당자 {c?.boman_nm || "--"}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* 본문 */}
       {!current ? (
@@ -260,25 +264,27 @@ export default function EstimateSettlePanel({ master, inputCls, refreshKey, read
               </div>
             </div>
 
-            <div className="mt-2 border-t border-zinc-200 pt-2 flex flex-col gap-2">
-              <div className="grid grid-cols-2 gap-x-6 gap-y-2">
-                <SettleStat label="과실상계율"  valueText={`${fmt(n(settle.misrate))} %`} />
-                <SettleStat label="과실상계금액" valueText={fmt(n(settle.mis))} />
-              </div>
+            {isInsurance && (
+              <div className="mt-2 border-t border-zinc-200 pt-2 flex flex-col gap-2">
+                <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+                  <SettleStat label="과실상계율"  valueText={`${fmt(n(settle.misrate))} %`} />
+                  <SettleStat label="과실상계금액" valueText={fmt(n(settle.mis))} />
+                </div>
 
-              <div className="grid grid-cols-2 gap-x-6 gap-y-2">
-                <SettleRow label="면책금">
-                  <MoneyInput
-                    value={editValues.insura_exemp}
-                    onChange={(v) => setEditField("insura_exemp", v)}
-                    onBlur={() => refreshSettleField("insura_exemp", editRef.current.insura_exemp)}
-                    readOnly={readOnly}
-                  />
-                </SettleRow>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+                  <SettleRow label="면책금">
+                    <MoneyInput
+                      value={editValues.insura_exemp}
+                      onChange={(v) => setEditField("insura_exemp", v)}
+                      onBlur={() => refreshSettleField("insura_exemp", editRef.current.insura_exemp)}
+                      readOnly={readOnly}
+                    />
+                  </SettleRow>
 
-                <SettleStat label="청구금액" valueText={fmt(n(settle.reqtotal))} emphasize red labelRed />
+                  <SettleStat label="청구금액" valueText={fmt(n(settle.reqtotal))} emphasize red labelRed />
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       )}

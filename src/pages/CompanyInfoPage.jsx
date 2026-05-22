@@ -3,6 +3,7 @@ import { Save, RotateCcw, Upload, Trash2, Search } from "lucide-react";
 import IconBtn from "../components/IconBtn";
 import { moveFocusOnEnter } from "../utils/focusUtils";
 import SealUploader from "../components/SealUploader";
+import ZipcodeSearchModal from "../components/ZipcodeSearchModal";
 import { useAlert } from "../alerts";
 import { useCompanyInfo } from "../hooks/useCompanyInfo";
 import { useTbCode } from "../hooks/useTbCode";
@@ -17,7 +18,13 @@ export default function CompanyInfoPage() {
 
   const hasError = !!(error || sealError);
 
+  const [zipcodeOpen, setZipcodeOpen] = useState(false);
+
   const onChange = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
+
+  const onZipcodeSelect = ({ zipcode, addr1 }) => {
+    setForm((p) => ({ ...p, zipCode: zipcode, addr1 }));
+  };
 
   // 조회 에러 → 메시지 표시
   useEffect(() => {
@@ -131,7 +138,7 @@ export default function CompanyInfoPage() {
                   label="검색"
                   variant="default"
                   className="h-10 w-28 justify-center whitespace-nowrap"
-                  onClick={() => console.log("우편번호 검색")}
+                  onClick={() => setZipcodeOpen(true)}
                 />
               </div>
             </Field>
@@ -155,6 +162,13 @@ export default function CompanyInfoPage() {
           </div>
         </section>
       </div>
+
+      {zipcodeOpen && (
+        <ZipcodeSearchModal
+          onSelect={onZipcodeSelect}
+          onClose={() => setZipcodeOpen(false)}
+        />
+      )}
 
       {/* seals */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">

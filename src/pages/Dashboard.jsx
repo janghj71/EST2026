@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useUserSettings } from "../hooks/useUserSettings";
 import { getUserid } from "../api/config";
 import { useWeather } from "../hooks/useWeather";
+import { useCompanyInfo } from "../hooks/useCompanyInfo";
 import { getTodayProverb } from "../data/proverbs";
 import { useMailHistory } from "../hooks/useMailHistory";
 import { useRecentWork } from "../hooks/useEstimate";
 import { useDashboardTsErrors } from "../hooks/useAosEstimate";
+import { useMainNotice } from "../hooks/useNotice";
 import { openCenteredWindow } from "../utils/popup";
 import { ymd } from "../utils/dateUtils";
 
@@ -15,16 +17,17 @@ const HERO_SLIDES = [
   "https://images.unsplash.com/photo-1632823469850-1b7b1e8b7e2e?w=1400&q=80&auto=format&fit=crop",
   "https://images.unsplash.com/photo-1554224155-6726b3ff858f?w=1400&q=80&auto=format&fit=crop",
   "https://images.unsplash.com/photo-1486006920555-c77dcf18193c?w=1400&q=80&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1593941707882-a5bba14938c7?w=1400&q=80&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?w=1400&q=80&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1485740112426-0c2549fa8c86?w=1400&q=80&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1614150797976-9dd24a4667b0?w=1400&q=80&auto=format&fit=crop",
 ];
 
 /* ── 날짜 포맷 MM-DD ─────────────────────────────────────── */
 const fmtDate = (d) => (d ? String(d).slice(5) : "");
 
-const NOTICES = [
-  { title: "사용자 부품 조회 기능 개선 안내", date: "2026-04-30", isNew: true  },
-  { title: "공임 삭제 및 컬러매칭 추가",       date: "2026-03-17", isNew: false },
-  { title: "정기 점검 안내 (5/22)",             date: "2026-04-28", isNew: false },
-];
+/* wdate "2019-10-30 오전 10:34:00" → "2019-10-30" */
+const fmtNoticeDate = (wdate) => (wdate ? String(wdate).slice(0, 10) : "");
 
 const STATE_CLS = {
   "견적종결":   "bg-emerald-100 text-emerald-800",
@@ -69,13 +72,51 @@ export default function Dashboard() {
   const { fetchRecentWork } = useRecentWork();
   const [recentWork, setRecentWork] = useState([]);
 
+  const { fetchMainNotice } = useMainNotice();
+  const [notices, setNotices] = useState([]);
+  const noticeListWinRef = useRef(null);
+  const noticeViewWinRef = useRef(null);
+
+  useEffect(() => {
+    fetchMainNotice().then((json) => setNotices((json?.dataset ?? []).slice(0, 4))).catch(() => {});
+  }, [fetchMainNotice]);
+
+  const openNoticeList = () => {
+    if (noticeListWinRef.current && !noticeListWinRef.current.closed) {
+      noticeListWinRef.current.focus();
+      return;
+    }
+    noticeListWinRef.current = openCenteredWindow("/notice", "noticeList", 1100, 800, {
+      scrollbars: "yes", resizable: "yes",
+    });
+  };
+
+  const openNoticeView = (n) => {
+    const payload = { num: n.num, title: n.title, wdate: n.wdate, contents: n.contents };
+    sessionStorage.setItem("noticeViewCtx", JSON.stringify(payload));
+    const msg = { type: "NOTICE_VIEW_SET_CTX", payload };
+    if (noticeViewWinRef.current && !noticeViewWinRef.current.closed) {
+      try {
+        noticeViewWinRef.current.postMessage(msg, window.location.origin);
+        noticeViewWinRef.current.focus();
+        return;
+      } catch { noticeViewWinRef.current = null; }
+    }
+    noticeViewWinRef.current = openCenteredWindow("/notice-view", "noticeView", 800, 640, {
+      scrollbars: "yes", resizable: "yes",
+      postMessage: msg,
+    });
+  };
+
   useEffect(() => {
     fetchRecentWork().then((json) => {
       const rows = json?.dataset ?? [];
       setRecentWork(rows.map((r) => ({
         est_serial: r.est_serial,
+        seccode:    r.seccode,
         carno:      r.carno,
         custname:   r.custom_name,
+        indayFull:  r.inday ?? "",
         inday:      fmtDate(r.inday),
         outday:     fmtDate(r.outday),
         state:      r.statename,
@@ -92,24 +133,25 @@ export default function Dashboard() {
 
   const { users } = useUserSettings();
   const loginName = users.find((u) => u.hp === getUserid())?.username ?? getUserid();
-  const { weather } = useWeather();
+  const { form: companyForm } = useCompanyInfo();
+  const { weather, city: weatherCity } = useWeather(companyForm.addr1);
 
   const { fetchTsErrors } = useDashboardTsErrors();
-  const [tsErrorCount,     setTsErrorCount]     = useState(0);
-  const [tsErrorTabs,      setTsErrorTabs]       = useState({ aos: false, adl: false });
-  const [tsErrorDateRange, setTsErrorDateRange]  = useState({ ts_send_dt1: "", ts_send_dt2: "" });
-
-  useEffect(() => {
+  const [tsErrorCount, setTsErrorCount] = useState(0);
+  const [tsErrorTabs,  setTsErrorTabs]  = useState({ aos: false, adl: false });
+  const tsErrorDateRange = useMemo(() => {
     const now  = new Date();
     const from = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
-    const ts_send_dt1 = ymd(from);
-    const ts_send_dt2 = ymd(now);
-    setTsErrorDateRange({ ts_send_dt1, ts_send_dt2 });
+    return { ts_send_dt1: ymd(from), ts_send_dt2: ymd(now) };
+  }, []);
+
+  useEffect(() => {
+    const { ts_send_dt1, ts_send_dt2 } = tsErrorDateRange;
     fetchTsErrors(ts_send_dt1, ts_send_dt2).then(({ aosErrors, adlErrors }) => {
       setTsErrorCount(aosErrors.length + adlErrors.length);
       setTsErrorTabs({ aos: aosErrors.length > 0, adl: adlErrors.length > 0 });
     }).catch(() => {});
-  }, [fetchTsErrors]);
+  }, [fetchTsErrors, tsErrorDateRange]);
 
   const openTsErrors = () => {
     const { aos, adl } = tsErrorTabs;
@@ -121,7 +163,11 @@ export default function Dashboard() {
 
   const { fetchMailList } = useMailHistory();
   const [mailFails, setMailFails] = useState([]);
-  const [mailDateRange, setMailDateRange] = useState({ day1: "", day2: "" });
+  const mailDateRange = useMemo(() => {
+    const now  = new Date();
+    const from = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+    return { day1: ymd(from), day2: ymd(now) };
+  }, []);
   const mailHistWinRef = useRef(null);
 
   const openMailHistory = () => {
@@ -144,16 +190,12 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    const now = new Date();
-    const from = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
-    const day1 = ymd(from);
-    const day2 = ymd(now);
-    setMailDateRange({ day1, day2 });
+    const { day1, day2 } = mailDateRange;
     fetchMailList({ day1, day2 }).then((json) => {
       const rows = json?.dataset ?? [];
       setMailFails(rows.filter((r) => r.smtp_result !== "250"));
     }).catch(() => {});
-  }, [fetchMailList]);
+  }, [fetchMailList, mailDateRange]);
 
   useEffect(() => {
     const t = setInterval(() => {
@@ -208,6 +250,8 @@ export default function Dashboard() {
             <div>
               {weather && (
                 <div className="inline-flex items-center gap-2 text-[13px] text-gray-700 font-medium">
+                  {weatherCity && <span className="font-bold text-gray-800">{weatherCity}</span>}
+                  {weatherCity && <span className="text-gray-300">|</span>}
                   <span className="text-lg leading-none">{weather.icon}</span>
                   <span>{weather.label}</span>
                   <span className="font-bold text-indigo-600">{weather.temp}°C</span>
@@ -247,14 +291,14 @@ export default function Dashboard() {
 
               <div className="flex gap-2">
                 <button
-                  onClick={() => navigate("/estimate/insurance")}
+                  onClick={() => navigate("/estimate/insurance", { state: { openNew: true } })}
                   className="group h-11 px-5 rounded-xl bg-gray-900 text-white text-sm font-bold hover:bg-gray-800 shadow-md hover:shadow-lg transition flex items-center gap-2"
                 >
                   <span>+ 보험견적 신규</span>
                   <span className="group-hover:translate-x-0.5 transition">→</span>
                 </button>
                 <button
-                  onClick={() => navigate("/estimate/general")}
+                  onClick={() => navigate("/estimate/normal", { state: { openNew: true } })}
                   className="group h-11 px-5 rounded-xl bg-white border border-gray-300 text-gray-800 text-sm font-bold hover:border-gray-500 hover:shadow-md transition flex items-center gap-2"
                 >
                   <span>+ 일반견적 신규</span>
@@ -290,20 +334,25 @@ export default function Dashboard() {
                 <span className="text-sm font-semibold text-gray-900">최근 작업</span>
                 <span className="text-[11px] text-gray-400">최근 수정순</span>
               </div>
-              <button className="text-[11px] text-gray-500 hover:text-gray-900">전체보기 →</button>
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-gray-50">
               {recentWork.map((r, i) => (
                 <div
                   key={i}
+                  onClick={() => {
+                    const path = r.seccode === "11" ? "/estimate/normal" : "/estimate/insurance";
+                    navigate(path, { state: { selectedSerial: r.est_serial, inday: r.indayFull } });
+                  }}
                   className={`px-5 py-2.5 flex items-center justify-between cursor-pointer hover:bg-slate-50 ${r.tsStatus === "오류" ? "bg-red-50/30" : ""}`}
                 >
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-semibold">{r.carno}</span>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${STATE_CLS[r.state] ?? "bg-zinc-100 text-zinc-700"}`}>
-                        {r.state}
-                      </span>
+                      {r.state && (
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${STATE_CLS[r.state] ?? "bg-zinc-100 text-zinc-700"}`}>
+                          {r.state}
+                        </span>
+                      )}
                       {r.tsStatus === "오류"  && <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-600 font-semibold">전송오류</span>}
                       {r.tsStatus === "전송중" && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-600 font-semibold">전송중</span>}
                       {r.tsStatus === "성공"  && <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-600 font-semibold">전송완료</span>}
@@ -329,15 +378,23 @@ export default function Dashboard() {
                   <IcBell />
                   <span className="text-sm font-semibold text-gray-900">공지사항</span>
                 </div>
-                <button className="text-[11px] text-gray-500 hover:text-gray-900">더보기 →</button>
+                <button
+                  onClick={openNoticeList}
+                  className="text-[11px] text-gray-500 hover:text-gray-900">
+                  더보기 →
+                </button>
               </div>
               <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-gray-50">
-                {NOTICES.map((n, i) => (
-                  <div key={i} className="px-5 py-2 flex items-start gap-2 cursor-pointer hover:bg-slate-50">
-                    <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${n.isNew ? "bg-green-500" : "bg-gray-300"}`} />
+                {notices.map((n) => (
+                  <div
+                    key={n.num}
+                    onClick={() => openNoticeView(n)}
+                    className="px-5 py-2 flex items-start gap-2 cursor-pointer hover:bg-slate-50"
+                  >
+                    <span className="mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 bg-gray-300" />
                     <div className="min-w-0">
                       <div className="text-xs text-gray-800 truncate">{n.title}</div>
-                      <div className="text-[10px] text-gray-400">{n.date}</div>
+                      <div className="text-[10px] text-gray-400">{fmtNoticeDate(n.wdate)}</div>
                     </div>
                   </div>
                 ))}
@@ -369,10 +426,14 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="flex gap-2.5">
-            <button className="h-11 px-5 rounded-xl border border-gray-300 bg-white text-gray-700 text-sm font-semibold hover:bg-gray-50 flex items-center gap-2 transition">
+            <button
+              onClick={() => window.open("/pt_menual.pdf", "_blank")}
+              className="h-11 px-5 rounded-xl border border-gray-300 bg-white text-gray-700 text-sm font-semibold hover:bg-gray-50 flex items-center gap-2 transition">
               <IcDownload /> 매뉴얼 다운로드
             </button>
-            <button className="h-11 px-5 rounded-xl border border-gray-300 bg-white text-gray-700 text-sm font-semibold hover:bg-gray-50 flex items-center gap-2 transition">
+            <button
+              onClick={() => window.open("https://939.co.kr/", "_blank")}
+              className="h-11 px-5 rounded-xl border border-gray-300 bg-white text-gray-700 text-sm font-semibold hover:bg-gray-50 flex items-center gap-2 transition">
               <IcHeadset /> 원격지원 요청
             </button>
           </div>

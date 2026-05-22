@@ -18,13 +18,23 @@ import { usePntcot } from "../../hooks/usePntcot";
 export default function EstimateSidePanel({ master, setMaster, active, onTabChange, onClaimLeave, onClaimDirty, onClaimClean, onRateChange, onOpenChange, onSettleEnter, settleRefreshKey, laborWinOpen = false, readOnly = false }) {
   const [open, setOpen] = useState(false);
   const changeOpen = (next) => { setOpen(next); onOpenChange?.(next); };
+  const MH_KEYS = ["xpay", "bpay", "ppay"];
   const set = (k) => (vOrEvent) => {
     const v =
       vOrEvent && typeof vOrEvent === "object" && "target" in vOrEvent
         ? vOrEvent.target.value
         : vOrEvent;
 
-    setMaster((m) => ({ ...m, [k]: v }));
+    setMaster((m) => {
+      const next = { ...m, [k]: v };
+      // 일반견적: M/H 단가 변경 시 claims[0]에도 동기화 (paysum 재계산 기준)
+      if (m?.seccode === "11" && MH_KEYS.includes(k)) {
+        const claims = Array.isArray(m.claims) ? [...m.claims] : [];
+        if (claims[0]) claims[0] = { ...claims[0], [k]: v };
+        return { ...next, claims };
+      }
+      return next;
+    });
   };
 
 
@@ -99,25 +109,27 @@ export default function EstimateSidePanel({ master, setMaster, active, onTabChan
           공임설정
         </button>
 
-        <button
-          type="button"
-          disabled={laborWinOpen}
-          className={[
-            "rounded-md px-2 py-3 text-sm text-white",
-            laborWinOpen
-              ? "bg-zinc-500 opacity-60 cursor-not-allowed"
-              : active === "claim" ? "bg-zinc-900" : "bg-zinc-700 hover:bg-zinc-800",
-          ].join(" ")}
-          onClick={() => {
-            if (laborWinOpen) return;
-            onTabChange("claim");
-            changeOpen(true);
-          }}
-          style={{ writingMode: "vertical-rl" }}
-          title={laborWinOpen ? "공임항목 팝업 열려 있음" : undefined}
-        >
-          청구처
-        </button>
+        {master?.seccode !== "11" && (
+          <button
+            type="button"
+            disabled={laborWinOpen}
+            className={[
+              "rounded-md px-2 py-3 text-sm text-white",
+              laborWinOpen
+                ? "bg-zinc-500 opacity-60 cursor-not-allowed"
+                : active === "claim" ? "bg-zinc-900" : "bg-zinc-700 hover:bg-zinc-800",
+            ].join(" ")}
+            onClick={() => {
+              if (laborWinOpen) return;
+              onTabChange("claim");
+              changeOpen(true);
+            }}
+            style={{ writingMode: "vertical-rl" }}
+            title={laborWinOpen ? "공임항목 팝업 열려 있음" : undefined}
+          >
+            청구처
+          </button>
+        )}
 
         <button
           type="button"
@@ -156,6 +168,7 @@ export default function EstimateSidePanel({ master, setMaster, active, onTabChan
               codeInputCls={codeInputCls}
               colorOptions={colorOptions}
               ReadonlyBox={ReadonlyBox}
+              onRateChange={onRateChange}
               readOnly={readOnly}
             />
           )}
@@ -198,6 +211,7 @@ function LaborPanel({
   codeInputCls,
   colorOptions,
   ReadonlyBox,
+  onRateChange,
   readOnly = false,
 }) {
   // ── 공통코드 로딩 ──────────────────────────────────────────
@@ -403,7 +417,7 @@ function LaborPanel({
             <MoneyInput
               value={Number(master?.pnt_drypay ?? 15869)}
               onChange={set("pnt_drypay")}
-              readOnly={readOnly}
+              disabled={readOnly}
             />
           </div>
           <div className="whitespace-nowrap mt-1">
@@ -424,17 +438,20 @@ function LaborPanel({
         const xpay = isInsurance ? (claim0?.xpay ?? 0) : (master?.xpay ?? 0);
         const bpay = isInsurance ? (claim0?.bpay ?? 0) : (master?.bpay ?? 0);
         const ppay = isInsurance ? (claim0?.ppay ?? 0) : (master?.ppay ?? 0);
-        const mhCls = isInsurance ? "bg-zinc-100" : "";
+        const mhCls = (isInsurance || readOnly) ? "bg-zinc-100" : "";
         return (
           <>
             <FormRow label="탈착M/H">
-              <MoneyInput value={Number(xpay)} onChange={set("xpay")} readOnly={readOnly || isInsurance} className={mhCls} />
+              <MoneyInput value={Number(xpay)} onChange={set("xpay")} disabled={readOnly || isInsurance} className={mhCls}
+                {...(!isInsurance && !readOnly ? { onBlur: onRateChange } : {})} />
             </FormRow>
             <FormRow label="판금M/H">
-              <MoneyInput value={Number(bpay)} onChange={set("bpay")} readOnly={readOnly || isInsurance} className={mhCls} />
+              <MoneyInput value={Number(bpay)} onChange={set("bpay")} disabled={readOnly || isInsurance} className={mhCls}
+                {...(!isInsurance && !readOnly ? { onBlur: onRateChange } : {})} />
             </FormRow>
             <FormRow label="도장M/H">
-              <MoneyInput value={Number(ppay)} onChange={set("ppay")} readOnly={readOnly || isInsurance} className={mhCls} />
+              <MoneyInput value={Number(ppay)} onChange={set("ppay")} disabled={readOnly || isInsurance} className={mhCls}
+                {...(!isInsurance && !readOnly ? { onBlur: onRateChange } : {})} />
             </FormRow>
           </>
         );
@@ -448,10 +465,10 @@ function LaborPanel({
         return (
           <FormRow label="부분판금율">
             <input
-              className={inputCls + (isInsurance ? " bg-zinc-100" : "")}
+              className={inputCls + (isInsurance || readOnly ? " bg-zinc-100" : "")}
               value={pntrate_sec}
               onChange={(e) => set("pntrate_sec")(e.target.value)}
-              readOnly={readOnly || isInsurance}
+              disabled={readOnly || isInsurance}
             />
           </FormRow>
         );

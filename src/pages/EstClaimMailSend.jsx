@@ -129,7 +129,7 @@ export default function EstClaimMailSend() {
     ? `${API_HOST}/report/${reportPath}?comcode=${encodeURIComponent(comcode)}&est_serial=${encodeURIComponent(estSerial)}&estbo_seqno=${encodeURIComponent(activeClaim.estbo_seqno)}`
     : "";
 
-  const doEmailSend = async () => {
+  const onEmailSend = async () => {
     if (!claims.length) {
       alertError("청구처를 선택하세요.");
       return;
@@ -146,42 +146,39 @@ export default function EstClaimMailSend() {
       return;
     }
 
-    const mailkind = String(isest) === "1" ? "03" : "01";
-
-    for (let idx = 0; idx < claims.length; idx++) {
-      const claim = claims[idx];
-      const tab = allTabs[idx];
-      if (!claim?.estbo_seqno) continue;
-
-      await sendEstimateMail({
-        comcode,
-        est_serial: estSerial,
-        estbo_seqno: claim.estbo_seqno,
-        mailkind,
-        mail_addr: tab.email,
-        mail_subject: tab.subject,
-        mail_text: tab.body,
-        hp: tab.hp,
-        lsms: tab.sendSms ? "1" : "0",
-      });
-    }
-
-    await requestEstimate(estSerial);
-
     try {
-      window.opener?.postMessage(
-        { type: "EST_MASTER_REFRESH", payload: { est_serial: estSerial } },
-        window.location.origin
-      );
-    } catch {}
-
-    await info("메일청구가 완료되었습니다.");
+      const mailkind = String(isest) === "1" ? "03" : "01";
+      await withLoading(async () => {
+        for (let idx = 0; idx < claims.length; idx++) {
+          const claim = claims[idx];
+          const tab = allTabs[idx];
+          if (!claim?.estbo_seqno) continue;
+          await sendEstimateMail({
+            comcode,
+            est_serial: estSerial,
+            estbo_seqno: claim.estbo_seqno,
+            mailkind,
+            mail_addr: tab.email,
+            mail_subject: tab.subject,
+            mail_text: tab.body,
+            hp: tab.hp,
+            lsms: tab.sendSms ? "1" : "0",
+          });
+        }
+        await requestEstimate(estSerial);
+        try {
+          window.opener?.postMessage(
+            { type: "EST_MASTER_REFRESH", payload: { est_serial: estSerial } },
+            window.location.origin
+          );
+        } catch {}
+      }, "메일 전송 중...");
+      // 로딩 종료 후 알럿 표시 — 로딩 오버레이와 겹치지 않음
+      await info("메일청구가 완료되었습니다.");
+    } catch (err) {
+      alertError(err?.message ?? "메일청구 실패");
+    }
   };
-
-  const onEmailSend = () =>
-    withLoading(doEmailSend, "메일 전송 중...").catch((err) =>
-      alertError(err?.message ?? "메일청구 실패")
-    );
 
   const onFaxSend = () => {
     console.log("팩스청구", {

@@ -1527,18 +1527,17 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
               enableHorizontalScroll={sidePanelOpen}
               selectedKey={selectedOrgSeq}
               selectedKeys={selectedOrgSeqs}
-              onRowClick={(row, _idx, e) => {
-                if (e?.ctrlKey || e?.metaKey) {
-                  // Ctrl+클릭(Mac: Cmd+클릭): 멀티선택 토글
-                  setSelectedOrgSeqs?.((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(row.estb_orgseqno)) next.delete(row.estb_orgseqno);
-                    else next.add(row.estb_orgseqno);
-                    return next;
-                  });
-                } else {
-                  setSelectedOrgSeq(row.estb_orgseqno);
-                }
+              onRowClick={(row) => {
+                setSelectedOrgSeq(row.estb_orgseqno);
+              }}
+              onRowDoubleClick={(row) => {
+                // 더블클릭: 멀티선택 토글
+                setSelectedOrgSeqs?.((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(row.estb_orgseqno)) next.delete(row.estb_orgseqno);
+                  else next.add(row.estb_orgseqno);
+                  return next;
+                });
               }}
               rowRenderer={rowRenderer}
               getRowClassName={(row) => {

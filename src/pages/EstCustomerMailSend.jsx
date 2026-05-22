@@ -115,30 +115,30 @@ export default function EstCustomerMailSend() {
       ? `${API_HOST}/report/${reportPath}?comcode=${encodeURIComponent(comcode)}&est_serial=${encodeURIComponent(estSerial)}&estbo_seqno=${encodeURIComponent(estboSeqno)}`
       : "";
 
-  const doSend = async () => {
+  const onSend = async () => {
     if (!email) {
       alertError("받는사람 메일주소를 입력하세요.");
       return;
     }
-
-    const mailkind = String(isest) === "1" ? "03C" : "02C";
-
-    await sendEstimateMail({
-      comcode,
-      est_serial: estSerial,
-      mailkind,
-      mail_addr: email,
-      mail_subject: subject,
-      mail_text: body,
-    });
-
-    await info("메일이 발송되었습니다.");
+    try {
+      const mailkind = String(isest) === "1" ? "03C" : "02C";
+      await withLoading(
+        () => sendEstimateMail({
+          comcode,
+          est_serial: estSerial,
+          mailkind,
+          mail_addr: email,
+          mail_subject: subject,
+          mail_text: body,
+        }),
+        "메일 전송 중..."
+      );
+      // 로딩 종료 후 알럿 표시 — 로딩 오버레이와 겹치지 않음
+      await info("메일이 발송되었습니다.");
+    } catch (err) {
+      alertError(err?.message ?? "메일 발송 실패");
+    }
   };
-
-  const onSend = () =>
-    withLoading(doSend, "메일 전송 중...").catch((err) =>
-      alertError(err?.message ?? "메일 발송 실패")
-    );
 
   const docTitle =
     String(isest) === "1" ? "점검정비 견적서 - 고객용" : "점검정비 명세서 - 고객용";

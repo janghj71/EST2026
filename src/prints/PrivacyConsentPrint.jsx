@@ -425,7 +425,8 @@ export default function PrivacyConsentPrint() {
   }, []);
 
   /* ── 파생값 ── */
-  const acc        = parseDateParts(ctx?.accday);
+  const dateForPrint = ctx?.seccode === "11" ? (ctx?.inday ?? "") : (ctx?.accday ?? "");
+  const acc          = parseDateParts(dateForPrint);
   const today      = parseDateParts(ymd(new Date()));
   const comName    = companyForm?.comName || "";
   const boList     = (ctx?.claims ?? []).map((c) => c.bocomname).filter(Boolean).join(", ");

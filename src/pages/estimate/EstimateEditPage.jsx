@@ -494,11 +494,24 @@ export default function EstimateEditPage() {
     });
   }, [est_serial]);
 
+  const openGeneralRepairClaimPrint = useCallback((estbo_seqno) => {
+    const url =
+      `/print/general-repair-claim` +
+      `?est_serial=${encodeURIComponent(est_serial)}` +
+      `&estbo_seqno=${encodeURIComponent(estbo_seqno ?? "")}`;
+    openCenteredWindow(url, "generalRepairClaimPrint", 900, 1200, {
+      scrollbars: "yes",
+      resizable: "yes",
+    });
+  }, [est_serial]);
+
   const openPrivacyConsentPrint = useCallback(() => {
     if (!master) return;
     const payload = {
       est_serial:  master.est_serial,
+      seccode:     master.seccode,
       accday:      master.accday,
+      inday:       master.inday,
       carno:       master.carno,
       custom_name: master.custom_name,
       hp0:         master.hp0,
@@ -540,18 +553,27 @@ export default function EstimateEditPage() {
       return;
     }
     if (label === "수리비 청구서") {
+      const openFn = master?.seccode === "11" ? openGeneralRepairClaimPrint : openInsuranceClaimPrint;
       if (claimList.length === 1) {
-        openInsuranceClaimPrint(claimList[0].estbo_seqno);
+        openFn(claimList[0].estbo_seqno);
       } else {
         setClaimSelectKind("insurance");
         setClaimSelectOpen(true);
       }
       return;
     }
-  }, [master, openInspectionPrint, openInspectionStatementPrint, openInsuranceClaimPrint, openPrivacyConsentPrint]);
+  }, [master, openInspectionPrint, openInspectionStatementPrint, openInsuranceClaimPrint, openGeneralRepairClaimPrint, openPrivacyConsentPrint]);
 
   const openLaborItemsPopup = async () => {
     await saveClaimIfActive();
+    if (master?.seccode === "12" && !master?.claims?.[0]?.bocomcode) {
+      alertWarning("청구처(보험사)를 먼저 입력하세요.");
+      return;
+    }
+    if (!master?.pntcot_code) {
+      alertWarning("[공임설정]에서 도장코트를 선택하세요.");
+      return;
+    }
     const estSerial   = est_serial || "";
     const carno       = master?.carno       || "";
     const codecar     = master?.codecar     || "";
@@ -649,6 +671,14 @@ export default function EstimateEditPage() {
   
   const openPaintItemsPopup = async () => {
     await saveClaimIfActive();
+    if (master?.seccode === "12" && !master?.claims?.[0]?.bocomcode) {
+      alertWarning("청구처(보험사)를 먼저 입력하세요.");
+      return;
+    }
+    if (!master?.pntcot_code) {
+      alertWarning("[공임설정]에서 도장코트를 선택하세요.");
+      return;
+    }
     const estSerial = est_serial || "";
     const carno     = master?.carno     || "";
     const carname   = master?.carname   || "";
@@ -758,6 +788,10 @@ export default function EstimateEditPage() {
 
   const openChemicalItemsPopup = async () => {
     await saveClaimIfActive();
+    if (master?.seccode === "12" && !master?.claims?.[0]?.bocomcode) {
+      alertWarning("청구처(보험사)를 먼저 입력하세요.");
+      return;
+    }
     const estSerial = est_serial || "";
     const carno = master?.carno || "";
 
@@ -2349,16 +2383,26 @@ export default function EstimateEditPage() {
   // 견적정산 탭 진입 시: 먼저 저장 후 SettlePanel 재조회 트리거
   const handleSettleEnter = useCallback(async () => {
     try {
+      // 마스터 저장 — M/H 단가(xpay/bpay/ppay) 포함, 견적정산 서버 계산에 반영
+      await save(est_serial, masterWithSums());
       await saveAllDetails(rows);
       // 저장 후 견적내역 리프레시 — _new_* 임시 ID를 실제 서버 ID로 갱신
-      const detailJson = await fetchDetails(est_serial);
-      const refreshed  = detailJson?.dataset ?? [];
+      const [detailJson, claimJson] = await Promise.all([
+        fetchDetails(est_serial),
+        fetchClaims(est_serial),
+      ]);
+      const refreshed = detailJson?.dataset ?? [];
       setRows(refreshed);
+      // claims DB 재로드 — estbo_seqno 확보 (settleMap key 매칭용)
+      const refreshedClaims = claimJson?.dataset ?? [];
+      if (refreshedClaims.length) {
+        setMaster((m) => ({ ...m, claims: refreshedClaims }));
+      }
       setSettleRefreshKey((k) => k + 1);
     } catch (err) {
       alertError(err?.message ?? "저장 실패");
     }
-  }, [rows, est_serial, saveAllDetails, fetchDetails, setRows, setSettleRefreshKey, alertError]);
+  }, [rows, est_serial, save, masterWithSums, saveAllDetails, fetchDetails, fetchClaims, setRows, setMaster, setSettleRefreshKey, alertError]);
 
   // [목록] 버튼: 전체 저장 후 이동 (잠긴 경우 저장 없이 이동)
   const handleClose = useCallback(async () => {
@@ -2610,7 +2654,8 @@ export default function EstimateEditPage() {
           if (claimSelectKind === "statement") {
             openInspectionStatementPrint(estbo_seqno);
           } else if (claimSelectKind === "insurance") {
-            openInsuranceClaimPrint(estbo_seqno);
+            if (master?.seccode === "11") openGeneralRepairClaimPrint(estbo_seqno);
+            else openInsuranceClaimPrint(estbo_seqno);
           } else {
             openInspectionPrint(estbo_seqno);
           }

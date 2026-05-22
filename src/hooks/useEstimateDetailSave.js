@@ -1,7 +1,6 @@
 // src/hooks/useEstimateDetailSave.js
 import { useCallback } from "react";
 import { useApi } from "./useApi";
-import { useLoading } from "../loading/useLoading";
 import { useAlert } from "../alerts/useAlert";
 import { apiOk } from "../api/apiOk";
 import { toIntOrNull, toDecStr, toStrOrNull } from "../utils/numberFormat";
@@ -81,35 +80,31 @@ export function useEstimateDetailSave(setRows) {
     immediate: false,
   });
 
-  const { withLoading } = useLoading();
   const { warning } = useAlert();
 
   const saveDetail = useCallback(
     async (newRow) => {
       try {
-        let resolved = null;
-        await withLoading(async () => {
-          const json = await saveReq({ masterestimateb: [toApiRow(newRow)] });
-          apiOk(json, "견적항목 저장");
-          const newserial = json?.newserial;
-          if (newserial) {
-            setRows((prev) =>
-              prev.map((r) =>
-                r.estb_orgseqno === newRow.estb_orgseqno
-                  ? { ...r, estb_orgseqno: newserial }
-                  : r
-              )
-            );
-            resolved = { tempId: newRow.estb_orgseqno, newserial };
-          }
-        });
-        return resolved; // { tempId, newserial } | null
+        const json = await saveReq({ masterestimateb: [toApiRow(newRow)] });
+        apiOk(json, "견적항목 저장");
+        const newserial = json?.newserial;
+        if (newserial) {
+          setRows((prev) =>
+            prev.map((r) =>
+              r.estb_orgseqno === newRow.estb_orgseqno
+                ? { ...r, estb_orgseqno: newserial }
+                : r
+            )
+          );
+          return { tempId: newRow.estb_orgseqno, newserial };
+        }
+        return null;
       } catch (e) {
         warning(e.message || "견적항목 저장 실패");
         return null;
       }
     },
-    [saveReq, withLoading, setRows, warning]
+    [saveReq, setRows, warning]
   );
 
   const saveAllDetails = useCallback(

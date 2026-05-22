@@ -1,6 +1,6 @@
 ﻿import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import {
   Pencil, Trash2, ArrowRightLeft, Camera, MessageSquare,
   Mail, Printer, StickyNote, Wallet,
@@ -30,21 +30,23 @@ import { useEstimateDelete } from "../hooks/useEstimateDelete";
 import { ymd, monthRange, addMonths } from "../utils/dateUtils";
 
 
-const SS_KEY = "insurance_estimate_state";
-const SS_FILTER_KEY = "insurance_estimate_filter";
-
-function loadSavedState() {
-  try { return JSON.parse(sessionStorage.getItem(SS_KEY)); } catch { return null; }
+function loadSavedState(key) {
+  try { return JSON.parse(sessionStorage.getItem(key)); } catch { return null; }
 }
-function loadSavedFilter() {
-  try { return JSON.parse(sessionStorage.getItem(SS_FILTER_KEY)); } catch { return null; }
+function loadSavedFilter(key) {
+  try { return JSON.parse(sessionStorage.getItem(key)); } catch { return null; }
 }
-function clearSavedState() {
-  try { sessionStorage.removeItem(SS_KEY); } catch { /* empty */ }
+function clearSavedState(key) {
+  try { sessionStorage.removeItem(key); } catch { /* empty */ }
 }
 
-export default function InsuranceEstimate() {
+export default function InsuranceEstimate({ seccode = "12" }) {
+  const isInsurance = seccode === "12";
+  const SS_KEY        = isInsurance ? "insurance_estimate_state"  : "general_estimate_state";
+  const SS_FILTER_KEY = isInsurance ? "insurance_estimate_filter" : "general_estimate_filter";
+
   const navigate = useNavigate();
+  const location = useLocation();
   const { error, info, warning, confirm } = useAlert();
   const { withLoading } = useLoading();
   const {
@@ -96,7 +98,7 @@ export default function InsuranceEstimate() {
 
   // ====== 검색/조회 ======
   // _filter: 날짜·필터 복원용 (SS_FILTER_KEY, 삭제 안 함)
-  const _filter = loadSavedFilter();
+  const _filter = loadSavedFilter(SS_FILTER_KEY);
 
   // React 19: 렌더 중 ref 접근 금지 → useLayoutEffect 로 이동
   // StrictMode 이중 실행 방지: sentinel(undefined) 체크로 최초 1회만 실행
@@ -104,8 +106,8 @@ export default function InsuranceEstimate() {
   const restoredScrollRef = useRef(0);
   useLayoutEffect(() => {
     if (restoredSerialRef.current !== undefined) return; // 이미 초기화됨
-    const _saved = loadSavedState();
-    clearSavedState();
+    const _saved = loadSavedState(SS_KEY);
+    clearSavedState(SS_KEY);
     restoredSerialRef.current = _saved?.selectedSerial ?? null;
     restoredScrollRef.current = _saved?.scrollTop ?? 0;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -136,16 +138,17 @@ export default function InsuranceEstimate() {
     return sortCodes.some(c => c.def_value === sortKey) ? sortKey : sortCodes[0].def_value;
   }, [sortKey, sortCodes]);
 
-  // 보험견적일지: 보험건(seccode=12) + 체크박스 필터 + 정렬
+  // 견적일지: seccode 필터 + 체크박스 필터 + 정렬
+  const suffix = isInsurance ? "_보험" : "_일반";
   const insuranceEstimates = useMemo(() => {
-    const byInsurance = estimates.filter((row) => String(row?.seccode ?? "") === "12");
+    const byInsurance = estimates.filter((row) => String(row?.seccode ?? "") === seccode);
     const filtered = (!chkEstimate && !chkWork && !chkClosed)
       ? byInsurance
       : byInsurance.filter((row) => {
           const typeMatch =
             (!chkEstimate && !chkWork) ||
-            (chkEstimate && row.seccodename === '견적_보험') ||
-            (chkWork     && row.seccodename === '작업_보험');
+            (chkEstimate && row.seccodename === `견적${suffix}`) ||
+            (chkWork     && row.seccodename === `작업${suffix}`);
           const closedMatch = !chkClosed || (row.workend != null && row.workend !== '');
           return typeMatch && closedMatch;
         });
@@ -171,7 +174,7 @@ export default function InsuranceEstimate() {
       }
     }
     return arr;
-  }, [estimates, chkEstimate, chkWork, chkClosed, effectiveSortKey]);
+  }, [estimates, chkEstimate, chkWork, chkClosed, effectiveSortKey, seccode, suffix]);
 
   // 파생 selected: 목록이 새로 고쳐지면 최신 Row 데이터를 반환
   // (selectedRaw 를 그대로 반환하면 fetchEstimates 후에도 구버전 est_print 등이 남아 오동작)
@@ -225,7 +228,7 @@ export default function InsuranceEstimate() {
   // 조회 조건 변경 시 sessionStorage에 저장 (F5 복원용)
   useEffect(() => {
     try {
-      sessionStorage.setItem(SS_FILTER_KEY, JSON.stringify({ dateFrom, dateTo, searchText, chkEstimate, chkWork, chkClosed, sortKey }));
+      sessionStorage.setItem(SS_FILTER_KEY, JSON.stringify({ dateFrom, dateTo, searchText, chkEstimate, chkWork, chkClosed, sortKey })); // eslint-disable-line react-hooks/exhaustive-deps
     } catch { /* empty */ }
   }, [dateFrom, dateTo, searchText, chkEstimate, chkWork, chkClosed, sortKey]);
 
@@ -235,9 +238,22 @@ export default function InsuranceEstimate() {
     if (msg) warning(msg);
   }, [estError, claimError, detailError]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ====== 초기 조회 (금월 or 복원된 날짜) ======
+  // ====== 초기 조회 (금월 or 복원된 날짜, 또는 대시보드에서 특정 건 이동) ======
   useEffect(() => {
-    fetchEstimates(dateFrom, dateTo);
+    const { selectedSerial, inday } = location.state ?? {};
+    if (selectedSerial && inday) {
+      const toDate   = new Date(inday);
+      const fromDate = new Date(inday);
+      fromDate.setDate(fromDate.getDate() - 30);
+      const from = ymd(fromDate);
+      const to   = ymd(toDate);
+      setDateFrom(from);
+      setDateTo(to);
+      restoredSerialRef.current = selectedSerial;
+      fetchEstimates(from, to);
+    } else {
+      fetchEstimates(dateFrom, dateTo);
+    }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ====== 수정 화면에서 복귀 시 선택 행 + 스크롤 위치 자동 복원 ======
@@ -333,6 +349,15 @@ export default function InsuranceEstimate() {
     setNewEstModalOpen(true);
   };
 
+  const onNewRef = useRef(onNew);
+  useEffect(() => { onNewRef.current = onNew; });
+
+  useEffect(() => {
+    if (!location.state?.openNew) return;
+    onNewRef.current();
+    navigate(location.pathname, { replace: true, state: {} });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleNewEstConfirm = useCallback(async () => {
     setNewEstModalOpen(false);
     const paykind = selectedYear === "2018" ? "3" : "1";
@@ -340,7 +365,7 @@ export default function InsuranceEstimate() {
     try {
       await withLoading(async () => {
         const res = await createEstimate({
-          seccode: "12",
+          seccode,
           paykind,
           pntkind,
           userid:  getUserid(),
@@ -609,11 +634,24 @@ export default function InsuranceEstimate() {
     registerChildWin(win);
   }, [selected?.est_serial]);
 
+  const openGeneralRepairClaimPrint = useCallback((estbo_seqno) => {
+    const url =
+      `/print/general-repair-claim` +
+      `?est_serial=${encodeURIComponent(selected?.est_serial ?? "")}` +
+      `&estbo_seqno=${encodeURIComponent(estbo_seqno ?? "")}`;
+    const win = openCenteredWindow(url, "generalRepairClaimPrint", 900, 1200, {
+      scrollbars: "yes", resizable: "yes",
+    });
+    registerChildWin(win);
+  }, [selected?.est_serial]);
+
   const openPrivacyConsentPrint = useCallback(() => {
     if (!selected) return;
     const payload = {
       est_serial:  selected.est_serial,
+      seccode:     selected.seccode,
       accday:      selected.accday,
+      inday:       selected.inday,
       carno:       selected.carno,
       custom_name: selected.custom_name,
       hp0:         selected.hp0,
@@ -656,15 +694,16 @@ export default function InsuranceEstimate() {
       return;
     }
     if (kind === "수리비 청구서") {
+      const openFn = isInsurance ? openInsuranceClaimPrint : openGeneralRepairClaimPrint;
       if (claims.length === 1) {
-        openInsuranceClaimPrint(claims[0].estbo_seqno);
+        openFn(claims[0].estbo_seqno);
       } else {
         setClaimSelectKind("insurance");
         setClaimSelectOpen(true);
       }
       return;
     }
-  }, [selected, claims, openInspectionPrint, openInspectionStatementPrint, openInsuranceClaimPrint, openPrivacyConsentPrint, setClaimSelectKind, setClaimSelectOpen]);
+  }, [selected, claims, isInsurance, openInspectionPrint, openInspectionStatementPrint, openInsuranceClaimPrint, openGeneralRepairClaimPrint, openPrivacyConsentPrint, setClaimSelectKind, setClaimSelectOpen]);
 
   // ====== 수정잠금 해제 ======
   const handleUnlock = useCallback(async (row) => {
@@ -1038,7 +1077,7 @@ export default function InsuranceEstimate() {
         <div className="app-container py-3">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-lg font-semibold text-zinc-900">보험 견적일지</div>
+              <div className="text-lg font-semibold text-zinc-900">{isInsurance ? "보험 견적일지" : "일반 견적일지"}</div>
               <div className="text-xs text-zinc-500">견적 · 청구 · 작업 내역을 한 화면에서 관리</div>
             </div>
 
@@ -1225,6 +1264,7 @@ export default function InsuranceEstimate() {
                       onCustomerSend={openCustomerMailSend}
                       onMailHistory={openMailHistoryPage}
                       isest={selected?.isest}
+                      isInsurance={isInsurance}
                     />
                   </div>
                 )}
@@ -1263,33 +1303,34 @@ export default function InsuranceEstimate() {
 
             </div>
 
-            {/* 5) 청구보험목록 (높이 제한해서 상단 영역 내에서 자연스럽게) */}
-            <div className="rounded-md border border-zinc-200 bg-white shadow-sm flex flex-col min-h-0"
-                style={{ height: 160 }}>
-              <div className="border-b border-zinc-100 px-4 py-3">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm font-semibold text-zinc-900">청구보험 목록</div>
-                  <div className="text-xs text-zinc-500">{selected ? "선택 견적 기준" : "견적을 선택하세요"}</div>
+            {/* 5) 청구보험목록 — 보험건만 표시 */}
+            {isInsurance && (
+              <div className="rounded-md border border-zinc-200 bg-white shadow-sm flex flex-col min-h-0"
+                  style={{ height: 160 }}>
+                <div className="border-b border-zinc-100 px-4 py-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold text-zinc-900">청구보험 목록</div>
+                    <div className="text-xs text-zinc-500">{selected ? "선택 견적 기준" : "견적을 선택하세요"}</div>
+                  </div>
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-hidden">
+                  <FixedHeadTable
+                    columns={claimColumns}
+                    rows={selected ? claims : []}
+                    rowKey={(r, idx) => r.estbo_seqno || idx}
+                    selectedKey={selectedClaim?.estbo_seqno}
+                    onRowClick={(r) => setSelectedClaim(r)}
+                    emptyText={selected ? "청구 내역이 없습니다." : "견적을 선택하면 청구보험 목록이 표시됩니다."}
+                    headerClassName=""
+                    bodyClassName="min-h-0 flex-1"
+                    height="100%"
+                    rowSelectedClass="!bg-blue-100 hover:!bg-blue-100"
+                    rowHoverClass="hover:!bg-gray-50"
+                  />
                 </div>
               </div>
-
-              <div className="min-h-0 flex-1 overflow-hidden">
-                <FixedHeadTable
-                  columns={claimColumns}
-                  rows={selected ? claims : []}
-                  rowKey={(r, idx) => r.estbo_seqno || idx}
-                  selectedKey={selectedClaim?.estbo_seqno}
-                  onRowClick={(r) => setSelectedClaim(r)}
-                  emptyText={selected ? "청구 내역이 없습니다." : "견적을 선택하면 청구보험 목록이 표시됩니다."}
-                  headerClassName=""
-                  bodyClassName="min-h-0 flex-1"
-                  height="100%"
-                  rowSelectedClass="!bg-blue-100 hover:!bg-blue-100"
-                  rowHoverClass="hover:!bg-gray-50"
-                />
-
-              </div>
-            </div>
+            )}
           </div>
 
           {/* 6) 분할바: 하단 상세 패널 높이 조절 (상단 목록이 줄어듦) */}
@@ -1379,7 +1420,8 @@ export default function InsuranceEstimate() {
           if (claimSelectKind === "statement") {
             openInspectionStatementPrint(estbo_seqno);
           } else if (claimSelectKind === "insurance") {
-            openInsuranceClaimPrint(estbo_seqno);
+            if (isInsurance) openInsuranceClaimPrint(estbo_seqno);
+            else openGeneralRepairClaimPrint(estbo_seqno);
           } else {
             openInspectionPrint(estbo_seqno);
           }
@@ -1463,6 +1505,7 @@ export default function InsuranceEstimate() {
           onMailClaim={openMailClaimSend}
           onCustomerSend={openCustomerMailSend}
           onMailHistory={openMailHistoryPage}
+          isInsurance={isInsurance}
         />
       )}
 
@@ -1488,6 +1531,7 @@ function InlineActions({
   onCustomerSend,
   onMailHistory,
   isest,
+  isInsurance = true,
 }) {
   const mailBtnRef  = useRef(null);
   const printBtnRef = useRef(null);
@@ -1570,9 +1614,11 @@ function InlineActions({
           className="fixed z-[1200] w-52 flex flex-col overflow-hidden rounded-md border border-zinc-200 bg-white shadow-lg"
           style={{ top: mailPos.top, left: mailPos.left }}
         >
-          <MenuItem onClick={() => { setMailOpen(false); onMailClaim?.(); }}>
-            견적청구 - 보험사
-          </MenuItem>
+          {isInsurance && (
+            <MenuItem onClick={() => { setMailOpen(false); onMailClaim?.(); }}>
+              견적청구 - 보험사
+            </MenuItem>
+          )}
           <MenuItem onClick={() => { setMailOpen(false); onCustomerSend?.(); }}>
             {customerMailLabel}
           </MenuItem>
@@ -1618,6 +1664,7 @@ function RowContextMenu({
   onPhoto, onSms, onMemo, onDeposit,
   onPrint,
   onMailClaim, onCustomerSend, onMailHistory,
+  isInsurance = true,
 }) {
   const isest = String(row?.isest);
   const menuRef = useRef(null);
@@ -1686,7 +1733,7 @@ function RowContextMenu({
         isOpen={openSub === "mail"}
         onOpen={() => setOpenSub("mail")}
       >
-        <CtxItem icon={Send}    onClick={fire(onMailClaim)}>견적청구 - 보험사</CtxItem>
+        {isInsurance && <CtxItem icon={Send} onClick={fire(onMailClaim)}>견적청구 - 보험사</CtxItem>}
         <CtxItem icon={User}    onClick={fire(onCustomerSend)}>{customerMailLabel}</CtxItem>
         <CtxItem icon={History} onClick={fire(onMailHistory)}>발송메일 조회</CtxItem>
       </CtxSubmenu>

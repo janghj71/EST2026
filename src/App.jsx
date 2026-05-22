@@ -27,6 +27,8 @@ import RepairHistorySend from "./pages/RepairHistorySend";
 import EstClaimMailSend from "./pages/EstClaimMailSend";
 import EstCustomerMailSend from "./pages/EstCustomerMailSend";
 import MailHistoryPage from "./pages/MailHistoryPage";
+import NoticePage from "./pages/NoticePage";
+import NoticeViewPage from "./pages/NoticeViewPage";
 
 import EstimateEditPage from "./pages/estimate/EstimateEditPage";
 import LaborItemsPopup from "./pages/estimate/LaborItemsPopup";
@@ -36,6 +38,7 @@ import PartLookupPopup from "./pages/estimate/PartLookupPopup";
 import InspectionEstimatePrint from "./prints/InspectionEstimatePrint";
 import InspectionStatementPrint from "./prints/InspectionStatementPrint";
 import InsuranceClaimPrint from "./prints/InsuranceClaimPrint";
+import GeneralRepairClaimPrint from "./prints/GeneralRepairClaimPrint";
 import PrivacyConsentPrint from "./prints/PrivacyConsentPrint";
 import PrivacyConsentCapturePage from "./prints/PrivacyConsentCapturePage";
 
@@ -55,6 +58,8 @@ export default function App() {
         <Route path="/est-claim-send" element={<EstClaimMailSend />} />
         <Route path="/est-customer-send" element={<EstCustomerMailSend />} />
         <Route path="/mail-history" element={<MailHistoryPage />} />
+        <Route path="/notice" element={<NoticePage />} />
+        <Route path="/notice-view" element={<NoticeViewPage />} />
         <Route path="/labor-items" element={<LaborItemsPopup />} />
         <Route path="paint-items" element={<PaintItemsPopup />} />
         <Route path="chemical-items" element={<ChemicalItemsPopup />} />
@@ -62,20 +67,21 @@ export default function App() {
         <Route path="/print/inspection-estimate" element={<InspectionEstimatePrint />} />
         <Route path="/print/inspection-statement" element={<InspectionStatementPrint />} />
         <Route path="/print/insurance-claim" element={<InsuranceClaimPrint />} />
+        <Route path="/print/general-repair-claim" element={<GeneralRepairClaimPrint />} />
         <Route path="/print/privacy-consent" element={<PrivacyConsentPrint />} />
         <Route path="/print/privacy-consent/capture" element={<PrivacyConsentCapturePage />} />
 
         {/* 상단 고정 레이아웃 */}
         <Route element={<AppLayout />}>
           <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/estimate/insurance" element={<InsuranceEstimate />} />
+          <Route path="/estimate/insurance" element={<InsuranceEstimate key="insurance" />} />
           <Route path="/estimate-edit/:est_serial" element={<EstimateEditPage />} />
           
           {/* 나중에 여기로 페이지들 계속 추가 */}
           <Route path="/send/repair" element={<RepairHistorySend />} />
           <Route path="/send/history" element={<SmsHistoryPage />} />
           <Route path="chemical" element={<ChemicalItemsPage />} />
-          <Route path="/estimate/normal" element={<div className="p-6">일반 견적</div>} />
+          <Route path="/estimate/normal" element={<InsuranceEstimate key="normal" seccode="11" />} />
 
           <Route path="settings">
             <Route path="basic" element={<BasicSettingsLayout />}>
