@@ -6,18 +6,7 @@
 
 import React, { useState } from "react";
 import { useCompanyInfo } from "../hooks/useCompanyInfo";
-import { ymd } from "../utils/dateUtils";
-
-/* ── 날짜 파싱 ──────────────────────────────────────────── */
-function parseDateParts(str) {
-  if (!str) return { y: "", m: "", d: "" };
-  const s     = String(str).replace(/\s.*$/, "");
-  const clean = s.replace(/\D/g, "");
-  if (clean.length >= 8)
-    return { y: clean.slice(0, 4), m: clean.slice(4, 6), d: clean.slice(6, 8) };
-  const p = s.split("-");
-  return { y: p[0] || "", m: p[1] || "", d: p[2] || "" };
-}
+import { ymd, parseDateParts } from "../utils/dateUtils";
 
 /* ── 동의함 / 동의하지 않음 표시 (클릭 없음) ───────────── */
 function ConsentPairStatic({ agreed }) {

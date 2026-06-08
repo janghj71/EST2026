@@ -222,7 +222,7 @@ export default function InsuranceEstimate({ seccode = "12" }) {
         },
       },
     });
-  }, [dateFrom, dateTo, searchText, chkEstimate, chkWork, chkClosed, sortKey, navigate]);
+  }, [SS_KEY, dateFrom, dateTo, searchText, chkEstimate, chkWork, chkClosed, sortKey, navigate]);
 
 
   // 조회 조건 변경 시 sessionStorage에 저장 (F5 복원용)
@@ -377,7 +377,7 @@ export default function InsuranceEstimate({ seccode = "12" }) {
         }
       }, "신규 견적 생성 중...");
     } catch (err) { error(err?.message ?? "신규 견적 생성 실패"); }
-  }, [selectedYear, createEstimate, fetchEstimates, dateFrom, dateTo, openEstimateEdit, withLoading, error]);
+  }, [selectedYear, seccode, createEstimate, fetchEstimates, dateFrom, dateTo, openEstimateEdit, withLoading, error]);
   const onExcel = () => alert("엑셀내보내기");
 
   const onModify = () => {
@@ -645,6 +645,14 @@ export default function InsuranceEstimate({ seccode = "12" }) {
     registerChildWin(win);
   }, [selected?.est_serial]);
 
+  const openWorkOrderPrint = useCallback(() => {
+    const url = `/print/work-order?est_serial=${encodeURIComponent(selected?.est_serial ?? "")}`;
+    const win = openCenteredWindow(url, "workOrderPrint", 900, 1200, {
+      scrollbars: "yes", resizable: "yes",
+    });
+    registerChildWin(win);
+  }, [selected?.est_serial]);
+
   const openPrivacyConsentPrint = useCallback(() => {
     if (!selected) return;
     const payload = {
@@ -672,6 +680,10 @@ export default function InsuranceEstimate({ seccode = "12" }) {
     if (!selected) return;
     if (kind === "개인정보 활용동의") {
       openPrivacyConsentPrint();
+      return;
+    }
+    if (kind === "작업지시서") {
+      openWorkOrderPrint();
       return;
     }
     if (claims.length === 0) return;
@@ -703,7 +715,7 @@ export default function InsuranceEstimate({ seccode = "12" }) {
       }
       return;
     }
-  }, [selected, claims, isInsurance, openInspectionPrint, openInspectionStatementPrint, openInsuranceClaimPrint, openGeneralRepairClaimPrint, openPrivacyConsentPrint, setClaimSelectKind, setClaimSelectOpen]);
+  }, [selected, claims, isInsurance, openInspectionPrint, openInspectionStatementPrint, openInsuranceClaimPrint, openGeneralRepairClaimPrint, openWorkOrderPrint, openPrivacyConsentPrint, setClaimSelectKind, setClaimSelectOpen]);
 
   // ====== 수정잠금 해제 ======
   const handleUnlock = useCallback(async (row) => {
@@ -794,17 +806,19 @@ export default function InsuranceEstimate({ seccode = "12" }) {
         },
       },
       { key: "carno", title: "차량번호", width: "9%", align: "left" },
-      { key: "carname", title: "차량명", width: "12%", align: "left" },
+      { key: "carname", title: "차량명", width: isInsurance ? "12%" : "12%", align: "left" },
       { key: "custom_name", title: "고객명", width: "9%", align: "left" },
       { key: "hp0", title: "연락처", width: "10%", align: "left", render: (_v, row) => [row.hp0, row.hp1, row.hp2].filter(Boolean).join('-') || "-" },
-      { key: "bocomname", title: "보험사", width: "12%", align: "left" },
+      isInsurance
+        ? { key: "bocomname", title: "보험사", width: "12%", align: "left" }
+        : { key: "vinno", title: "차대번호", width: "13%", align: "left", className: "font-mono" },
       { key: "saletotal", title: "견적금액", width: "9%", align: "right", render: (v) => fmt(v) },
-      { key: "inday", title: "입고일자", width: "9%", align: "left" },
-      { key: "outday", title: "출고일자", width: "9%", align: "left", render: (v) => v || "-" },
-      { key: "preoutdate", title: "출고예정일시", width: "12%", align: "left" },
+      { key: "inday", title: "입고일자", width: isInsurance ? "9%" : "9%", align: "left" },
+      { key: "outday", title: "출고일자", width:isInsurance ? "9%" : "9%", align: "left", render: (v) => v || "-" },
+      { key: "preoutdate", title: "출고예정일시", width: isInsurance ? "12%" : "12%", align: "left" },
       { key: "statename", title: "상태", width: "8%", align: "left", render: (v, row) => <StatusBadge value={v} row={row} onUnlock={handleUnlock} onRequest={handleRequest} onCloseEst={handleCloseEst} /> },
     ],
-    [handleUnlock, handleRequest, handleCloseEst]
+    [handleUnlock, handleRequest, handleCloseEst, isInsurance]
   );
 
   // ====== 조회 버튼 ======

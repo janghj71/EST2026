@@ -4,22 +4,10 @@ import { useEstimate } from "../hooks/useEstimate";
 import { useEstimateClaims } from "../hooks/useEstimateClaims";
 import { useCompanyInfo } from "../hooks/useCompanyInfo";
 import { useSealImage } from "../hooks/useSealImage";
-import { formatNumber } from "../utils/numberFormat";
+import { formatNumber, fmtN, fmtZ } from "../utils/numberFormat";
+import { printDateStr } from "../utils/dateUtils";
 import { useUrlContextSnapshot } from "../hooks/useUrlContextSnapshot";
 import PrintPreviewLayout from "./PrintPreviewLayout";
-
-// ── 숫자 0 → 빈값 (견적내역용) ───────────────────────────────
-function fmtN(v) {
-  const n = Number(v ?? 0);
-  if (n === 0) return "";
-  return formatNumber(n);
-}
-
-// ── 숫자 0 → "0" 표시 (정산 테이블용) ───────────────────────
-function fmtZ(v) {
-  const n = Number(v ?? 0);
-  return n === 0 ? "0" : formatNumber(n);
-}
 
 // ── 공통 셀 스타일 ───────────────────────────────────────────
 const TD   = { border: "1px solid #000", padding: "2px 4px", fontSize: "8.5pt", verticalAlign: "middle" };
@@ -84,11 +72,7 @@ export default function InsuranceClaimPrint() {
   const coatLabel = COAT_LABELS[String(master?.pntcot_code ?? "2")] ?? "";
 
   // ── 인쇄일시 ─────────────────────────────────────────────────
-  const printDateStr = (() => {
-    const n  = new Date();
-    const p2 = (v) => String(v).padStart(2, "0");
-    return `${n.getFullYear()}-${p2(n.getMonth() + 1)}-${p2(n.getDate())} ${p2(n.getHours())}:${p2(n.getMinutes())}`;
-  })();
+  const printDate = printDateStr();
 
   // ── 견적내역 행 표시 함수 ────────────────────────────────────
   const getPayname = (row) => {
@@ -542,9 +526,9 @@ export default function InsuranceClaimPrint() {
         상기 청구서가 분해 작업전에 산출된 경우 분해점검 후 부품의 증감 작업변경에 따라 견적금액이 변동될 수 있습니다.<br />
       </div>
       <div style={{ display: "flex", fontSize: "8pt", marginTop: "1mm", color: "#555" }}>
-        <span>인쇄일시 : {printDateStr}</span>
+        <span>인쇄일시 : {printDate}</span>
         <span style={{ flex: 1, textAlign: "center" }}>- {pageIndex + 1} / {totalPages} -</span>
-        <span style={{ visibility: "hidden" }}>인쇄일시 : {printDateStr}</span>
+        <span style={{ visibility: "hidden" }}>인쇄일시 : {printDate}</span>
       </div>
     </>
   );

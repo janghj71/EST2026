@@ -85,3 +85,16 @@ export function toStrOrNull(v) {
   if (v == null) return null;
   return String(v);
 }
+
+/** 인쇄용: 0 또는 빈값 → ""(빈값), 그 외 → formatNumber */
+export function fmtN(v) {
+  const n = Number(v ?? 0);
+  if (n === 0) return "";
+  return formatNumber(n);
+}
+
+/** 인쇄용: 0 또는 빈값 → "0", 그 외 → formatNumber */
+export function fmtZ(v) {
+  const n = Number(v ?? 0);
+  return n === 0 ? "0" : formatNumber(n);
+}

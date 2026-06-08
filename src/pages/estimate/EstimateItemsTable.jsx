@@ -7,6 +7,7 @@ import IconBtn from "../../components/IconBtn";
 import MoneyInput from "../../components/MoneyInput";
 import { formatNumber } from "../../utils/numberFormat";
 import { focusById } from "../../utils/focusUtils";
+import { openCenteredWindow } from "../../utils/popup";
 import { getUserid, getComcode } from "../../api/config";
 import { useTbCode } from "../../hooks/useTbCode";
 import { useCodepnt } from "../../hooks/useLaborItems";
@@ -34,6 +35,7 @@ import {
   Trash2,
   Plus,
   ListPlus,
+  ClipboardCheck,
   ArrowDownWideNarrow,
   Send,
   Share2,
@@ -282,6 +284,7 @@ export default function EstimateItemsTable({
   onTsRepairSend,
   masterSendState = "",
   readOnly = false,
+  registerChildWin,
 }) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } })
@@ -1481,6 +1484,20 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
             onItemClick={handleBasicItemClick}
           />
         </div>
+
+        <IconBtn
+          icon={ClipboardCheck}
+          label="작업지시"
+          disabled={readOnly}
+          onClick={() => {
+            const win = openCenteredWindow(
+              `/work-order?est_serial=${encodeURIComponent(est_serial ?? "")}`,
+              "workOrder", 1080, 780,
+              { scrollbars: "yes", resizable: "yes" }
+            );
+            registerChildWin?.(win);
+          }}
+        />
 
         <div className="ml-auto flex items-center gap-2">
           <div className="flex items-center gap-2 rounded-md bg-zinc-50 px-2 py-1">

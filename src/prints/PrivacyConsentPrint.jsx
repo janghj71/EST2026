@@ -3,21 +3,10 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useCompanyInfo } from "../hooks/useCompanyInfo";
 import { useSignStamp }   from "../hooks/useSignStamp";
 import { useAlert }       from "../alerts";
-import { ymd }            from "../utils/dateUtils";
+import { ymd, parseDateParts } from "../utils/dateUtils";
 import PrintPreviewLayout from "./PrintPreviewLayout";
 
 const STORAGE_KEY = "privacyConsentCtx";
-
-/* ── 날짜 문자열 → { y, m, d } ──────────────────────────── */
-function parseDateParts(str) {
-  if (!str) return { y: "", m: "", d: "" };
-  const s     = String(str).replace(/\s.*$/, "");
-  const clean = s.replace(/\D/g, "");
-  if (clean.length >= 8)
-    return { y: clean.slice(0, 4), m: clean.slice(4, 6), d: clean.slice(6, 8) };
-  const p = s.split("-");
-  return { y: p[0] || "", m: p[1] || "", d: p[2] || "" };
-}
 
 /* ── 동의함 / 동의하지 않음 체크 쌍 ────────────────────── */
 function ConsentPair({ agreed, onChange }) {

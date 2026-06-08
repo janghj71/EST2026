@@ -505,6 +505,15 @@ export default function EstimateEditPage() {
     });
   }, [est_serial]);
 
+  const openWorkOrderPrint = useCallback(() => {
+    const url = `/print/work-order?est_serial=${encodeURIComponent(est_serial)}`;
+    const win = openCenteredWindow(url, "workOrderPrint", 900, 1200, {
+      scrollbars: "yes",
+      resizable: "yes",
+    });
+    registerChildWin(win);
+  }, [est_serial]);
+
   const openPrivacyConsentPrint = useCallback(() => {
     if (!master) return;
     const payload = {
@@ -530,6 +539,10 @@ export default function EstimateEditPage() {
   const handlePrint = useCallback((label) => {
     if (label === "개인정보 활용동의") {
       openPrivacyConsentPrint();
+      return;
+    }
+    if (label === "작업지시서") {
+      openWorkOrderPrint();
       return;
     }
     const claimList = master?.claims ?? [];
@@ -562,7 +575,7 @@ export default function EstimateEditPage() {
       }
       return;
     }
-  }, [master, openInspectionPrint, openInspectionStatementPrint, openInsuranceClaimPrint, openGeneralRepairClaimPrint, openPrivacyConsentPrint]);
+  }, [master, openInspectionPrint, openInspectionStatementPrint, openInsuranceClaimPrint, openGeneralRepairClaimPrint, openWorkOrderPrint, openPrivacyConsentPrint]);
 
   const openLaborItemsPopup = async () => {
     await saveClaimIfActive();
@@ -2605,6 +2618,7 @@ export default function EstimateEditPage() {
                 onTsRepairSend={handleTsRepairSend}
                 masterSendState={master.ts_send_dt || ""}
                 readOnly={isLocked}
+                registerChildWin={registerChildWin}
               />
               
             </div>

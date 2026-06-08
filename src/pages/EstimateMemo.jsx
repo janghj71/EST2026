@@ -220,7 +220,7 @@ export default function EstimateMemo() {
         const len = el.value?.length ?? 0;
         try {
           el.setSelectionRange(len, len);
-        } catch {}
+        } catch { /* empty */ }
       }
     });
   };
@@ -306,7 +306,9 @@ export default function EstimateMemo() {
               onChange={(e) => onChangeText(row.seq, e.target.value)}
               onKeyDown={(e) => onMemoKeyDown(e, row.seq)}
               className="w-full rounded-md border border-transparent bg-transparent px-2 py-2 text-sm outline-none focus:border-zinc-300 focus:bg-white"
-              onFocus={() => setActiveSeq(row.seq)}   // 포커스되면 행 선택
+              onFocus={() => setActiveSeq(row.seq)}
+              onDragOver={allowDrop}
+              onDrop={(e) => onDropToSeq(e, row.seq)}
             />
           </div>
         ),

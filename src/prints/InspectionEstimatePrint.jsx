@@ -6,16 +6,10 @@ import { useMasterEstimateSave } from "../hooks/useMasterEstimateSave";
 import { useCompanyInfo } from "../hooks/useCompanyInfo";
 import { useSealImage } from "../hooks/useSealImage";
 import { useUserSettings } from "../hooks/useUserSettings";
-import { formatNumber } from "../utils/numberFormat";
+import { formatNumber, fmtN } from "../utils/numberFormat";
+import { printDateStr } from "../utils/dateUtils";
 import { useUrlContextSnapshot } from "../hooks/useUrlContextSnapshot";
 import PrintPreviewLayout from "./PrintPreviewLayout";
-
-// ── 숫자 0 → 빈값 ──────────────────────────────────────────────
-function fmtN(v) {
-  const n = Number(v ?? 0);
-  if (n === 0) return "";
-  return formatNumber(n);
-}
 
 // ── 공통 셀 스타일 ───────────────────────────────────────────────
 const TD  = { border: "1px solid #000", padding: "2px 4px", fontSize: "8.5pt", verticalAlign: "middle" };
@@ -118,11 +112,7 @@ export default function InspectionEstimatePrint() {
     return `${d.getFullYear()} 년 ${String(d.getMonth() + 1).padStart(2, "0")} 월 ${String(d.getDate()).padStart(2, "0")} 일`;
   })();
 
-  const printDateStr = (() => {
-    const n = new Date();
-    const p2 = (v) => String(v).padStart(2, "0");
-    return `${n.getFullYear()}-${p2(n.getMonth() + 1)}-${p2(n.getDate())} ${p2(n.getHours())}:${p2(n.getMinutes())}`;
-  })();
+  const printDate = printDateStr();
 
   // ── 기타 ─────────────────────────────────────────────────────
   const isInsurance = String(master?.seccode) === "12";
@@ -344,9 +334,9 @@ export default function InspectionEstimatePrint() {
 
       {/* 페이지 번호 + 인쇄일시 — 푸터 박스 밖 */}
       <div style={{ display: "flex", alignItems: "center", fontSize: "8pt", marginTop: "2mm", color: "#555" }}>
-        <span>인쇄일시 : {printDateStr}</span>
+        <span>인쇄일시 : {printDate}</span>
         <span style={{ flex: 1, textAlign: "center" }}>- {pageIndex + 1} / {totalPages} -</span>
-        <span style={{ visibility: "hidden" }}>인쇄일시 : {printDateStr}</span>
+        <span style={{ visibility: "hidden" }}>인쇄일시 : {printDate}</span>
       </div>
     </>
   );

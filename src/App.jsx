@@ -32,6 +32,7 @@ import NoticeViewPage from "./pages/NoticeViewPage";
 
 import EstimateEditPage from "./pages/estimate/EstimateEditPage";
 import LaborItemsPopup from "./pages/estimate/LaborItemsPopup";
+import WorkOrderPopup from "./pages/estimate/WorkOrderPopup";
 import PaintItemsPopup from "./pages/estimate/PaintItemsPopup";
 import ChemicalItemsPopup from "./pages/estimate/ChemicalItemsPopup";
 import PartLookupPopup from "./pages/estimate/PartLookupPopup";
@@ -39,6 +40,7 @@ import InspectionEstimatePrint from "./prints/InspectionEstimatePrint";
 import InspectionStatementPrint from "./prints/InspectionStatementPrint";
 import InsuranceClaimPrint from "./prints/InsuranceClaimPrint";
 import GeneralRepairClaimPrint from "./prints/GeneralRepairClaimPrint";
+import WorkOrderPrint from "./prints/WorkOrderPrint";
 import PrivacyConsentPrint from "./prints/PrivacyConsentPrint";
 import PrivacyConsentCapturePage from "./prints/PrivacyConsentCapturePage";
 
@@ -61,6 +63,7 @@ export default function App() {
         <Route path="/notice" element={<NoticePage />} />
         <Route path="/notice-view" element={<NoticeViewPage />} />
         <Route path="/labor-items" element={<LaborItemsPopup />} />
+        <Route path="/work-order" element={<WorkOrderPopup />} />
         <Route path="paint-items" element={<PaintItemsPopup />} />
         <Route path="chemical-items" element={<ChemicalItemsPopup />} />
         <Route path="part-lookup" element={<PartLookupPopup />} />
@@ -68,6 +71,7 @@ export default function App() {
         <Route path="/print/inspection-statement" element={<InspectionStatementPrint />} />
         <Route path="/print/insurance-claim" element={<InsuranceClaimPrint />} />
         <Route path="/print/general-repair-claim" element={<GeneralRepairClaimPrint />} />
+        <Route path="/print/work-order" element={<WorkOrderPrint />} />
         <Route path="/print/privacy-consent" element={<PrivacyConsentPrint />} />
         <Route path="/print/privacy-consent/capture" element={<PrivacyConsentCapturePage />} />
 
