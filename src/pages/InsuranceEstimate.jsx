@@ -1,4 +1,5 @@
 ﻿import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import * as XLSX from "xlsx-js-style";
 import { createPortal } from "react-dom";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
@@ -112,8 +113,20 @@ export default function InsuranceEstimate({ seccode = "12" }) {
     restoredScrollRef.current = _saved?.scrollTop ?? 0;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const [dateFrom, setDateFrom] = useState(() => _filter?.dateFrom ?? monthRange(new Date()).from);
-  const [dateTo, setDateTo] = useState(() => _filter?.dateTo ?? monthRange(new Date()).to);
+  const [dateFrom, setDateFrom] = useState(() => {
+    const { inday } = location.state ?? {};
+    if (inday) {
+      const fromDate = new Date(inday);
+      fromDate.setDate(fromDate.getDate() - 30);
+      return ymd(fromDate);
+    }
+    return _filter?.dateFrom ?? monthRange(new Date()).from;
+  });
+  const [dateTo, setDateTo] = useState(() => {
+    const { inday } = location.state ?? {};
+    if (inday) return ymd(new Date(inday));
+    return _filter?.dateTo ?? monthRange(new Date()).to;
+  });
   const [searchText, setSearchText] = useState(() => _filter?.searchText ?? "");
   const [chkEstimate, setChkEstimate] = useState(() => _filter?.chkEstimate ?? true);
   const [chkWork, setChkWork] = useState(() => _filter?.chkWork ?? true);
@@ -228,9 +241,9 @@ export default function InsuranceEstimate({ seccode = "12" }) {
   // 조회 조건 변경 시 sessionStorage에 저장 (F5 복원용)
   useEffect(() => {
     try {
-      sessionStorage.setItem(SS_FILTER_KEY, JSON.stringify({ dateFrom, dateTo, searchText, chkEstimate, chkWork, chkClosed, sortKey })); // eslint-disable-line react-hooks/exhaustive-deps
+      sessionStorage.setItem(SS_FILTER_KEY, JSON.stringify({ dateFrom, dateTo, searchText, chkEstimate, chkWork, chkClosed, sortKey }));
     } catch { /* empty */ }
-  }, [dateFrom, dateTo, searchText, chkEstimate, chkWork, chkClosed, sortKey]);
+  }, [SS_FILTER_KEY, dateFrom, dateTo, searchText, chkEstimate, chkWork, chkClosed, sortKey]);
 
   // ====== 조회 에러 → 메시지 표시 ======
   useEffect(() => {
@@ -240,20 +253,11 @@ export default function InsuranceEstimate({ seccode = "12" }) {
 
   // ====== 초기 조회 (금월 or 복원된 날짜, 또는 대시보드에서 특정 건 이동) ======
   useEffect(() => {
-    const { selectedSerial, inday } = location.state ?? {};
-    if (selectedSerial && inday) {
-      const toDate   = new Date(inday);
-      const fromDate = new Date(inday);
-      fromDate.setDate(fromDate.getDate() - 30);
-      const from = ymd(fromDate);
-      const to   = ymd(toDate);
-      setDateFrom(from);
-      setDateTo(to);
+    const { selectedSerial } = location.state ?? {};
+    if (selectedSerial) {
       restoredSerialRef.current = selectedSerial;
-      fetchEstimates(from, to);
-    } else {
-      fetchEstimates(dateFrom, dateTo);
     }
+    fetchEstimates(dateFrom, dateTo);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ====== 수정 화면에서 복귀 시 선택 행 + 스크롤 위치 자동 복원 ======
@@ -378,7 +382,72 @@ export default function InsuranceEstimate({ seccode = "12" }) {
       }, "신규 견적 생성 중...");
     } catch (err) { error(err?.message ?? "신규 견적 생성 실패"); }
   }, [selectedYear, seccode, createEstimate, fetchEstimates, dateFrom, dateTo, openEstimateEdit, withLoading, error]);
-  const onExcel = () => alert("엑셀내보내기");
+  const onExcel = useCallback(() => {
+    if (!insuranceEstimates.length) { info("내보낼 데이터가 없습니다."); return; }
+
+    const label = isInsurance ? "보험견적일지" : "일반견적일지";
+    const today = new Date();
+    const dateStr = [
+      today.getFullYear(),
+      String(today.getMonth() + 1).padStart(2, "0"),
+      String(today.getDate()).padStart(2, "0"),
+    ].join("");
+
+    const headers = [
+      "구분", "차량번호", "차량명", "고객명", "연락처",
+      isInsurance ? "보험사" : "차대번호",
+      "견적금액", "입고일자", "출고일자", "출고예정일시", "상태",
+    ];
+
+    const rows = insuranceEstimates.map((r) => [
+      r.seccodename ?? "",
+      r.carno       ?? "",
+      r.carname     ?? "",
+      r.custom_name ?? "",
+      [r.hp0, r.hp1, r.hp2].filter(Boolean).join("-") || "",
+      isInsurance ? (r.bocomname ?? "") : (r.vinno ?? ""),
+      r.saletotal   ?? "",
+      r.inday       ?? "",
+      r.outday      ?? "",
+      r.preoutdate  ?? "",
+      r.statename   ?? "",
+    ]);
+
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+
+    // 헤더 스타일 (배경색 + 테두리 + 굵은 글씨)
+    const headerStyle = {
+      font:      { bold: true, color: { rgb: "FFFFFF" } },
+      fill:      { patternType: "solid", fgColor: { rgb: "4472C4" } },
+      alignment: { horizontal: "center", vertical: "center" },
+      border: {
+        top:    { style: "thin", color: { rgb: "000000" } },
+        bottom: { style: "thin", color: { rgb: "000000" } },
+        left:   { style: "thin", color: { rgb: "000000" } },
+        right:  { style: "thin", color: { rgb: "000000" } },
+      },
+    };
+    headers.forEach((_, i) => {
+      const cellAddr = XLSX.utils.encode_cell({ r: 0, c: i });
+      if (ws[cellAddr]) ws[cellAddr].s = headerStyle;
+    });
+
+    // 컬럼 너비 오토핏 (한글 2칸, 영문·숫자 1칸)
+    const strWidth = (s) =>
+      String(s ?? "").split("").reduce((acc, ch) => acc + (ch.charCodeAt(0) > 127 ? 2 : 1), 0);
+
+    ws["!cols"] = headers.map((h, i) => {
+      const maxW = Math.max(
+        strWidth(h),
+        ...rows.map((r) => strWidth(r[i]))
+      );
+      return { wch: maxW + 2 };
+    });
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, label);
+    XLSX.writeFile(wb, `${label}_${dateStr}.xlsx`);
+  }, [insuranceEstimates, isInsurance, info]);
 
   const onModify = () => {
     if (!requireSelected()) return;
@@ -993,26 +1062,26 @@ export default function InsuranceEstimate({ seccode = "12" }) {
         window.location.origin
       );
     } catch { /* empty */ }
-  }, [selected?.est_serial, selected?.carno]);
+  }, [selected]);
 
   useEffect(() => {
     const w = depositWinRef.current;
     if (!w || w.closed) return;
     if (!selected) return;
-  
+
     const payload = {
       est_serial: selected?.est_serial || "",
       carno: selected?.carno || "",
       claims: claims.slice(0, 2),
     };
-  
+
     try {
       w.postMessage(
         { type: "ESTIMATE_DEPOSIT_SET_CTX", payload },
         window.location.origin
       );
     } catch { /* empty */ }
-  }, [selected?.est_serial, selected?.carno, claims]);
+  }, [selected, claims]);
   
   useEffect(() => {
     if (!detailOpen) return;
@@ -1095,14 +1164,14 @@ export default function InsuranceEstimate({ seccode = "12" }) {
               <div className="text-xs text-zinc-500">견적 · 청구 · 작업 내역을 한 화면에서 관리</div>
             </div>
 
-            <button
+            {/* <button
               type="button"
               className="inline-flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm hover:bg-zinc-50"
               onClick={() => alert("[보험견적] 퀵버튼")}
             >
               <span className="h-2 w-2 rounded-full bg-emerald-500" />
               보험견적
-            </button>
+            </button> */}
           </div>
         </div>
       </div>

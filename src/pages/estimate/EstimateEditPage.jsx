@@ -147,10 +147,13 @@ export default function EstimateEditPage() {
   // est_serial 변경 시 견적상세 조회
   useEffect(() => {
     if (!est_serial) return;
-    setDetailLoading(true);
-    fetchDetails(est_serial)
-      .then((json) => setRows(json?.dataset ?? []))
-      .finally(() => setDetailLoading(false));
+    let cancelled = false;
+    Promise.resolve()
+      .then(() => { if (!cancelled) setDetailLoading(true); })
+      .then(() => fetchDetails(est_serial))
+      .then((json) => { if (!cancelled) setRows(json?.dataset ?? []); })
+      .finally(() => { if (!cancelled) setDetailLoading(false); });
+    return () => { cancelled = true; };
   }, [est_serial]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // est_serial 변경 시 청구처(claims) 미리 로드 → calcPaysum 에서 사용
@@ -342,12 +345,12 @@ export default function EstimateEditPage() {
   const registerChildWin = (w) => {
     if (!w) return;
     childWinsRef.current.add(w);
-    try { if (w.closed) childWinsRef.current.delete(w); } catch {}
+    try { if (w.closed) childWinsRef.current.delete(w); } catch { /* empty */ }
   };
   
   const closeAllChildWins = () => {
     childWinsRef.current.forEach((w) => {
-      try { if (w && !w.closed) w.close(); } catch {}
+      try { if (w && !w.closed) w.close(); } catch { /* empty */ }
     });
     childWinsRef.current.clear();
   };
@@ -356,11 +359,13 @@ export default function EstimateEditPage() {
   useEffect(() => {
     if (!isLocked) return;
     [laborWinRef, paintWinRef, chemicalWinRef, partLookupWinRef].forEach((ref) => {
-      try { if (ref.current && !ref.current.closed) ref.current.close(); } catch {}
+      try { if (ref.current && !ref.current.closed) ref.current.close(); } catch { /* empty */ }
       ref.current = null;
     });
-    setLaborWinOpen(false);
-    setPaintWinOpen(false);
+    Promise.resolve().then(() => {
+      setLaborWinOpen(false);
+      setPaintWinOpen(false);
+    });
   }, [isLocked]);
 
   // 메일청구 완료 → 마스터 리프레시

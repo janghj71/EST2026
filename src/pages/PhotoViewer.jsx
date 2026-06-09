@@ -13,7 +13,7 @@ import {
 import IconBtn from "../components/IconBtn";
 import TableLoadingOverlay from "../components/TableLoadingOverlay";
 import { openCenteredWindow } from "../utils/popup";
-import { buildPhotoPrintHtml } from "../prints/photoPrintHtml";
+import { setPhotoPrintCtx } from "../prints/PhotoPrintPage";
 import { useAlert } from "../alerts";
 import { usePhoto } from "../hooks/usePhoto";
 import { useTbCode } from "../hooks/useTbCode";
@@ -557,14 +557,10 @@ export default function PhotoViewer() {
       return;
     }
 
-    const html = buildPhotoPrintHtml({ viewItems, count, carNo, checkedCats, CATS });
-
-    const popupName = `PrintWindow_${Date.now()}`;
-    const popup = openCenteredWindow('about:blank', popupName, 900, 700, {
+    setPhotoPrintCtx({ viewItems, count, carNo, checkedCats, CATS });
+    openCenteredWindow('/print/photo', `PhotoPrint_${Date.now()}`, 900, 1150, {
       windowFeatures: { toolbar: 'no', location: 'no', menubar: 'no', status: 'no', resizable: 'yes' },
     });
-    popup.document.write(html);
-    popup.document.close();
   };
 
   const onRemoveSelected = async () => {

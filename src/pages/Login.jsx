@@ -52,7 +52,8 @@ export default function Login() {
       passwd: form.password,
     });
 
-    console.log("res", res);
+    if (import.meta.env.DEV) console.log("res", res);
+
     if (String(res?.result).toUpperCase() === "OK") {
       // 필요하면 usertype 저장 (권한 분기 등에 사용)
       localStorage.setItem("usertype", res?.usertype ?? "");

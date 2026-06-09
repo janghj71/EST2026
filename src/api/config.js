@@ -23,6 +23,9 @@ export const API_IVSERVICE =
 export const API_TSSERVICE =
   import.meta.env.VITE_TSSERVICE ?? 'http://dev-ts.intravan.co.kr';
 
+export const API_ASSERVICE =
+  import.meta.env.VITE_ASSERVICE ?? 'http://as.intravan.co.kr';
+
 
 export function getServiceKey() {
   return localStorage.getItem(SERVICEKEY_STORAGE_KEY) || "";

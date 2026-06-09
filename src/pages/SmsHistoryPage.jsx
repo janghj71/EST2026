@@ -92,8 +92,7 @@ export default function SmsHistoryPage() {
   }, [loadData, dateFrom, dateTo]);
 
   // 최초 마운트 시 1회 자동 조회
-  const initRef = useRef(null);
-  if (!initRef.current) initRef.current = { dateFrom, dateTo };
+  const initRef = useRef({ dateFrom, dateTo });
   useEffect(() => {
     loadData(initRef.current.dateFrom, initRef.current.dateTo);
   }, [loadData]);
@@ -197,13 +196,13 @@ export default function SmsHistoryPage() {
               <div className="text-xs text-zinc-500">발송년월 기준으로 문자 발송 이력을 조회합니다.</div>
             </div>
 
-            <button
+            {/* <button
               type="button"
               className="inline-flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm hover:bg-zinc-50"
             >
               <span className="h-2 w-2 rounded-full bg-emerald-500" />
               문자발송
-            </button>
+            </button> */}
           </div>
         </div>
       </div>

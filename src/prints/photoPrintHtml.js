@@ -10,6 +10,16 @@
  * @param {Array}  params.CATS        - 카테고리 목록 [{ key, label }]
  * @returns {string} 팝업 창에 write() 할 완성 HTML 문자열
  */
+/** HTML 특수문자 이스케이프 (XSS 방지) */
+function esc(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 export function buildPhotoPrintHtml({ viewItems, count, carNo, checkedCats, CATS }) {
   // 페이지 그룹 분리
   const groups = [];
@@ -46,10 +56,10 @@ export function buildPhotoPrintHtml({ viewItems, count, carNo, checkedCats, CATS
     .map(
       (group, pageIndex) => `
     <div class="page">
-      <div class="header">${carNo || ""}</div>
+      <div class="header">${esc(carNo)}</div>
       <div class="info">
-        인쇄일시 ${printDate}
-        &nbsp;|&nbsp; 사진구분: ${kindLabels.join(", ")}
+        인쇄일시 ${esc(printDate)}
+        &nbsp;|&nbsp; 사진구분: ${kindLabels.map(esc).join(", ")}
         &nbsp;|&nbsp; 페이지 ${pageIndex + 1} / ${totalPages}
       </div>
       <div class="grid">
@@ -61,10 +71,10 @@ export function buildPhotoPrintHtml({ viewItems, count, carNo, checkedCats, CATS
             return `
           <div class="item">
             <div class="thumb">
-              <img src="${imgSrc}" alt="" />
+              <img src="${esc(imgSrc)}" alt="" />
             </div>
-            <div class="category">${catLabel || "&nbsp;"}</div>
-            <div class="memo">${memo || "&nbsp;"}</div>
+            <div class="category">${esc(catLabel) || "&nbsp;"}</div>
+            <div class="memo">${esc(memo) || "&nbsp;"}</div>
           </div>`;
           })
           .join("")}
@@ -79,7 +89,7 @@ export function buildPhotoPrintHtml({ viewItems, count, carNo, checkedCats, CATS
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
-    <title>${carNo || "사진인쇄"}</title>
+    <title>${esc(carNo) || "사진인쇄"}</title>
     <style>
       @page { size: A4; margin: 10mm; }
 

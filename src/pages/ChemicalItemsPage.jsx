@@ -36,11 +36,7 @@ function onlyHour(v) {
   if (b == null) return a;
   return `${a}.${b.slice(0, 2)}`;
 }
-// function toHourNumber(v) {
-//   const s = onlyHour(v);
-//   const n = Number(s);
-//   return Number.isFinite(n) ? n : 0;
-// }
+
 
 export default function ChemicalItemsPage() {
   const { info, warning } = useAlert();
@@ -361,13 +357,13 @@ export default function ChemicalItemsPage() {
               </div>
             </div>
 
-            <button
+            {/* <button
               type="button"
               className="inline-flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm hover:bg-zinc-50"
             >
               <span className="h-2 w-2 rounded-full bg-emerald-500" />
               케미칼
-            </button>
+            </button> */}
           </div>
         </div>
       </div>

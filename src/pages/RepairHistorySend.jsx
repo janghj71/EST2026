@@ -1520,14 +1520,14 @@ export default function RepairHistorySend() {
               <div className="text-xs text-zinc-500">정비이력 조회 · 전송 · 전송상태 확인</div>
             </div>
 
-            <button
+            {/* <button
               type="button"
               className="inline-flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm hover:bg-zinc-50"
               onClick={() => info("[국토부전송] 퀵버튼")}
             >
               <span className="h-2 w-2 rounded-full bg-emerald-500" />
               국토부전송
-            </button>
+            </button> */}
           </div>
         </div>
       </div>

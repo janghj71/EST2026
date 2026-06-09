@@ -53,7 +53,6 @@ export default function UserAuth({ onClose, onSuccess }) {
 
       setForm((p) => ({
         ...p,
-        smsCode: luseno || p.smsCode, // 인증번호 자동 채움(원치 않으면 이 줄만 제거)
         companyName: comname,
         boss,
         comcode,

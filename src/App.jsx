@@ -43,6 +43,7 @@ import GeneralRepairClaimPrint from "./prints/GeneralRepairClaimPrint";
 import WorkOrderPrint from "./prints/WorkOrderPrint";
 import PrivacyConsentPrint from "./prints/PrivacyConsentPrint";
 import PrivacyConsentCapturePage from "./prints/PrivacyConsentCapturePage";
+import PhotoPrintPage from "./prints/PhotoPrintPage";
 
 export default function App() {
   return (
@@ -74,6 +75,7 @@ export default function App() {
         <Route path="/print/work-order" element={<WorkOrderPrint />} />
         <Route path="/print/privacy-consent" element={<PrivacyConsentPrint />} />
         <Route path="/print/privacy-consent/capture" element={<PrivacyConsentCapturePage />} />
+        <Route path="/print/photo" element={<PhotoPrintPage />} />
 
         {/* 상단 고정 레이아웃 */}
         <Route element={<AppLayout />}>

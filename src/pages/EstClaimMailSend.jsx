@@ -205,7 +205,7 @@ export default function EstClaimMailSend() {
 
           <div className="ml-auto flex items-center gap-2">
             <IconBtn icon={Mail} label="메일청구" variant="orange" onClick={onEmailSend} />
-            <IconBtn icon={Phone} label="팩스청구" onClick={onFaxSend} />
+            {/* <IconBtn icon={Phone} label="팩스청구" onClick={onFaxSend} /> */}
             <IconBtn icon={X} label="닫기" variant="primary" onClick={() => window.close()} />
           </div>
         </div>

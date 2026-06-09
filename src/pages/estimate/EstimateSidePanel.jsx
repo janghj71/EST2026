@@ -406,7 +406,7 @@ function LaborPanel({
           placeholder="예: 1W / AH3"
           inputClassName={inputCls}
           showAllWhenNoMatch
-          disabled
+          disabled={readOnly}
         />
       </FormRow>
 
