@@ -24,6 +24,14 @@ body {
   }
 }
 
+/* 1600px 이상(사이드바 레이아웃): 컨텐츠를 사이드바 바로 옆에 붙임 */
+@media (min-width: 1600px) {
+  .app-container {
+    margin-left: 0;
+    margin-right: auto;
+  }
+}
+
 @layer components {
   .select-base {
     @apply appearance-none rounded-md border border-zinc-200 bg-white

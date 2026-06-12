@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { X } from "lucide-react";
 import { inputCls, btnConfirm, btnClose, btnOutlineSky } from "../styles/uiClasses";
 
 export default function FindPassword({ onClose }) {
@@ -104,25 +105,14 @@ function ModalShell({ title, children, onClose }) {
         aria-hidden="true"
       />
       <div className="relative w-full max-w-xl bg-white rounded-xl shadow-xl overflow-hidden">
-        <div className="py-4 px-6 flex items-center justify-between border-b border-gray-300">
-          {/* <div className="font-semibold">{title}</div> */}
-          <div className="flex items-center gap-3">
-            <img
-              src="/EST.ico"
-              alt="EST2026"
-              className="w-7 h-7"
-              draggable={false}
-            />
-            <div className="font-semibold text-xl sm:text-2xl tracking-tight text-slate-800">
-              {title}
-            </div>
-          </div>
+        <div className="py-4 px-6 flex items-center justify-between border-b border-gray-200">
+          <div className="font-bold text-xl text-gray-900">{title}</div>
           <button
             onClick={onClose}
-            className="w-10 h-10 rounded-md hover:bg-slate-100"
+            className="w-8 h-8 rounded-md flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition"
             aria-label="닫기"
           >
-            ✕
+            <X className="w-4 h-4" />
           </button>
         </div>
         <div className="p-6">{children}</div>
