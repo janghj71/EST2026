@@ -78,18 +78,14 @@ export default function UserSettingsPage() {
     if (!hp) return await warning("아이디를 입력하세요.");
     if (!username) return await warning("이름을 입력하세요.");
 
-    try {
-      await save(form);
-      await refetch();
-      await info("저장 완료");
-
-      if (mode === "new") {
-        setMode("new");
-        setSelectedId("");
-        setForm(makeEmptyForm());
-      }
-    } catch (err) {
-      await warning(err?.message || "저장에 실패했습니다.");
+    const res = await save(form);
+    if (String(res?.result) === 'false') { await warning(res?.msg || "저장에 실패했습니다."); return; }
+    await refetch();
+    await info("저장 완료");
+    if (mode === "new") {
+      setMode("new");
+      setSelectedId("");
+      setForm(makeEmptyForm());
     }
   };
 
@@ -101,12 +97,9 @@ export default function UserSettingsPage() {
     const ok = await confirm(`${row.hp} 사용자를 중지 처리할까요?`);
     if (!ok) return;
 
-    try {
-      await stop(row);
-      await refetch();
-    } catch (err) {
-      await warning(err?.message || "중지에 실패했습니다.");
-    }
+    const res = await stop(row);
+    if (String(res?.result) === 'false') { await warning(res?.msg || "중지에 실패했습니다."); return; }
+    await refetch();
   }, [confirm, stop, refetch, warning]);
 
   const columns = useMemo(
@@ -259,23 +252,17 @@ export default function UserSettingsPage() {
               imageUrl={form.imgdata ? `data:image/jpeg;base64,${form.imgdata}` : ""}
               onUpload={async (file) => {
                 if (!file) return;
-                try {
-                  const base64 = await fileToBase64(file);
-                  await uploadSeal(form.hp, base64);
-                  setForm((p) => ({ ...p, imgdata: base64 }));
-                  await refetch();
-                } catch (err) {
-                  await warning(err?.message || "인감 등록에 실패했습니다.");
-                }
+                const base64 = await fileToBase64(file);
+                const res = await uploadSeal(form.hp, base64);
+                if (String(res?.result) === 'false') { await warning(res?.msg || "인감 등록에 실패했습니다."); return; }
+                setForm((p) => ({ ...p, imgdata: base64 }));
+                await refetch();
               }}
               onDelete={async () => {
-                try {
-                  await deleteSeal(form.hp);
-                  setForm((p) => ({ ...p, imgdata: "" }));
-                  await refetch();
-                } catch (err) {
-                  await warning(err?.message || "인감 삭제에 실패했습니다.");
-                }
+                const res = await deleteSeal(form.hp);
+                if (String(res?.result) === 'false') { await warning(res?.msg || "인감 삭제에 실패했습니다."); return; }
+                setForm((p) => ({ ...p, imgdata: "" }));
+                await refetch();
               }}
             />
           </div>

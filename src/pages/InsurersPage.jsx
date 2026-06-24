@@ -61,12 +61,9 @@ export default function InsurersPage() {
       await warning("보험사를 선택하세요.");
       return;
     }
-    try {
-      await save(selectedInsurer);
-      await info("저장 완료");
-    } catch (err) {
-      await warning(err?.message || "저장에 실패했습니다.");
-    }
+    const res = await save(selectedInsurer);
+    if (String(res?.result) === 'false') { await warning(res?.msg || "저장에 실패했습니다."); return; }
+    await info("저장 완료");
   };
 
   // FixedHeadTable columns

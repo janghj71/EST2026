@@ -120,24 +120,21 @@ export default function EstCustomerMailSend() {
       alertError("받는사람 메일주소를 입력하세요.");
       return;
     }
-    try {
-      const mailkind = String(isest) === "1" ? "03C" : "02C";
-      await withLoading(
-        () => sendEstimateMail({
-          comcode,
-          est_serial: estSerial,
-          mailkind,
-          mail_addr: email,
-          mail_subject: subject,
-          mail_text: body,
-        }),
-        "메일 전송 중..."
-      );
-      // 로딩 종료 후 알럿 표시 — 로딩 오버레이와 겹치지 않음
-      await info("메일이 발송되었습니다.");
-    } catch (err) {
-      alertError(err?.message ?? "메일 발송 실패");
-    }
+    const mailkind = String(isest) === "1" ? "03C" : "02C";
+    let failed = false;
+    await withLoading(async () => {
+      const res = await sendEstimateMail({
+        comcode,
+        est_serial: estSerial,
+        mailkind,
+        mail_addr: email,
+        mail_subject: subject,
+        mail_text: body,
+      });
+      if (String(res?.result) === 'false') { failed = true; alertError(res?.msg ?? "메일 발송 실패"); }
+    }, "메일 전송 중...");
+    // 로딩 종료 후 알럿 표시 — 로딩 오버레이와 겹치지 않음
+    if (!failed) await info("메일이 발송되었습니다.");
   };
 
   const docTitle =

@@ -1,5 +1,5 @@
 // src/components/FormRow.jsx
-export default function FormRow({ label, children, alignTop = false, className = "" }) {
+export default function FormRow({ label, children, alignTop = false, className = "", required = false }) {
   return (
     <div className={["grid grid-cols-[88px_minmax(0,1fr)] items-center gap-2", className].join(" ")}>
       <div
@@ -9,6 +9,7 @@ export default function FormRow({ label, children, alignTop = false, className =
         ].join(" ")}
       >
         {label}
+        {required && <span className="ml-0.5 text-red-500">*</span>}
       </div>
       <div className="min-w-0">{children}</div>
     </div>

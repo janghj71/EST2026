@@ -33,12 +33,9 @@ export default function CompanyInfoPage() {
   }, [error, sealError]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onSave = async () => {
-    try {
-      await save(form);
-      await info("저장 완료");
-    } catch (err) {
-      await info(err.message || "저장 실패");
-    }
+    const res = await save(form);
+    if (String(res?.result) === 'false') { await info(res?.msg || "저장 실패"); return; }
+    await info("저장 완료");
   };
 
   if (loading) return <div className="p-10 text-center text-gray-400">불러오는 중...</div>;
@@ -178,20 +175,14 @@ export default function CompanyInfoPage() {
           disabled={hasError}
           onUpload={async (file) => {
             if (!file) return;
-            try {
-              await saveSeal(1, file);
-            } catch (err) {
-              await info(err.message || "회사 직인 저장 실패");
-            }
+            const res = await saveSeal(1, file);
+            if (String(res?.result) === 'false') await info(res?.msg || "회사 직인 저장 실패");
           }}
           onDelete={async () => {
             const ok = await confirm("회사 직인을 삭제하시겠습니까?");
             if (!ok) return;
-            try {
-              await deleteSeal(1);
-            } catch (err) {
-              await info(err.message || "회사 직인 삭제 실패");
-            }
+            const res = await deleteSeal(1);
+            if (String(res?.result) === 'false') await info(res?.msg || "회사 직인 삭제 실패");
           }}
         />
 
@@ -201,20 +192,14 @@ export default function CompanyInfoPage() {
           disabled={hasError}
           onUpload={async (file) => {
             if (!file) return;
-            try {
-              await saveSeal(2, file);
-            } catch (err) {
-              await info(err.message || "정비책임자 인감 저장 실패");
-            }
+            const res = await saveSeal(2, file);
+            if (String(res?.result) === 'false') await info(res?.msg || "정비책임자 인감 저장 실패");
           }}
           onDelete={async () => {
             const ok = await confirm("정비책임자 인감을 삭제하시겠습니까?");
             if (!ok) return;
-            try {
-              await deleteSeal(2);
-            } catch (err) {
-              await info(err.message || "정비책임자 인감 삭제 실패");
-            }
+            const res = await deleteSeal(2);
+            if (String(res?.result) === 'false') await info(res?.msg || "정비책임자 인감 삭제 실패");
           }}
         />
       </div>

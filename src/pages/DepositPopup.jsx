@@ -144,29 +144,26 @@ export default function DepositPopup() {
   };
 
   const onSave = async () => {
-    try {
-      // 보이는 항목(estbo_seqno 있는 것)만 순차 저장
-      const targets = visibleItems.filter((it) => it.estbo_seqno);
-      for (const it of targets) {
-        await saveDeposit({
-          est_serial:  estSerial,
-          estbo_seqno: it.estbo_seqno,
-          inday:       it.inday  || "",
-          incom:       it.incom  ?? 0,
-        });
-      }
-      await success("저장이 완료되었습니다.");
-      // 부모창 청구보험 목록 리프레시 후 닫기
-      try {
-        window.opener?.postMessage(
-          { type: "ESTIMATE_DEPOSIT_SAVED", payload: { est_serial: estSerial } },
-          window.location.origin,
-        );
-      } catch { /* empty */ }
-      window.close();
-    } catch (err) {
-      error(err?.message ?? "저장 실패");
+    // 보이는 항목(estbo_seqno 있는 것)만 순차 저장
+    const targets = visibleItems.filter((it) => it.estbo_seqno);
+    for (const it of targets) {
+      const res = await saveDeposit({
+        est_serial:  estSerial,
+        estbo_seqno: it.estbo_seqno,
+        inday:       it.inday  || "",
+        incom:       it.incom  ?? 0,
+      });
+      if (String(res?.result) === 'false') { error(res?.msg ?? "저장 실패"); return; }
     }
+    await success("저장이 완료되었습니다.");
+    // 부모창 청구보험 목록 리프레시 후 닫기
+    try {
+      window.opener?.postMessage(
+        { type: "ESTIMATE_DEPOSIT_SAVED", payload: { est_serial: estSerial } },
+        window.location.origin,
+      );
+    } catch { /* empty */ }
+    window.close();
   };
 
   const visibleItems = useMemo(() => {

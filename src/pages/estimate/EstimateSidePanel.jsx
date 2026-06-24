@@ -91,19 +91,19 @@ export default function EstimateSidePanel({ master, setMaster, active, onTabChan
         <button
           type="button"
           disabled={laborWinOpen}
-          className={[
-            "rounded-md px-2 py-3 text-sm text-white",
-            laborWinOpen
-              ? "bg-zinc-500 opacity-60 cursor-not-allowed"
-              : active === "labor" ? "bg-zinc-900" : "bg-zinc-700 hover:bg-zinc-800",
-          ].join(" ")}
+          className="rounded-md px-2 py-3 h-24 text-sm text-zinc-900 tracking-widest transition-colors"
+          style={{
+            writingMode: "vertical-rl",
+            backgroundColor: laborWinOpen ? "#d4d4d8" : (active === "labor" && open) ? "#93c5fd" : "#bfdbfe",
+          }}
+          onMouseEnter={(e) => { if (!laborWinOpen && !(active === "labor" && open)) e.currentTarget.style.backgroundColor = "#60a5fa"; }}
+          onMouseLeave={(e) => { if (!laborWinOpen && !(active === "labor" && open)) e.currentTarget.style.backgroundColor = "#bfdbfe"; }}
           onClick={async () => {
             if (laborWinOpen) return;
             if (active === "claim") await onClaimLeave?.();
             onTabChange("labor");
             changeOpen(true);
           }}
-          style={{ writingMode: "vertical-rl" }}
           title={laborWinOpen ? "공임항목 팝업 열려 있음" : undefined}
         >
           공임설정
@@ -114,10 +114,10 @@ export default function EstimateSidePanel({ master, setMaster, active, onTabChan
             type="button"
             disabled={laborWinOpen}
             className={[
-              "rounded-md px-2 py-3 text-sm text-white",
+              "rounded-md px-2 py-3 h-24 text-sm text-zinc-900 tracking-widest transition-colors",
               laborWinOpen
-                ? "bg-zinc-500 opacity-60 cursor-not-allowed"
-                : active === "claim" ? "bg-zinc-900" : "bg-zinc-700 hover:bg-zinc-800",
+                ? "bg-zinc-300 opacity-60 cursor-not-allowed"
+                : (active === "claim" && open) ? "bg-amber-300" : "bg-amber-200 hover:bg-amber-300",
             ].join(" ")}
             onClick={() => {
               if (laborWinOpen) return;
@@ -133,8 +133,8 @@ export default function EstimateSidePanel({ master, setMaster, active, onTabChan
 
         <button
           type="button"
-          className={`rounded-md px-2 py-3 text-sm text-white ${
-            active === "settle" ? "bg-zinc-900" : "bg-zinc-700 hover:bg-zinc-800"
+          className={`rounded-md px-2 py-3 h-24 text-sm text-zinc-900 tracking-widest transition-colors ${
+            (active === "settle" && open) ? "bg-emerald-300" : "bg-emerald-200 hover:bg-emerald-300"
           }`}
           onClick={async () => {
             if (active === "claim") await onClaimLeave?.();
@@ -264,7 +264,7 @@ function LaborPanel({
   return (
     <div className="flex flex-col gap-2 p-1 ms-2 me-2">
       {/* 대체차종 */}
-      <FormRow label="대체차종">
+      <FormRow label="대체차종" required>
         <div className="grid grid-cols-[auto_1fr] gap-2">
           <div className="flex items-center">
             <input
@@ -292,7 +292,7 @@ function LaborPanel({
       </FormRow>
 
       {/* 도장종류: pntkind='3'일 때 활성, PGR31 + est_codecar/est_carname → paint 필드에 저장 */}
-      <FormRow label="도장종류">
+      <FormRow label="도장종류" required>
         <select
           className={selectCls}
           value={master?.paint ?? ""}
@@ -369,7 +369,7 @@ function LaborPanel({
       </div>
 
       {/* 도장코트 */}
-      <FormRow label="도장코트">
+      <FormRow label="도장코트" required>
         <select
           className={selectCls}
           value={master?.pntcot_code ?? "2"}
@@ -384,7 +384,7 @@ function LaborPanel({
       </FormRow>
 
       {/* 도장도료 */}
-      <FormRow label="도장도료">
+      <FormRow label="도장도료" required>
         <select
           className={selectCls}
           value={master?.pnt_m ?? "2"}
@@ -441,15 +441,15 @@ function LaborPanel({
         const mhCls = (isInsurance || readOnly) ? "bg-zinc-100" : "";
         return (
           <>
-            <FormRow label="탈착M/H">
+            <FormRow label="탈착M/H" required>
               <MoneyInput value={Number(xpay)} onChange={set("xpay")} disabled={readOnly || isInsurance} className={mhCls}
                 {...(!isInsurance && !readOnly ? { onBlur: onRateChange } : {})} />
             </FormRow>
-            <FormRow label="판금M/H">
+            <FormRow label="판금M/H" required>
               <MoneyInput value={Number(bpay)} onChange={set("bpay")} disabled={readOnly || isInsurance} className={mhCls}
                 {...(!isInsurance && !readOnly ? { onBlur: onRateChange } : {})} />
             </FormRow>
-            <FormRow label="도장M/H">
+            <FormRow label="도장M/H" required>
               <MoneyInput value={Number(ppay)} onChange={set("ppay")} disabled={readOnly || isInsurance} className={mhCls}
                 {...(!isInsurance && !readOnly ? { onBlur: onRateChange } : {})} />
             </FormRow>

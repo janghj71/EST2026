@@ -50,13 +50,10 @@ export default function WorkStatusPage() {
       return;
     }
 
-    try {
-      await create(v);
-      setName("");
-      await info("등록 완료");
-    } catch (err) {
-      await warning(err?.message || "등록에 실패했습니다.");
-    }
+    const res = await create(v);
+    if (String(res?.result) === 'false') { await warning(res?.msg || "등록에 실패했습니다."); return; }
+    setName("");
+    await info("등록 완료");
 
   };
 
@@ -75,12 +72,9 @@ export default function WorkStatusPage() {
     );
     if (!ok) return;
 
-    try {
-      await remove(row.subcode);
-      await info("삭제 완료");
-    } catch (err) {
-      await warning(err?.message || "삭제에 실패했습니다.");
-    }
+    const res = await remove(row.subcode);
+    if (String(res?.result) === 'false') { await warning(res?.msg || "삭제에 실패했습니다."); return; }
+    await info("삭제 완료");
   }, [removeAlert, info, warning, remove]);
 
   // FixedHeadTable 컬럼 정의

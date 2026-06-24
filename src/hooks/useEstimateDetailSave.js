@@ -3,6 +3,7 @@ import { useCallback } from "react";
 import { useApi } from "./useApi";
 import { useAlert } from "../alerts/useAlert";
 import { apiOk } from "../api/apiOk";
+import { getComcode } from "../api/config";
 import { toIntOrNull, toDecStr, toStrOrNull } from "../utils/numberFormat";
 
 const SPECIAL_SUBPAYNOS = new Set(["99990", "99991"]);
@@ -21,7 +22,7 @@ function resequence(rows) {
 function toApiRow(row) {
   return {
     // varchar
-    comcode:        toStrOrNull(row.comcode),
+    comcode:        toStrOrNull(row.comcode) ?? getComcode(),
     est_serial:     toStrOrNull(row.est_serial),
     estb_orgseqno:  String(row.estb_orgseqno || "").startsWith("_new_")
                       ? null
@@ -114,8 +115,7 @@ export function useEstimateDetailSave(setRows) {
       const json = await saveReq({
         masterestimateb: reseq.map(toApiRow),
       });
-      apiOk(json, "견적항목 저장");             // 실패 시 throw → 호출자 catch
-      return reseq;
+      return json;                              // 호출자에서 result 체크
     },
     [saveReq, setRows]
   );

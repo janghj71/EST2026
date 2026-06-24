@@ -33,9 +33,9 @@ export default function FixedHeadTable({
   expandedRowRender,
   bodyScrollRef,           // 외부에서 body scroll div 접근용
   
-  rowSelectedClass = "!bg-blue-100 hover:!bg-blue-100",
+  rowSelectedClass = "!bg-blue-50 hover:!bg-blue-50",
   rowHoverClass = "hover:!bg-gray-50",
-  gutterSelectedClass = "!bg-blue-100",
+  gutterSelectedClass = "!bg-blue-50",
   gutterHoverClass = "!bg-gray-50",
   wheelSelect = true,         // 휠로 선택이동 사용 여부
   wheelSelectStep = 1,   

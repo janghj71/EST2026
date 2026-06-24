@@ -14,7 +14,7 @@ import { ymd } from "../utils/dateUtils";
 
 /* ── 히어로 슬라이드 (실사 이미지) ────────────────────────── */
 const HERO_SLIDES = [
-  "https://images.unsplash.com/photo-1632823469850-1b7b1e8b7e2e?w=1400&q=80&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1755555707544-5f2cea7413c1?q=80&w=1400&auto=format&fit=crop",
   "https://images.unsplash.com/photo-1554224155-6726b3ff858f?w=1400&q=80&auto=format&fit=crop",
   "https://images.unsplash.com/photo-1486006920555-c77dcf18193c?w=1400&q=80&auto=format&fit=crop",
   "https://images.unsplash.com/photo-1593941707882-a5bba14938c7?w=1400&q=80&auto=format&fit=crop",

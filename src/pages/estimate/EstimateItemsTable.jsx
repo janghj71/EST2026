@@ -38,7 +38,7 @@ import {
   ClipboardCheck,
   ArrowDownWideNarrow,
   Send,
-  Share2,
+  Sparkles,
 } from "lucide-react";
 
 import SimplePopover from "./SimplePopover";
@@ -1527,8 +1527,8 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
           </div>
 
           <IconBtn icon={ArrowDownWideNarrow} label="도장 하단정렬" disabled={readOnly} onClick={onMovePaintToBottom} />
-          <IconBtn icon={Send} label="정비이력전송" onClick={onTsRepairSend} />
-          <IconBtn icon={Share2} label="공유견적" disabled={readOnly} onClick={() => setSharedEstOpen(true)} />
+          <IconBtn icon={Send} label="정비이력전송" onClick={onTsRepairSend} variant="sky" />
+          <IconBtn icon={Sparkles} label="AI 견적" disabled={readOnly} onClick={() => setSharedEstOpen(true)} variant="purple" />
         </div>
       </div>
 
@@ -2191,8 +2191,8 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
         onClose={() => setSharedEstOpen(false)}
         est_serial={est_serial}
         carname={master?.carname ?? ""}
-        onSelect={(detailRows) => {
-          onSharedEstimateSelect?.(detailRows);
+        onSelect={(detailRows, selectedRow) => {
+          onSharedEstimateSelect?.(detailRows, selectedRow);
           setSharedEstOpen(false);
         }}
       />

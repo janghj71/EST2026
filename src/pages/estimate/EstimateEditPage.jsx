@@ -1,5 +1,6 @@
 // src/pages/estimate/EstimateEditPage.jsx
 import React, { useMemo, useState, useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { flushSync } from "react-dom";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAlert } from "../../alerts";
 
@@ -923,7 +924,6 @@ export default function EstimateEditPage() {
   
 
   const onMsgHandlerRef = useRef(null);
-
   useEffect(() => {
     onMsgHandlerRef.current = (e) => {
       if (e.origin !== window.location.origin) return;
@@ -2162,7 +2162,9 @@ export default function EstimateEditPage() {
   useEffect(() => {
     const handler = (e) => onMsgHandlerRef.current?.(e);
     window.addEventListener("message", handler);
-    return () => window.removeEventListener("message", handler);
+    return () => {
+      window.removeEventListener("message", handler);
+    };
   }, []);
   
   useEffect(() => {
@@ -2254,17 +2256,15 @@ export default function EstimateEditPage() {
   // 청구처 탭 이탈 시 호출 (EstimateEditPage 레벨 → useApi abort 없이 정상 동작)
   const handleClaimSave = useCallback(async () => {
     if (!claimDirtyRef.current) return;  // 변경 없으면 스킵
-    try {
-      await save(est_serial, master);
-      const claims = Array.isArray(master.claims) ? master.claims : [];
-      // 순차 저장 (Promise.all 사용 시 단일 useApi 인스턴스 abort 발생)
-      for (const claim of claims) {
-        await saveClaim(est_serial, claim);
-      }
-      claimDirtyRef.current = false;  // 저장 완료 → clean
-    } catch (err) {
-      alertError(err?.message ?? "청구처 저장 실패");
+    const res = await save(est_serial, master);
+    if (String(res?.result) === 'false') { alertError(res?.msg ?? "청구처 저장 실패"); return; }
+    const claims = Array.isArray(master.claims) ? master.claims : [];
+    // 순차 저장 (Promise.all 사용 시 단일 useApi 인스턴스 abort 발생)
+    for (const claim of claims) {
+      const cr = await saveClaim(est_serial, claim);
+      if (String(cr?.result) === 'false') { alertError(cr?.msg ?? "청구처 저장 실패"); return; }
     }
+    claimDirtyRef.current = false;  // 저장 완료 → clean
   }, [est_serial, master, save, saveClaim, alertError]);
 
   // 팝업 오픈 전: claim 탭이 활성화 상태이면 먼저 저장
@@ -2400,51 +2400,56 @@ export default function EstimateEditPage() {
 
   // 견적정산 탭 진입 시: 먼저 저장 후 SettlePanel 재조회 트리거
   const handleSettleEnter = useCallback(async () => {
-    try {
-      // 마스터 저장 — M/H 단가(xpay/bpay/ppay) 포함, 견적정산 서버 계산에 반영
-      await save(est_serial, masterWithSums());
-      await saveAllDetails(rows);
-      // 저장 후 견적내역 리프레시 — _new_* 임시 ID를 실제 서버 ID로 갱신
-      const [detailJson, claimJson] = await Promise.all([
-        fetchDetails(est_serial),
-        fetchClaims(est_serial),
-      ]);
-      const refreshed = detailJson?.dataset ?? [];
-      setRows(refreshed);
-      // claims DB 재로드 — estbo_seqno 확보 (settleMap key 매칭용)
-      const refreshedClaims = claimJson?.dataset ?? [];
-      if (refreshedClaims.length) {
-        setMaster((m) => ({ ...m, claims: refreshedClaims }));
-      }
-      setSettleRefreshKey((k) => k + 1);
-    } catch (err) {
-      alertError(err?.message ?? "저장 실패");
+    // 공임/도장 팝업 선택 직후 saveDetail 큐가 남아있을 수 있으므로 완료 대기
+    await saveQueueRef.current;
+    // saveDetail 내부 setRows가 React 렌더 큐에 남아있을 수 있으므로 강제 flush
+    flushSync(() => {});
+    // 마스터 저장 — M/H 단가(xpay/bpay/ppay) 포함, 견적정산 서버 계산에 반영
+    const saveRes = await save(est_serial, masterWithSums());
+    if (String(saveRes?.result) === 'false') { alertError(saveRes?.msg ?? "저장 실패"); return; }
+    // rowsRef.current 사용 — flushSync 후 최신 estb_orgseqno 반영된 rows
+    const detailRes1 = await saveAllDetails(rowsRef.current);
+    if (String(detailRes1?.result) === 'false') { alertError(detailRes1?.msg ?? "견적항목 저장 실패"); return; }
+    // 저장 후 견적내역 리프레시 — _new_* 임시 ID를 실제 서버 ID로 갱신
+    const [detailJson, claimJson] = await Promise.all([
+      fetchDetails(est_serial),
+      fetchClaims(est_serial),
+    ]);
+    const refreshed = detailJson?.dataset ?? [];
+    setRows(refreshed);
+    // claims DB 재로드 — estbo_seqno 확보 (settleMap key 매칭용)
+    const refreshedClaims = claimJson?.dataset ?? [];
+    if (refreshedClaims.length) {
+      setMaster((m) => ({ ...m, claims: refreshedClaims }));
     }
-  }, [rows, est_serial, save, masterWithSums, saveAllDetails, fetchDetails, fetchClaims, setRows, setMaster, setSettleRefreshKey, alertError]);
+    setSettleRefreshKey((k) => k + 1);
+  }, [est_serial, save, masterWithSums, saveAllDetails, fetchDetails, fetchClaims, setRows, setMaster, setSettleRefreshKey, alertError]);
 
   // [목록] 버튼: 전체 저장 후 이동 (잠긴 경우 저장 없이 이동)
   const handleClose = useCallback(async () => {
     if (isLocked) { navigate(-1); return; }
-    try {
-      await withLoading(async () => {
-        // 1. 접수(마스터) 저장 — 항상 (rows 합계 반영)
-        await save(est_serial, masterWithSums());
-        // 2. 청구처 저장 — 사이드패널 open + claim 탭 활성 시에만
-        if (sidePanelOpen && sideActive === "claim") {
-          const claims = Array.isArray(master?.claims) ? master.claims : [];
-          for (const claim of claims) {
-            await saveClaim(est_serial, claim);
-          }
-          claimDirtyRef.current = false;
+    let failed = false;
+    await saveQueueRef.current;  // 공임/도장 팝업 선택 후 saveDetail 큐 완료 대기
+    flushSync(() => {});         // saveDetail 내부 setRows React 렌더 큐 강제 flush
+    await withLoading(async () => {
+      // 1. 접수(마스터) 저장 — 항상 (rows 합계 반영)
+      const res = await save(est_serial, masterWithSums());
+      if (String(res?.result) === 'false') { failed = true; alertError(res?.msg ?? "저장 실패"); return; }
+      // 2. 청구처 저장 — 사이드패널 open + claim 탭 활성 시에만
+      if (sidePanelOpen && sideActive === "claim") {
+        const claims = Array.isArray(master?.claims) ? master.claims : [];
+        for (const claim of claims) {
+          const cr = await saveClaim(est_serial, claim);
+          if (String(cr?.result) === 'false') { failed = true; alertError(cr?.msg ?? "저장 실패"); return; }
         }
-        // 3. 견적내역 저장 — 항상
-        await saveAllDetails(rows);
-      });
-      navigate(-1);
-    } catch (err) {
-      alertError(err?.message ?? "저장 실패");
-    }
-  }, [isLocked, est_serial, master, masterWithSums, rows, sidePanelOpen, sideActive,
+        claimDirtyRef.current = false;
+      }
+      // 3. 견적내역 저장 — 항상 (rowsRef.current: 최신 estb_orgseqno 반영)
+      const detailRes2 = await saveAllDetails(rowsRef.current);
+      if (String(detailRes2?.result) === 'false') { failed = true; alertError(detailRes2?.msg ?? "견적항목 저장 실패"); return; }
+    });
+    if (!failed) navigate(-1);
+  }, [isLocked, est_serial, master, masterWithSums, sidePanelOpen, sideActive,
       save, saveClaim, saveAllDetails, withLoading, navigate, alertError]);
 
   const handleDuplicateCheck = useCallback(async () => {
@@ -2460,7 +2465,8 @@ export default function EstimateEditPage() {
         claimDirtyRef.current = false;
       }
       // 3. 견적내역 저장
-      await saveAllDetails(rows);
+      const detailRes3 = await saveAllDetails(rows);
+      if (String(detailRes3?.result) === 'false') { alertError(detailRes3?.msg ?? "견적항목 저장 실패"); return; }
       // 4. 중복체크 API
       await fetchOverlap(est_serial);
       // 5. 견적내역 새로고침
@@ -2483,20 +2489,62 @@ export default function EstimateEditPage() {
   }, [est_serial, master, rows, sidePanelOpen, sideActive,
       save, saveClaim, saveAllDetails, fetchOverlap, fetchDetails,
       setRows, setSelectedOrgSeqs, setSelectedOrgSeq, setSettleRefreshKey,
-      claimDirtyRef, withLoading]);
+      claimDirtyRef, withLoading, alertError]);
 
   // [공유견적] 선택 시 — 가져온 detail rows를 현재 견적 끝에 추가
-  const handleSharedEstimateSelect = useCallback((detailRows) => {
+  const handleSharedEstimateSelect = useCallback((detailRows, selectedRow) => {
     if (!detailRows?.length) return;
     const claim0 = masterRef.current?.claims?.[0];
+    const isAos = selectedRow?.sharekind === 'A';
     setRows((prev) => {
       const added = detailRows.map((r, i) => {
         // est_serial, estb_orgseqno, update_id 는 공유 row 값 사용 안 함
         const { est_serial: _s, estb_orgseqno: _o, update_id: _u, ...rest } = r;
 
-        // paysum 재계산 — 현재 견적 청구처[0] 단가 기준
+        // sharekind='A': adl_payname → payname, payno 유무에 따라 분기
+        let overrides = {};
+        if (isAos) {
+          const adlPayname = rest.adl_payname ?? rest.payname;
+          overrides = { payname: adlPayname };
+
+          if (rest.payno) {
+            // payno 값이 있으면 paykind='1' 고정, payno 그대로
+            overrides = { ...overrides, paykind: '1', payno: rest.payno };
+          } else {
+            // payno 없으면 기존 로직
+            if (rest.payname === '가열건조비') {
+              overrides = { ...overrides, paykind: '4', payno: '', subpayno: '99991' };
+            } else if (rest.payname === '컬러매칭') {
+              overrides = { ...overrides, paykind: '4', payno: '', subpayno: '99990' };
+            } else if (String(rest.paykind) === '3' || String(rest.paykind) === '5') {
+              overrides = { ...overrides, paykind: '5', payno: '99995' };
+            } else {
+              overrides = { ...overrides, paykind: '4', payno: '99994' };
+            }
+          }
+          // workcode='P' + payname 키워드 → state / qty / b_level 세팅 (구체적인 것 우선)
+          if (rest.workcode === 'P') {
+            const pn = rest.payname ?? '';
+            let stateVal = null;
+            if (pn.includes('교환'))         stateVal = '1';
+            else if (pn.includes('전면판금')) stateVal = '5';
+            else if (pn.includes('표면'))     stateVal = '2';
+            else if (pn.includes('판금'))     stateVal = '3';
+            if (stateVal) overrides = { ...overrides, state: stateVal };
+
+            if (pn.includes('액세서리')) {
+              overrides = { ...overrides, qty: '0' };
+              const last = pn[pn.length - 1];
+              const bMap = { '소': '2', '중': '3', '대': '4' };
+              if (bMap[last]) overrides = { ...overrides, b_level: bMap[last] };
+            }
+          }
+        }
+
+        // paysum 재계산 — 현재 견적 청구처[0] 단가 기준 (가열건조비 제외)
         let paysum = rest.paysum;
-        if (claim0 && rest.workcode && rest.qty && rest.subpayno !== "99991") {
+        const subpayno = overrides.subpayno ?? rest.subpayno;
+        if (claim0 && rest.workcode && rest.qty && subpayno !== "99991") {
           const qty = parseFloat(rest.qty);
           if (!isNaN(qty)) {
             let rate = null;
@@ -2509,8 +2557,9 @@ export default function EstimateEditPage() {
 
         return {
           ...rest,
+          ...overrides,
           est_serial,                      // 현재 견적번호
-          estb_orgseqno: newTempId(),        // 신규 임시 키 (_new_ prefix → INSERT)
+          estb_orgseqno: newTempId(),      // 신규 임시 키 (_new_ prefix → INSERT)
           estb_seqno: prev.length + i + 1,
           update_id: getUserid(),          // 현재 로그인 사용자
           paysum,
@@ -2522,33 +2571,33 @@ export default function EstimateEditPage() {
 
   const handleSaveAndList = useCallback(async () => {
     if (isLocked) return;
-    try {
-      await withLoading(async () => {
-        // 1. 마스터 저장 (항상, rows 합계 반영)
-        await save(est_serial, masterWithSums());
-        // 2. 청구처 저장 (사이드패널 open + claim 탭 활성 시만)
-        if (sidePanelOpen && sideActive === "claim") {
-          const claims = Array.isArray(master?.claims) ? master.claims : [];
-          for (const claim of claims) {
-            await saveClaim(est_serial, claim);
-          }
-          claimDirtyRef.current = false;
+    await saveQueueRef.current;  // 공임/도장 팝업 선택 후 saveDetail 큐 완료 대기
+    flushSync(() => {});         // saveDetail 내부 setRows React 렌더 큐 강제 flush
+    await withLoading(async () => {
+      // 1. 마스터 저장 (항상, rows 합계 반영)
+      const res = await save(est_serial, masterWithSums());
+      if (String(res?.result) === 'false') { alertError(res?.msg ?? "저장 실패"); return; }
+      // 2. 청구처 저장 (사이드패널 open + claim 탭 활성 시만)
+      if (sidePanelOpen && sideActive === "claim") {
+        const claims = Array.isArray(master?.claims) ? master.claims : [];
+        for (const claim of claims) {
+          const cr = await saveClaim(est_serial, claim);
+          if (String(cr?.result) === 'false') { alertError(cr?.msg ?? "저장 실패"); return; }
         }
-        // 3. 견적내역 저장 (항상)
-        await saveAllDetails(rows);
-        // 4. 저장 후 견적내역 리프레시 — _new_* 임시 ID를 실제 서버 ID로 갱신
-        //    (미리프레시 시 재저장 시 _new_* 가 null 로 전송되어 중복 INSERT 발생)
-        const detailJson = await fetchDetails(est_serial);
-        const refreshed  = detailJson?.dataset ?? [];
-        setRows(refreshed);
-        if (sidePanelOpen && sideActive === "settle") {
-          setSettleRefreshKey((k) => k + 1);
-        }
-      }, "저장 중...");
-    } catch (err) {
-      alertError(err?.message ?? "저장 실패");
-    }
-  }, [est_serial, master, masterWithSums, rows, sidePanelOpen, sideActive,
+        claimDirtyRef.current = false;
+      }
+      // 3. 견적내역 저장 (항상, rowsRef.current: 최신 estb_orgseqno 반영)
+      const detailRes4 = await saveAllDetails(rowsRef.current);
+      if (String(detailRes4?.result) === 'false') { alertError(detailRes4?.msg ?? "견적항목 저장 실패"); return; }
+      // 4. 저장 후 견적내역 리프레시 — _new_* 임시 ID를 실제 서버 ID로 갱신
+      const detailJson = await fetchDetails(est_serial);
+      const refreshed  = detailJson?.dataset ?? [];
+      setRows(refreshed);
+      if (sidePanelOpen && sideActive === "settle") {
+        setSettleRefreshKey((k) => k + 1);
+      }
+    }, "저장 중...");
+  }, [est_serial, master, masterWithSums, sidePanelOpen, sideActive,
       save, saveClaim, saveAllDetails, fetchDetails, setRows, setSettleRefreshKey,
       claimDirtyRef, withLoading, alertError, isLocked]);
 

@@ -228,7 +228,8 @@ export default function InsuranceEstimate({ seccode = "12" }) {
     } catch { /* empty */ }
     navigate(`/estimate-edit/${encodeURIComponent(est_serial)}`, {
       state: {
-        mode, // "new" | "edit"
+        mode,
+        fromMenu: isInsurance ? "/estimate/insurance" : "/estimate/normal",
         ctx: {
           est_serial,
           carno: row?.carno || "",
@@ -366,21 +367,20 @@ export default function InsuranceEstimate({ seccode = "12" }) {
     setNewEstModalOpen(false);
     const paykind = selectedYear === "2018" ? "3" : "1";
     const pntkind = selectedYear === "2018" ? "3" : "1";
-    try {
-      await withLoading(async () => {
-        const res = await createEstimate({
-          seccode,
-          paykind,
-          pntkind,
-          userid:  getUserid(),
-        });
-        const newserial = res?.newserial ?? res?.dataset?.[0]?.newserial;
-        await fetchEstimates(dateFrom, dateTo);
-        if (newserial) {
-          openEstimateEdit({ est_serial: newserial });
-        }
-      }, "신규 견적 생성 중...");
-    } catch (err) { error(err?.message ?? "신규 견적 생성 실패"); }
+    await withLoading(async () => {
+      const res = await createEstimate({
+        seccode,
+        paykind,
+        pntkind,
+        userid:  getUserid(),
+      });
+      if (String(res?.result) === 'false') { error(res?.msg ?? "신규 견적 생성 실패"); return; }
+      const newserial = res?.newserial ?? res?.dataset?.[0]?.newserial;
+      await fetchEstimates(dateFrom, dateTo);
+      if (newserial) {
+        openEstimateEdit({ est_serial: newserial });
+      }
+    }, "신규 견적 생성 중...");
   }, [selectedYear, seccode, createEstimate, fetchEstimates, dateFrom, dateTo, openEstimateEdit, withLoading, error]);
   const onExcel = useCallback(() => {
     if (!insuranceEstimates.length) { info("내보낼 데이터가 없습니다."); return; }
@@ -474,15 +474,12 @@ export default function InsuranceEstimate({ seccode = "12" }) {
     const ok = await confirm("견적을 삭제하시겠습니까?", "견적삭제");
     if (!ok) return;
 
-    try {
-      await withLoading(async () => {
-        await deleteEstimate({ est_serial: row.est_serial, userid: getUserid() });
-        setSelected(null);
-        await fetchEstimates(dateFrom, dateTo);
-      }, "삭제 중...");
-    } catch (err) {
-      error(err?.message ?? "삭제 실패");
-    }
+    await withLoading(async () => {
+      const res = await deleteEstimate({ est_serial: row.est_serial, userid: getUserid() });
+      if (String(res?.result) === 'false') { error(res?.msg ?? "삭제 실패"); return; }
+      setSelected(null);
+      await fetchEstimates(dateFrom, dateTo);
+    }, "삭제 중...");
   }, [selected, deleteEstimate, fetchEstimates, dateFrom, dateTo, withLoading, warning, error, confirm]);
   
   const openPhotoViewer = () => {
@@ -788,14 +785,11 @@ export default function InsuranceEstimate({ seccode = "12" }) {
 
   // ====== 수정잠금 해제 ======
   const handleUnlock = useCallback(async (row) => {
-    try {
-      await withLoading(async () => {
-        await unlockEstimate(row.est_serial);
-        await fetchEstimates(dateFrom, dateTo);
-      }, "처리 중...");
-    } catch (err) {
-      error(err?.message ?? "잠금 해제 실패");
-    }
+    await withLoading(async () => {
+      const res = await unlockEstimate(row.est_serial);
+      if (String(res?.result) === 'false') { error(res?.msg ?? "잠금 해제 실패"); return; }
+      await fetchEstimates(dateFrom, dateTo);
+    }, "처리 중...");
   }, [unlockEstimate, fetchEstimates, dateFrom, dateTo, withLoading, error]);
 
   // ====== 견적청구 / 견적종결 ======
@@ -805,56 +799,52 @@ export default function InsuranceEstimate({ seccode = "12" }) {
   const handleRequest = useCallback(async (row) => {
     const needsDate = String(row.isest) !== "1" && !row.outday;
     if (needsDate) { setOutdayModal({ type: "request", row }); return; }
-    try {
-      await withLoading(async () => {
-        await requestEstimate(row.est_serial, row.outday ?? "");
-        await fetchEstimates(dateFrom, dateTo);
-      }, "처리 중...");
-    } catch (err) { error(err?.message ?? "견적청구 실패"); }
+    await withLoading(async () => {
+      const res = await requestEstimate(row.est_serial, row.outday ?? "");
+      if (String(res?.result) === 'false') { error(res?.msg ?? "견적청구 실패"); return; }
+      await fetchEstimates(dateFrom, dateTo);
+    }, "처리 중...");
   }, [requestEstimate, fetchEstimates, dateFrom, dateTo, withLoading, error, setOutdayModal]);
 
   const handleCloseEst = useCallback(async (row) => {
     const ok = await confirm("견적을 종결하시겠습니까?", "견적종결");
     if (!ok) return;
     if (!row.outday) { setOutdayModal({ type: "close", row }); return; }
-    try {
-      await withLoading(async () => {
-        await closeEstimate(row.est_serial, row.outday);
-        await fetchEstimates(dateFrom, dateTo);
-      }, "처리 중...");
-    } catch (err) { error(err?.message ?? "견적종결 실패"); }
+    await withLoading(async () => {
+      const res = await closeEstimate(row.est_serial, row.outday);
+      if (String(res?.result) === 'false') { error(res?.msg ?? "견적종결 실패"); return; }
+      await fetchEstimates(dateFrom, dateTo);
+    }, "처리 중...");
   }, [closeEstimate, fetchEstimates, dateFrom, dateTo, withLoading, error, confirm, setOutdayModal]);
 
   // ====== 작업전환 (견적 → 작업 copy) ======
   const handleEstToReq = useCallback(async (row) => {
     const ok = await confirm("견적을 작업으로 전환하시겠습니까?", "작업전환");
     if (!ok) return;
-    try {
-      await withLoading(async () => {
-        const res = await estToReq({
-          est_serial: row.est_serial,
-          update_id:  getUserid(),
-        });
-        const newserial = res?.newserial ?? res?.dataset?.[0]?.newserial;
-        await fetchEstimates(dateFrom, dateTo);
-        if (newserial) {
-          // 새 Row 찾아서 선택 → 수정 화면으로 이동
-          openEstimateEdit({ est_serial: newserial });
-        }
-      }, "작업전환 중...");
-    } catch (err) { error(err?.message ?? "작업전환 실패"); }
+    await withLoading(async () => {
+      const res = await estToReq({
+        est_serial: row.est_serial,
+        update_id:  getUserid(),
+      });
+      if (String(res?.result) === 'false') { error(res?.msg ?? "작업전환 실패"); return; }
+      const newserial = res?.newserial ?? res?.dataset?.[0]?.newserial;
+      await fetchEstimates(dateFrom, dateTo);
+      if (newserial) {
+        openEstimateEdit({ est_serial: newserial });
+      }
+    }, "작업전환 중...");
   }, [estToReq, fetchEstimates, dateFrom, dateTo, withLoading, error, confirm, openEstimateEdit]);
 
   const handleOutdayConfirm = useCallback(async (outday) => {
     const { type, row } = outdayModal;
     setOutdayModal(null);
-    try {
-      await withLoading(async () => {
-        if (type === "request") await requestEstimate(row.est_serial, outday);
-        else                    await closeEstimate(row.est_serial, outday);
-        await fetchEstimates(dateFrom, dateTo);
-      }, "처리 중...");
-    } catch (err) { error(err?.message ?? "처리 실패"); }
+    await withLoading(async () => {
+      const res = type === "request"
+        ? await requestEstimate(row.est_serial, outday)
+        : await closeEstimate(row.est_serial, outday);
+      if (String(res?.result) === 'false') { error(res?.msg ?? "처리 실패"); return; }
+      await fetchEstimates(dateFrom, dateTo);
+    }, "처리 중...");
   }, [outdayModal, requestEstimate, closeEstimate, fetchEstimates, dateFrom, dateTo, withLoading, error, setOutdayModal]);
 
   const estimateColumns = useMemo(
@@ -1196,126 +1186,36 @@ export default function InsuranceEstimate({ seccode = "12" }) {
 
         </div>
 
-        {/* 3) 조회/검색 */}
-        <div className="mb-3 rounded-md border border-zinc-200 bg-white p-3 shadow-sm">
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="text-sm font-semibold text-zinc-800">입고일자</div>
-
-              <DateInput
-                value={dateFrom}
-                onChange={(v) => {
-                  setDateFrom(v);
-                }}
-              />
-              <span className="text-zinc-400">~</span>
-
-              <div className="flex items-center gap-2">
-                <DateInput
-                  value={dateTo}
-                  onChange={(v) => {
-                    setDateTo(v);
-                    setMonthAnchor(new Date(v));
-                  }}
-                />
-
-                {/* 전달 / 금월 / < > */}
-                <div className="flex items-center gap-1">
-                  <MiniBtn
-                    onClick={() => {
-                      const d = addMonths(monthAnchor, -1);
-                      const r = monthRange(d);
-                      setDateFrom(r.from);
-                      setDateTo(r.to);
-                      setMonthAnchor(d);
-                    }}
-                  >
-                    전월
-                  </MiniBtn>
-
-                  <MiniBtn
-                    onClick={() => {
-                      const d = new Date(); // 금월
-                      const r = monthRange(d);
-                      setDateFrom(r.from);
-                      setDateTo(r.to);
-                      setMonthAnchor(new Date(d.getFullYear(), d.getMonth(), 1));
-                    }}
-                  >
-                    금월
-                  </MiniBtn>
-
-                  <MiniBtn
-                    title="-1개월"
-                    onClick={() => {
-                      const d = addMonths(monthAnchor, -1);
-                      const r = monthRange(d);
-                      setDateFrom(r.from);
-                      setDateTo(r.to);
-                      setMonthAnchor(d);
-                    }}
-                  >
-                    {"<"}
-                  </MiniBtn>
-
-                  <MiniBtn
-                    title="+1개월"
-                    onClick={() => {
-                      const d = addMonths(monthAnchor, +1);
-                      const r = monthRange(d);
-                      setDateFrom(r.from);
-                      setDateTo(r.to);
-                      setMonthAnchor(d);
-                    }}
-                  >
-                    {">"}
-                  </MiniBtn>
-                </div>
-              </div>
-
-              <button
-                className="ml-2 rounded-md bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
-                onClick={onSearch}
-              >
-                조회
-              </button>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-1">
-                <input
-                  value={searchText}
-                  onChange={(e) => setSearchText(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && onSearchByText()}
-                  placeholder="검색내용"
-                  className="w-[280px] rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
-                />
-                <button
-                  type="button"
-                  onClick={onSearchByText}
-                  className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
-                >
-                  검색
-                </button>
-              </div>
-
-              <CheckBox label="견적" checked={chkEstimate} onChange={setChkEstimate} />
-              <CheckBox label="작업" checked={chkWork} onChange={setChkWork} />
-              <CheckBox label="종결" checked={chkClosed} onChange={setChkClosed} />
-
-              <div className="ml-auto">
-                <select
-                  className="select-base" 
-                  value={effectiveSortKey}
-                  onChange={(e) => setSortKey(e.target.value)}
-                >
-                  {sortCodes.map(c => (
-                    <option key={c.value} value={c.def_value}>{c.label}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
+        {/* 3) 조회/검색 — 1줄 */}
+        <div className="mb-3 rounded-md border border-zinc-200 bg-white px-3 py-2 shadow-sm flex items-center gap-2 flex-wrap">
+          <span className="text-sm font-semibold text-zinc-800 shrink-0">입고일자</span>
+          <DateInput value={dateFrom} onChange={(v) => setDateFrom(v)} />
+          <span className="text-zinc-400">~</span>
+          <DateInput value={dateTo} onChange={(v) => { setDateTo(v); setMonthAnchor(new Date(v)); }} />
+          <div className="flex items-center gap-1">
+            <MiniBtn onClick={() => { const d = addMonths(monthAnchor, -1); const r = monthRange(d); setDateFrom(r.from); setDateTo(r.to); setMonthAnchor(d); }}>전월</MiniBtn>
+            <MiniBtn onClick={() => { const d = new Date(); const r = monthRange(d); setDateFrom(r.from); setDateTo(r.to); setMonthAnchor(new Date(d.getFullYear(), d.getMonth(), 1)); }}>금월</MiniBtn>
+            <MiniBtn title="-1개월" onClick={() => { const d = addMonths(monthAnchor, -1); const r = monthRange(d); setDateFrom(r.from); setDateTo(r.to); setMonthAnchor(d); }}>{"<"}</MiniBtn>
+            <MiniBtn title="+1개월" onClick={() => { const d = addMonths(monthAnchor, +1); const r = monthRange(d); setDateFrom(r.from); setDateTo(r.to); setMonthAnchor(d); }}> {">"}</MiniBtn>
           </div>
+          <button className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800" onClick={onSearch}>조회</button>
+
+          <div className="w-px h-5 bg-zinc-200 mx-1 shrink-0" />
+
+          <input
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && onSearchByText()}
+            placeholder="검색내용"
+            className="w-[280px] rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+          />
+          <button type="button" onClick={onSearchByText} className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-50">검색</button>
+
+          <div className="w-px h-5 bg-zinc-200 mx-1 shrink-0" />
+
+          <CheckBox label="견적" checked={chkEstimate} onChange={setChkEstimate} />
+          <CheckBox label="작업" checked={chkWork} onChange={setChkWork} />
+          <CheckBox label="종결" checked={chkClosed} onChange={setChkClosed} />
         </div>
 
         {/* ===== 아래부터: 리스트(상단) + 분할바 + 상세(하단) ===== */}
@@ -1328,8 +1228,8 @@ export default function InsuranceEstimate({ seccode = "12" }) {
               <div className="border-b border-zinc-100 px-4 h-11 shrink-0 flex items-center gap-3">
                 <div className="text-sm font-semibold text-zinc-900">견적목록</div>
                 <div className="text-xs text-zinc-500">{insuranceEstimates.length}건</div>
-                {selected && (
-                  <div className="ml-auto">
+                <div className="ml-auto flex items-center gap-2">
+                  {selected && (
                     <InlineActions
                       onModify={onModify}
                       onDelete={onDelete}
@@ -1349,8 +1249,17 @@ export default function InsuranceEstimate({ seccode = "12" }) {
                       isest={selected?.isest}
                       isInsurance={isInsurance}
                     />
-                  </div>
-                )}
+                  )}
+                  <select
+                    className="select-base !border-transparent !bg-transparent focus:!border-transparent focus:!ring-0"
+                    value={effectiveSortKey}
+                    onChange={(e) => setSortKey(e.target.value)}
+                  >
+                    {sortCodes.map(c => (
+                      <option key={c.value} value={c.def_value}>{c.label}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div className="relative min-h-0 flex-1 overflow-hidden">
@@ -1376,9 +1285,9 @@ export default function InsuranceEstimate({ seccode = "12" }) {
                   // 카드 안에서 바디만 스크롤
                   height="100%"
                   bodyClassName="min-h-0 flex-1"
-                  rowSelectedClass="!bg-blue-100 hover:!bg-blue-100"
+                  rowSelectedClass="!bg-blue-50 hover:!bg-blue-50"
                   rowHoverClass="hover:!bg-gray-50"
-                  gutterSelectedClass="!bg-blue-100"
+                  gutterSelectedClass="!bg-blue-50"
                   gutterHoverClass="!bg-gray-50"
                 />
               </div>
@@ -1408,7 +1317,7 @@ export default function InsuranceEstimate({ seccode = "12" }) {
                     headerClassName=""
                     bodyClassName="min-h-0 flex-1"
                     height="100%"
-                    rowSelectedClass="!bg-blue-100 hover:!bg-blue-100"
+                    rowSelectedClass="!bg-blue-50 hover:!bg-blue-50"
                     rowHoverClass="hover:!bg-gray-50"
                   />
                 </div>
@@ -1679,8 +1588,8 @@ function InlineActions({
 
   return (
     <div className="flex flex-wrap items-center gap-2 select-none">
-      <SmallBtn onClick={onModify}>수정</SmallBtn>
-      <SmallBtn onClick={onDelete}>삭제</SmallBtn>
+      <SmallBtn onClick={onModify} variant="primary">수정</SmallBtn>
+      <SmallBtn onClick={onDelete} variant="danger">삭제</SmallBtn>
       {String(isest) === "1" && (
         <SmallBtn onClick={onEstToReq}>작업전환</SmallBtn>
       )}
@@ -1900,12 +1809,18 @@ function CtxDivider() {
 }
 
 
-function SmallBtn({ children, onClick }) {
+function SmallBtn({ children, onClick, variant = "default" }) {
+  const cls = {
+    default: "bg-zinc-100 text-zinc-700 hover:bg-zinc-200",
+    primary: "bg-blue-50 text-blue-700 hover:bg-blue-100",
+    danger:  "bg-red-50 text-red-600 hover:bg-red-100",
+  }[variant] ?? "bg-zinc-100 text-zinc-700 hover:bg-zinc-200";
+
   return (
     <button
       type="button"
       onClick={onClick}
-      className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-800 hover:bg-zinc-200"
+      className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${cls}`}
     >
       {children}
     </button>

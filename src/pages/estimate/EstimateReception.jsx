@@ -159,7 +159,7 @@ export default function EstimateReception({ master, setMaster, laborWinOpen = fa
         <div className="grid grid-cols-3 gap-x-6 gap-y-2">
           {/* ===================== 좌: 차량 ===================== */}
           <div className="flex flex-col gap-2">
-            <Field label="차량번호">
+            <Field label="차량번호" required>
               <input
                 className={inputCls}
                 value={master?.carno ?? ""}
@@ -180,7 +180,7 @@ export default function EstimateReception({ master, setMaster, laborWinOpen = fa
               />
             </Field>
 
-            <Field label="차량명">
+            <Field label="차량명" required>
               <div className="grid grid-cols-[auto_1fr] gap-2">
                 <div className="flex items-center">
                   <input
@@ -220,7 +220,7 @@ export default function EstimateReception({ master, setMaster, laborWinOpen = fa
               />
             </Field>
 
-            <Field label="주행거리">
+            <Field label="주행거리" required>
               <input
                 className={inputCls}
                 value={formatNumber(master?.lastkm)}

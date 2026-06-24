@@ -176,7 +176,7 @@ return (
       <div className="flex flex-col gap-3">
         <div className="rounded-md border border-zinc-200 bg-white p-3">
           <div className="grid grid-cols-1 gap-x-4 gap-y-2">
-            <FormRow label="보험사명">
+            <FormRow label="보험사명" required>
               <select
                 id="claim-panel-first"
                 className={selectCls}
@@ -216,7 +216,7 @@ return (
               </select>
             </FormRow>
 
-            <FormRow label="담당자">
+            <FormRow label="담당자" required>
               <ComboInput
                 value={current?.boman_nm ?? ""}
                 onChange={(v) => setClaim(safeSelectedIdx, "boman_nm", v)}
@@ -231,7 +231,7 @@ return (
           <div className="mt-2 border-t border-zinc-200" />
 
           <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-2">
-            <FormRow label="접수번호">
+            <FormRow label="접수번호" required>
               <input
                 className={inputCls}
                 value={current?.regno ?? ""}
@@ -240,7 +240,7 @@ return (
               />
             </FormRow>
 
-            <FormRow label="과실율">
+            <FormRow label="과실율" required>
               <ComboInput
                 value={current?.misrate != null && current?.misrate !== "" ? String(toInt(current.misrate)) : ""}
                 onChange={(v) => {
@@ -258,7 +258,7 @@ return (
               />
             </FormRow>
             
-            <FormRow label="담보">
+            <FormRow label="담보" required>
               <select
                 className={selectCls}
                 value={current?.dambo ?? ""}
@@ -340,7 +340,7 @@ return (
 
         <div className="rounded-md border border-zinc-200 bg-white p-3">
           <div className="grid grid-cols-1 gap-x-6 gap-y-2">
-            <FormRow label="탈착M/H">
+            <FormRow label="탈착M/H" required>
               <div className="w-full min-w-0">
                 <MoneyInput
                   value={current?.xpay ?? ""}
@@ -351,7 +351,7 @@ return (
               </div>
             </FormRow>
 
-            <FormRow label="판금M/H">
+            <FormRow label="판금M/H" required>
               <div className="w-full min-w-0">
                 <MoneyInput
                   value={current?.bpay ?? ""}
@@ -364,7 +364,7 @@ return (
 
             {/* <FormRow label=""/> */}
 
-            <FormRow label="도장M/H">
+            <FormRow label="도장M/H" required>
               <div className="w-full min-w-0">
                 <MoneyInput
                   value={current?.ppay ?? ""}

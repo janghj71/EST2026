@@ -99,8 +99,14 @@ export async function request(
 
   // 서버 표준 오류 포맷 대응 (프로젝트 규칙에 맞게)
   if (json?.result === 'false') {
-    // 서버에서 msg 제공 시 예외로 올림
-    throw new Error(json?.msg || 'API 오류')
+    const msg = json?.msg || 'API 오류'
+    if (msg.includes('서비스키값')) {
+      localStorage.removeItem('serviceKey')
+      localStorage.removeItem('usertype')
+      window.location.replace('/')
+      return
+    }
+    throw new Error(msg)
   }
 
   return json

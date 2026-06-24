@@ -131,6 +131,20 @@ export function useEstimate() {
     [sharedEstRefetch]
   );
 
+  // ── AOS 공유견적 상세 조회 (sharekind='A') ──
+  const { refetch: aosSharedDetailRefetch } = useApi({
+    path: "/est_aosestb_s.aspx",
+    method: "POST",
+    bodyType: "form",
+    immediate: false,
+  });
+
+  const fetchAosSharedDetails = useCallback(
+    ({ est_serial, share_comcode }) =>
+      aosSharedDetailRefetch({ est_serial, share_comcode }),
+    [aosSharedDetailRefetch]
+  );
+
   // ── 중복체크 (est_serial) ──
   const { refetch: overlapRefetch } = useApi({
     path: "/est_overlap_s.aspx",
@@ -217,6 +231,7 @@ export function useEstimate() {
 
     // 공유견적 목록
     fetchSharedEstimates,
+    fetchAosSharedDetails,
 
     // 수정잠금 해제
     unlockEstimate,

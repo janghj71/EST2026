@@ -85,25 +85,19 @@ export default function SmsSenderPage() {
     if (dataset.length === 0) {
       return await warning("저장할 발신번호가 없습니다.");
     }
-    try {
-      await saveSenders(dataset);
-      await refetch();
-      await info("저장 완료");
-    } catch (err) {
-      await warning(err?.message || "저장에 실패했습니다.");
-    }
+    const res = await saveSenders(dataset);
+    if (String(res?.result) === 'false') { await warning(res?.msg || "저장에 실패했습니다."); return; }
+    await refetch();
+    await info("저장 완료");
   }, [buildDataset, saveSenders, refetch, info, warning]);
 
   // --- 삭제 (즉시 API 호출) ---
   const onDelete = useCallback(async (row) => {
     const ok = await confirm(`${row.callback} 발신번호를 삭제할까요?`);
     if (!ok) return;
-    try {
-      await deleteSender(row.callback);
-      await refetch();
-    } catch (err) {
-      await warning(err?.message || "삭제에 실패했습니다.");
-    }
+    const res = await deleteSender(row.callback);
+    if (String(res?.result) === 'false') { await warning(res?.msg || "삭제에 실패했습니다."); return; }
+    await refetch();
   }, [confirm, deleteSender, refetch, warning]);
 
   const columns = useMemo(

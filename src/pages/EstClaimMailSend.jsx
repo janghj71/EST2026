@@ -146,38 +146,37 @@ export default function EstClaimMailSend() {
       return;
     }
 
-    try {
-      const mailkind = String(isest) === "1" ? "03" : "01";
-      await withLoading(async () => {
-        for (let idx = 0; idx < claims.length; idx++) {
-          const claim = claims[idx];
-          const tab = allTabs[idx];
-          if (!claim?.estbo_seqno) continue;
-          await sendEstimateMail({
-            comcode,
-            est_serial: estSerial,
-            estbo_seqno: claim.estbo_seqno,
-            mailkind,
-            mail_addr: tab.email,
-            mail_subject: tab.subject,
-            mail_text: tab.body,
-            hp: tab.hp,
-            lsms: tab.sendSms ? "1" : "0",
-          });
-        }
-        await requestEstimate(estSerial);
-        try {
-          window.opener?.postMessage(
-            { type: "EST_MASTER_REFRESH", payload: { est_serial: estSerial } },
-            window.location.origin
-          );
-        } catch {}
-      }, "메일 전송 중...");
-      // 로딩 종료 후 알럿 표시 — 로딩 오버레이와 겹치지 않음
-      await info("메일청구가 완료되었습니다.");
-    } catch (err) {
-      alertError(err?.message ?? "메일청구 실패");
-    }
+    const mailkind = String(isest) === "1" ? "03" : "01";
+    let failed = false;
+    await withLoading(async () => {
+      for (let idx = 0; idx < claims.length; idx++) {
+        const claim = claims[idx];
+        const tab = allTabs[idx];
+        if (!claim?.estbo_seqno) continue;
+        const res = await sendEstimateMail({
+          comcode,
+          est_serial: estSerial,
+          estbo_seqno: claim.estbo_seqno,
+          mailkind,
+          mail_addr: tab.email,
+          mail_subject: tab.subject,
+          mail_text: tab.body,
+          hp: tab.hp,
+          lsms: tab.sendSms ? "1" : "0",
+        });
+        if (String(res?.result) === 'false') { failed = true; alertError(res?.msg ?? "메일청구 실패"); return; }
+      }
+      const reqRes = await requestEstimate(estSerial);
+      if (String(reqRes?.result) === 'false') { failed = true; alertError(reqRes?.msg ?? "견적청구 실패"); return; }
+      try {
+        window.opener?.postMessage(
+          { type: "EST_MASTER_REFRESH", payload: { est_serial: estSerial } },
+          window.location.origin
+        );
+      } catch {}
+    }, "메일 전송 중...");
+    // 로딩 종료 후 알럿 표시 — 로딩 오버레이와 겹치지 않음
+    if (!failed) await info("메일청구가 완료되었습니다.");
   };
 
   const onFaxSend = () => {

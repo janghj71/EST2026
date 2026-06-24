@@ -127,19 +127,15 @@ export default function InsurerContactsPage() {
       email_smtp,
     };
 
-    try {
-      await save(saveForm);
-      await refetchContacts();
-      await info("저장 완료");
-
-      // 신규 저장 후: 재조회된 목록에서 마지막 항목 선택 or 신규 모드 유지
-      if (mode === "new") {
-        setMode("new");
-        setSelectedKey("");
-        setForm(makeEmptyForm(effectiveInsCode));
-      }
-    } catch (err) {
-      await warning(err?.message || "저장에 실패했습니다.");
+    const res = await save(saveForm);
+    if (String(res?.result) === 'false') { await warning(res?.msg || "저장에 실패했습니다."); return; }
+    await refetchContacts();
+    await info("저장 완료");
+    // 신규 저장 후: 재조회된 목록에서 마지막 항목 선택 or 신규 모드 유지
+    if (mode === "new") {
+      setMode("new");
+      setSelectedKey("");
+      setForm(makeEmptyForm(effectiveInsCode));
     }
   };
 
@@ -154,19 +150,14 @@ export default function InsurerContactsPage() {
     );
     if (!ok) return;
 
-    try {
-      await remove(row.bocomcode, row.seqno);
-      await refetchContacts();
-      // await info("삭제 완료");
-
-      // 삭제한 행이 선택중이면 초기화
-      if (selectedKey === row.bocomcode + "_" + row.seqno) {
-        setSelectedKey("");
-        setMode("new");
-        setForm(makeEmptyForm(effectiveInsCode));
-      }
-    } catch (err) {
-      await warning(err?.message || "삭제에 실패했습니다.");
+    const res = await remove(row.bocomcode, row.seqno);
+    if (String(res?.result) === 'false') { await warning(res?.msg || "삭제에 실패했습니다."); return; }
+    await refetchContacts();
+    // 삭제한 행이 선택중이면 초기화
+    if (selectedKey === row.bocomcode + "_" + row.seqno) {
+      setSelectedKey("");
+      setMode("new");
+      setForm(makeEmptyForm(effectiveInsCode));
     }
   };
 

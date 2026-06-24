@@ -673,14 +673,18 @@ function MiniBtn({ children, onClick, title }) {
   );
 }
 
-function SmallBtn({ children, onClick, disabled }) {
-  // InsuranceEstimate.jsx의 SmallBtn 톤 유지
+function SmallBtn({ children, onClick, disabled, variant = "default" }) {
+  const cls = {
+    default: "bg-zinc-100 text-zinc-700 hover:bg-zinc-200",
+    primary: "bg-blue-50 text-blue-700 hover:bg-blue-100",
+    danger:  "bg-red-50 text-red-600 hover:bg-red-100",
+  }[variant] ?? "bg-zinc-100 text-zinc-700 hover:bg-zinc-200";
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-800 hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed"
+      className={`rounded-md px-3 py-1.5 text-xs font-medium transition disabled:opacity-50 disabled:cursor-not-allowed ${cls}`}
     >
       {children}
     </button>
@@ -1760,19 +1764,6 @@ export default function RepairHistorySend() {
                 삭제
               </label>
 
-              <select
-                value={sortKey}
-                onChange={(e) => setSortKey(e.target.value)}
-                className="select-base ml-auto"
-              >
-                <option value="1">1. 입력순</option>
-                <option value="2">2. 입고일자순</option>
-                <option value="7">3. 출고일자순</option>
-                <option value="3">4. 차량번호순</option>
-                <option value="4">5. 고객명순</option>
-                <option value="5">6. 차량명순</option>
-                <option value="6">7. 연락처순</option>
-              </select>
             </div>
 
           </div>
@@ -1784,18 +1775,34 @@ export default function RepairHistorySend() {
           <div className="border-b border-zinc-100 px-4 h-11 shrink-0 flex items-center gap-3">
             <div className="text-sm font-semibold text-zinc-900">견적 목록</div>
             <div className="text-xs text-zinc-500">{filteredRows.length}건</div>
-            {focusedRow && (
-              <div className="ml-auto flex items-center gap-1.5">
-                {activeTab === "aos" && <SmallBtn onClick={onModify}>수정</SmallBtn>}
-                {activeTab === "aos" && <SmallBtn onClick={onDelete}>삭제</SmallBtn>}
-                <SmallBtn
-                  onClick={() => onSend(new Set([focusedRow.est_serial]))}
-                  disabled={sending}
-                >
-                  {sending ? "전송 중…" : "정비이력전송"}
-                </SmallBtn>
-              </div>
-            )}
+            <div className="ml-auto flex items-center gap-2">
+              {focusedRow && (
+                <>
+                  {activeTab === "aos" && <SmallBtn variant="primary" onClick={onModify}>수정</SmallBtn>}
+                  {activeTab === "aos" && <SmallBtn variant="danger" onClick={onDelete}>삭제</SmallBtn>}
+                  <SmallBtn
+                    onClick={() => onSend(new Set([focusedRow.est_serial]))}
+                    disabled={sending}
+                  >
+                    {sending ? "전송 중…" : "정비이력전송"}
+                  </SmallBtn>
+                  <div className="w-px h-5 bg-zinc-200 shrink-0" />
+                </>
+              )}
+              <select
+                value={sortKey}
+                onChange={(e) => setSortKey(e.target.value)}
+                className="select-base !border-transparent !bg-transparent focus:!border-transparent focus:!ring-0"
+              >
+                <option value="1">1. 입력순</option>
+                <option value="2">2. 입고일자순</option>
+                <option value="7">3. 출고일자순</option>
+                <option value="3">4. 차량번호순</option>
+                <option value="4">5. 고객명순</option>
+                <option value="5">6. 차량명순</option>
+                <option value="6">7. 연락처순</option>
+              </select>
+            </div>
           </div>
 
           <div className="relative min-h-0 flex-1 overflow-hidden">
@@ -1816,9 +1823,9 @@ export default function RepairHistorySend() {
               })}
               height="100%"
               bodyClassName="min-h-0 flex-1"
-              rowSelectedClass="!bg-blue-100 hover:!bg-blue-100"
+              rowSelectedClass="!bg-blue-50 hover:!bg-blue-50"
               rowHoverClass="hover:!bg-gray-50"
-              gutterSelectedClass="!bg-blue-100"
+              gutterSelectedClass="!bg-blue-50"
               gutterHoverClass="!bg-gray-50"
             />
           </div>

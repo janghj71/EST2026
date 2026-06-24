@@ -31,6 +31,10 @@ export default function IconBtn({
       ? "border-green-600 bg-green-600 text-white hover:bg-green-500"
       : variant === "yellow"
       ? "border-yellow-400 text-yellow-700 bg-white hover:bg-yellow-50 hover:border-yellow-500"
+      : variant === "sky"
+      ? "border-sky-300 bg-sky-200 text-zinc-900 hover:bg-sky-300 hover:border-sky-400"
+      : variant === "purple"
+      ? "border-purple-300 bg-purple-200 text-zinc-900 hover:bg-purple-300 hover:border-purple-400"
       : "border-zinc-300 text-zinc-800 bg-white hover:bg-zinc-100 hover:border-zinc-400";
 
   return (

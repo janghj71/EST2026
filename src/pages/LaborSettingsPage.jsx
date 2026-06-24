@@ -45,12 +45,9 @@ export default function LaborSettingsPage() {
   
   const setCheck = (k) => (checked) => setForm((p) => ({ ...p, [k]: checked }));
   const onSave = async () => {
-    try {
-      await save(form);
-      await info("저장 완료");
-    } catch (err) {
-      await info(err.message || "저장 실패");
-    }
+    const res = await save(form);
+    if (String(res?.result) === 'false') { await info(res?.msg || "저장 실패"); return; }
+    await info("저장 완료");
   };
   
   return (
