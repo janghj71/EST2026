@@ -5,6 +5,7 @@ import IconBtn from "../components/IconBtn";
 import { useMailSend } from "../hooks/useMailSend";
 import { useAlert } from "../alerts";
 import { useLoading } from "../loading/useLoading";
+import { useMasterEstimateSave } from "../hooks/useMasterEstimateSave";
 
 import { API_HOST } from "../api/config";
 const STORAGE_KEY = "estCustomerSendCtx";
@@ -47,6 +48,7 @@ export default function EstCustomerMailSend() {
   const { info, error: alertError } = useAlert();
   const { withLoading } = useLoading();
   const { sendEstimateMail } = useMailSend();
+  const { updateEstPrint } = useMasterEstimateSave();
 
   function applyCtx(p) {
     const est_serial = p.est_serial ?? "";
@@ -134,7 +136,16 @@ export default function EstCustomerMailSend() {
       if (String(res?.result) === 'false') { failed = true; alertError(res?.msg ?? "메일 발송 실패"); }
     }, "메일 전송 중...");
     // 로딩 종료 후 알럿 표시 — 로딩 오버레이와 겹치지 않음
-    if (!failed) await info("메일이 발송되었습니다.");
+    if (!failed) {
+      await info("메일이 발송되었습니다.");
+      try {
+        await updateEstPrint(estSerial);
+        window.opener?.postMessage(
+          { type: "EST_MASTER_REFRESH", payload: { est_serial: estSerial } },
+          window.location.origin
+        );
+      } catch { /* empty */ }
+    }
   };
 
   const docTitle =

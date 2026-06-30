@@ -5,7 +5,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import {
   Pencil, Trash2, ArrowRightLeft, Camera, MessageSquare,
   Mail, Printer, StickyNote, Wallet,
-  Send, User, History, FileText, ChevronRight,
+  Send, User, History, FileText, ChevronRight, CheckCircle, Search,
 } from "lucide-react";
 import FixedHeadTable from "../components/FixedHeadTable";
 import TableLoadingOverlay from "../components/TableLoadingOverlay";
@@ -20,6 +20,7 @@ import { getComcode, getUserid } from "../api/config";
 import { useEstToReq } from "../hooks/useEstToReq";
 import { useNewEstimate } from "../hooks/useNewEstimate";
 import { useEstimateDelete } from "../hooks/useEstimateDelete";
+import { useEstimateClaims } from "../hooks/useEstimateClaims";
 
 /**
  * 보험 견적일지 (UI 샘플)
@@ -57,11 +58,14 @@ export default function InsuranceEstimate({ seccode = "12" }) {
     unlockEstimate,
     requestEstimate,
     closeEstimate,
+    cancelCloseEstimate,
   } = useEstimate();
 
   const { estToReq } = useEstToReq();
   const { createEstimate } = useNewEstimate();
   const { deleteEstimate } = useEstimateDelete();
+
+  const { fetchSettle } = useEstimateClaims();
 
   const { codes: sortCodes } = useTbCode('IDX01');
 
@@ -481,7 +485,44 @@ export default function InsuranceEstimate({ seccode = "12" }) {
       await fetchEstimates(dateFrom, dateTo);
     }, "삭제 중...");
   }, [selected, deleteEstimate, fetchEstimates, dateFrom, dateTo, withLoading, warning, error, confirm]);
-  
+
+  const [outdayModal, setOutdayModal] = useState(null); // { type: 'request'|'close', row }
+
+  const onCloseEstimate = useCallback(async (rowArg) => {
+    const row = rowArg ?? selected;
+    if (!row) return;
+    const isClosed = row.workend && row.workend !== "";
+
+    if (isClosed) {
+      // 종결취소
+      const ok = await confirm("견적종결을 취소하시겠습니까?", "종결취소");
+      if (!ok) return;
+      await withLoading(async () => {
+        const res = await cancelCloseEstimate(row.est_serial, row.outday ?? "");
+        if (String(res?.result) === 'false') { error(res?.msg ?? "종결취소 실패"); return; }
+        await fetchEstimates(dateFrom, dateTo);
+      }, "종결취소 중...");
+    } else {
+      // 견적종결 — 출고일자 없으면 모달로 입력 받음
+      if (!row.outday) {
+        setOutdayModal({ type: "close", row });
+        return;
+      }
+      // 정산 조회 + 확인은 로딩 오버레이 밖에서
+      const settle = await fetchSettle({ est_serial: row.est_serial });
+      if (String(settle?.result) === 'false') { error(settle?.msg ?? "정산조회 실패"); return; }
+
+      const ok = await confirm("견적을 종결하시겠습니까?", "견적종결");
+      if (!ok) return;
+
+      await withLoading(async () => {
+        const res = await closeEstimate(row.est_serial, row.outday);
+        if (String(res?.result) === 'false') { error(res?.msg ?? "종결 실패"); return; }
+        await fetchEstimates(dateFrom, dateTo);
+      }, "견적종결 중...");
+    }
+  }, [selected, closeEstimate, cancelCloseEstimate, fetchSettle, fetchEstimates, dateFrom, dateTo, withLoading, error, confirm, setOutdayModal]);
+
   const openPhotoViewer = () => {
     const estId = selected?.est_serial || "";
     const carNo = selected?.carno || "";
@@ -793,8 +834,6 @@ export default function InsuranceEstimate({ seccode = "12" }) {
   }, [unlockEstimate, fetchEstimates, dateFrom, dateTo, withLoading, error]);
 
   // ====== 견적청구 / 견적종결 ======
-  const [outdayModal, setOutdayModal] = useState(null);
-  // { type: 'request'|'close', row }
 
   const handleRequest = useCallback(async (row) => {
     const needsDate = String(row.isest) !== "1" && !row.outday;
@@ -806,16 +845,6 @@ export default function InsuranceEstimate({ seccode = "12" }) {
     }, "처리 중...");
   }, [requestEstimate, fetchEstimates, dateFrom, dateTo, withLoading, error, setOutdayModal]);
 
-  const handleCloseEst = useCallback(async (row) => {
-    const ok = await confirm("견적을 종결하시겠습니까?", "견적종결");
-    if (!ok) return;
-    if (!row.outday) { setOutdayModal({ type: "close", row }); return; }
-    await withLoading(async () => {
-      const res = await closeEstimate(row.est_serial, row.outday);
-      if (String(res?.result) === 'false') { error(res?.msg ?? "견적종결 실패"); return; }
-      await fetchEstimates(dateFrom, dateTo);
-    }, "처리 중...");
-  }, [closeEstimate, fetchEstimates, dateFrom, dateTo, withLoading, error, confirm, setOutdayModal]);
 
   // ====== 작업전환 (견적 → 작업 copy) ======
   const handleEstToReq = useCallback(async (row) => {
@@ -838,6 +867,12 @@ export default function InsuranceEstimate({ seccode = "12" }) {
   const handleOutdayConfirm = useCallback(async (outday) => {
     const { type, row } = outdayModal;
     setOutdayModal(null);
+
+    if (type === "close") {
+      const ok = await confirm("견적을 종결하시겠습니까?", "견적종결");
+      if (!ok) return;
+    }
+
     await withLoading(async () => {
       const res = type === "request"
         ? await requestEstimate(row.est_serial, outday)
@@ -845,7 +880,7 @@ export default function InsuranceEstimate({ seccode = "12" }) {
       if (String(res?.result) === 'false') { error(res?.msg ?? "처리 실패"); return; }
       await fetchEstimates(dateFrom, dateTo);
     }, "처리 중...");
-  }, [outdayModal, requestEstimate, closeEstimate, fetchEstimates, dateFrom, dateTo, withLoading, error, setOutdayModal]);
+  }, [outdayModal, requestEstimate, closeEstimate, fetchEstimates, dateFrom, dateTo, withLoading, error, confirm, setOutdayModal]);
 
   const estimateColumns = useMemo(
     () => [
@@ -875,9 +910,9 @@ export default function InsuranceEstimate({ seccode = "12" }) {
       { key: "inday", title: "입고일자", width: isInsurance ? "9%" : "9%", align: "left" },
       { key: "outday", title: "출고일자", width:isInsurance ? "9%" : "9%", align: "left", render: (v) => v || "-" },
       { key: "preoutdate", title: "출고예정일시", width: isInsurance ? "12%" : "12%", align: "left" },
-      { key: "statename", title: "상태", width: "8%", align: "left", render: (v, row) => <StatusBadge value={v} row={row} onUnlock={handleUnlock} onRequest={handleRequest} onCloseEst={handleCloseEst} /> },
+      { key: "statename", title: "상태", width: "8%", align: "left", render: (v, row) => <StatusBadge value={v} row={row} onUnlock={handleUnlock} onRequest={handleRequest} onCloseEst={onCloseEstimate} /> },
     ],
-    [handleUnlock, handleRequest, handleCloseEst, isInsurance]
+    [handleUnlock, handleRequest, onCloseEstimate, isInsurance]
   );
 
   // ====== 조회 버튼 ======
@@ -1198,7 +1233,7 @@ export default function InsuranceEstimate({ seccode = "12" }) {
             <MiniBtn title="-1개월" onClick={() => { const d = addMonths(monthAnchor, -1); const r = monthRange(d); setDateFrom(r.from); setDateTo(r.to); setMonthAnchor(d); }}>{"<"}</MiniBtn>
             <MiniBtn title="+1개월" onClick={() => { const d = addMonths(monthAnchor, +1); const r = monthRange(d); setDateFrom(r.from); setDateTo(r.to); setMonthAnchor(d); }}> {">"}</MiniBtn>
           </div>
-          <button className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800" onClick={onSearch}>조회</button>
+          <button className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800" onClick={onSearch}><Search className="h-4 w-4" />조회</button>
 
           <div className="w-px h-5 bg-zinc-200 mx-1 shrink-0" />
 
@@ -1233,6 +1268,8 @@ export default function InsuranceEstimate({ seccode = "12" }) {
                     <InlineActions
                       onModify={onModify}
                       onDelete={onDelete}
+                      onCloseEstimate={onCloseEstimate}
+                      isClosed={selected?.workend && selected?.workend !== ""}
                       onEstToReq={() => handleEstToReq(selected)}
                       onPhoto={openPhotoViewer}
                       onSms={openSmsPopup}
@@ -1488,6 +1525,8 @@ export default function InsuranceEstimate({ seccode = "12" }) {
           onClose={() => setContextMenu(null)}
           onModify={onModify}
           onDelete={onDelete}
+          onCloseEstimate={onCloseEstimate}
+          isClosed={contextMenu.row?.workend && contextMenu.row?.workend !== ""}
           onEstToReq={() => handleEstToReq(contextMenu.row)}
           onPhoto={openPhotoViewer}
           onSms={openSmsPopup}
@@ -1509,6 +1548,8 @@ export default function InsuranceEstimate({ seccode = "12" }) {
 function InlineActions({
   onModify,
   onDelete,
+  onCloseEstimate,
+  isClosed = false,
   onEstToReq,
   onPhoto,
   onSms,
@@ -1590,6 +1631,9 @@ function InlineActions({
     <div className="flex flex-wrap items-center gap-2 select-none">
       <SmallBtn onClick={onModify} variant="primary">수정</SmallBtn>
       <SmallBtn onClick={onDelete} variant="danger">삭제</SmallBtn>
+      <SmallBtn onClick={() => onCloseEstimate()} variant={isClosed ? "danger" : "default"}>
+        {isClosed ? "종결취소" : "견적종결"}
+      </SmallBtn>
       {String(isest) === "1" && (
         <SmallBtn onClick={onEstToReq}>작업전환</SmallBtn>
       )}
@@ -1652,7 +1696,7 @@ function InlineActions({
  */
 function RowContextMenu({
   x, y, row, onClose,
-  onModify, onDelete, onEstToReq,
+  onModify, onDelete, onCloseEstimate, isClosed = false, onEstToReq,
   onPhoto, onSms, onMemo, onDeposit,
   onPrint,
   onMailClaim, onCustomerSend, onMailHistory,
@@ -1709,8 +1753,11 @@ function RowContextMenu({
       className="fixed z-[1200] w-56 rounded-md border border-zinc-200 bg-white shadow-xl py-1 select-none"
       style={{ left: x, top: y }}
     >
-      <CtxItem icon={Pencil}        onClick={fire(onModify)}   onMouseEnter={closeSub}>수정</CtxItem>
-      <CtxItem icon={Trash2}        onClick={fire(onDelete)}   onMouseEnter={closeSub}>삭제</CtxItem>
+      <CtxItem icon={Pencil}        onClick={fire(onModify)}        onMouseEnter={closeSub}>수정</CtxItem>
+      <CtxItem icon={Trash2}        onClick={fire(onDelete)}        onMouseEnter={closeSub}>삭제</CtxItem>
+      <CtxItem icon={CheckCircle}   onClick={fire(onCloseEstimate)} onMouseEnter={closeSub}>
+        {isClosed ? "종결취소" : "견적종결"}
+      </CtxItem>
       {isest === "1" && (
         <CtxItem icon={ArrowRightLeft} onClick={fire(onEstToReq)} onMouseEnter={closeSub}>작업전환</CtxItem>
       )}

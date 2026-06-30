@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useUrlContextSnapshot } from "../hooks/useUrlContextSnapshot";
-import { X } from "lucide-react";
+import { X, MessageSquare, Bell } from "lucide-react";
 import IconBtn from "../components/IconBtn";
 import { useAlert } from "../alerts";
 import { useLoading } from "../loading/useLoading";
@@ -8,6 +8,7 @@ import { useCompanyInfo } from "../hooks/useCompanyInfo";
 import { useAlimtalkTemplate } from "../hooks/useAlimtalkTemplate";
 import { useSms } from "../hooks/useSms";
 import { useSmsSender } from "../hooks/useSmsSender";
+import { useMasterEstimateSave } from "../hooks/useMasterEstimateSave";
 import { getComcode } from "../api/config";
 import { pad2, ymd } from "../utils/dateUtils";
 
@@ -27,6 +28,7 @@ export default function SmsSend() {
   const { fetchTemplate } = useAlimtalkTemplate();
   const { sendSms, sendAlimtalk, sendingSms } = useSms();
   const { senders } = useSmsSender();
+  const { updateEstPrint } = useMasterEstimateSave();
 
   /**
    * est_serial, carno, hp, isest, inday
@@ -173,38 +175,51 @@ export default function SmsSend() {
     loadAlimtalkMsg();
   }, [loadAlimtalkMsg]);
 
+  const notifyPrinted = async (serial) => {
+    try {
+      await updateEstPrint(serial);
+      window.opener?.postMessage(
+        { type: "EST_MASTER_REFRESH", payload: { est_serial: serial } },
+        window.location.origin
+      );
+    } catch { /* empty */ }
+  };
+
   const onSendSms = async () => {
-    if (!estSerial) return warning("견적번호가 없습니다.");
-    if (!recvHp) return warning("수신번호를 입력하세요.");
-    if (!sendNo) return warning("발신번호를 입력하세요.");
-    if (!msg) return warning("메시지 내용을 입력하세요.");
+    if (!estSerial) { warning("견적번호가 없습니다."); return; }
+    if (!recvHp)    { warning("수신번호를 입력하세요."); return; }
+    if (!sendNo)    { warning("발신번호를 입력하세요."); return; }
+    if (!msg)       { warning("메시지 내용을 입력하세요."); return; }
 
     const smskind = includeEstimateUrl ? (isest === "1" ? "03" : "02") : "";
 
-    try {
-      const comcode = getComcode();
-      await sendSms({
-        comcode,
-        est_serial: estSerial,
-        hp: recvHp,
-        callback: sendNo,
-        smskind,
-        smstxt: msg,
-      });
-      success("문자발송 했습니다.");
-    } catch (e) {
-      warning(e?.message || "문자발송에 실패했습니다.");
-    }
+    await withLoading(async () => {
+      try {
+        const comcode = getComcode();
+        await sendSms({
+          comcode,
+          est_serial: estSerial,
+          hp: recvHp,
+          callback: sendNo,
+          smskind,
+          smstxt: msg,
+        });
+        success("문자발송 했습니다.");
+        await notifyPrinted(estSerial);
+      } catch (e) {
+        warning(e?.message || "문자발송에 실패했습니다.");
+      }
+    }, "문자 발송 중...");
   };
 
   const onSendAlimtalk = async () => {
-    if (!estSerial) return warning("견적번호가 없습니다.");
-    if (!recvHp) return warning("수신번호를 입력하세요.");
-    if (!sendNo) return warning("발신번호를 입력하세요.");
+    if (!estSerial) { warning("견적번호가 없습니다."); return; }
+    if (!recvHp)    { warning("수신번호를 입력하세요."); return; }
+    if (!sendNo)    { warning("발신번호를 입력하세요."); return; }
 
     const smskind = includeEstimateUrl ? (isest === "1" ? "03" : "02") : "";
 
-    try {
+    await withLoading(async () => { try {
       const templateResult = await loadAlimtalkMsg({ smskind });
       if (!templateResult) return;
 
@@ -244,9 +259,10 @@ export default function SmsSend() {
 
       await sendAlimtalk(alimtalkParams);
       success("알림톡 발송 성공");
+      await notifyPrinted(estSerial);
     } catch (e) {
       warning(e?.message || "알림톡 발송 실패");
-    }
+    } }, "알림톡 발송 중...");
   };
 
   return (
@@ -353,17 +369,19 @@ export default function SmsSend() {
         <div className="grid grid-cols-2 gap-4">
           <button
             type="button"
-            onClick={() => withLoading(onSendSms, '문자 발송 중...')}
+            onClick={onSendSms}
             disabled={sendingSms}
-            className="rounded-md bg-zinc-700 px-4 py-3 text-sm font-semibold text-white hover:bg-zinc-800"
+            className="inline-flex items-center justify-center gap-1.5 rounded-md bg-zinc-800 px-4 py-3 text-sm font-semibold text-white hover:bg-zinc-700"
           >
+            <MessageSquare className="h-4 w-4" />
             문자발송
           </button>
           <button
             type="button"
-            onClick={() => withLoading(onSendAlimtalk, '알림톡 발송 중...')}
-            className="rounded-md bg-zinc-700 px-4 py-3 text-sm font-semibold text-white hover:bg-zinc-800"
+            onClick={onSendAlimtalk}
+            className="inline-flex items-center justify-center gap-1.5 rounded-md bg-yellow-400 px-4 py-3 text-sm font-semibold text-zinc-900 hover:bg-yellow-300"
           >
+            <Bell className="h-4 w-4" />
             알림톡
           </button>
         </div>

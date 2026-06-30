@@ -17,7 +17,10 @@ import { openCenteredWindow } from "../../utils/popup";
 import { useEstimate } from "../../hooks/useEstimate";
 import { useMasterEstimateSave } from "../../hooks/useMasterEstimateSave";
 import { useCompanyInfo } from "../../hooks/useCompanyInfo";
-import { useTsLogin, useTsRepairSend, useTsRepairState, useClientIp } from "../../hooks/useTs_Repair";
+import { useTsLogin, useTsRepairSend, useTsRepairState, useClientIp, useTsCarInfo } from "../../hooks/useTs_Repair";
+import { useCarRegInfo } from "../../hooks/useCarRegInfo";
+
+const CARNO_FULL_RE = /^([가-힣]{2})?\d{2,3}[가-힣]\d{4}$/;
 import { buildRepairJsondata } from "../../utils/repairJsondata";
 import { useEstimateClaimSave } from "../../hooks/useEstimateClaimSave";
 import { useEstimateDetailSave } from "../../hooks/useEstimateDetailSave";
@@ -114,6 +117,8 @@ export default function EstimateEditPage() {
   const { tsLogin } = useTsLogin();
   const { sendRepairHistory } = useTsRepairSend();
   const { fetchRepairState } = useTsRepairState();
+  const { fetchCarInfo } = useTsCarInfo();
+  const { fetchCarRegInfo } = useCarRegInfo();
   const { fetchClientIp } = useClientIp();
   const { deleteTsRst } = useEstTsRstDelete();
   const { updateMasterEstimatebTsPayno } = useMasterEstimatebUpdate();
@@ -587,6 +592,10 @@ export default function EstimateEditPage() {
     await saveClaimIfActive();
     if (master?.seccode === "12" && !master?.claims?.[0]?.bocomcode) {
       alertWarning("청구처(보험사)를 먼저 입력하세요.");
+      return;
+    }
+    if (!master?.est_codecar) {
+      alertWarning("대체차종 코드가 없습니다.\n차량정보에서 대체차종을 선택하세요.");
       return;
     }
     if (!master?.pntcot_code) {
@@ -2286,6 +2295,92 @@ export default function EstimateEditPage() {
     return new Promise((resolve) => { amendResolverRef.current = resolve; });
   }, []);
 
+  const handleCarInfo = useCallback(async () => {
+    const carno = master?.carno?.trim();
+    if (!carno) return alertWarning("차량번호를 입력하세요.");
+
+    const userid = companyForm.ts_userid;
+    const passwd = companyForm.ts_userpwd;
+    const idno   = companyForm.idNo;
+    if (!userid || !passwd) return alertWarning("업체정보에 국토부 아이디/비밀번호를 설정하세요.");
+
+    let loginRes;
+    try {
+      loginRes = await tsLogin({ idno, userid, passwd });
+    } catch (e) {
+      return alertError(`국토부 로그인 실패: ${e?.message || ""}`);
+    }
+    const servicecode = loginRes?.servicecode || "";
+
+    let ip_adres = "";
+    try {
+      ip_adres = await fetchClientIp();
+    } catch { /* 무시 */ }
+
+    let res;
+    try {
+      res = await fetchCarInfo({ vhrno: carno, servicecode, ip_adres });
+    } catch (e) {
+      return alertError(`차량정보 조회 실패: ${e?.message || ""}`);
+    }
+
+    if (res?.cntc_result_code !== "MSG50000") {
+      return alertError(res?.cntc_result_dtls || res?.msg || res?.cntc_result_code || "차량정보 조회에 실패했습니다.");
+    }
+
+    const updates = {};
+    if (res.cnm) updates.carname = res.cnm;
+    if (res.vin) updates.vinno   = res.vin;
+    if (res.ybl_md) {
+      const d = String(res.ybl_md);
+      if (d.length === 8) {
+        updates.car_registday = `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`;
+      }
+    }
+
+    setMaster((prev) => ({ ...prev, ...updates }));
+    alertInfo(`차량정보를 불러왔습니다.${updates.carname ? ` (${updates.carname})` : ""}`);
+  }, [master, companyForm, tsLogin, fetchClientIp, fetchCarInfo, alertWarning, alertError, alertInfo, setMaster]);
+
+  const [carRegInfoLoading, setCarRegInfoLoading] = useState(false);
+
+  const handleCarRegInfo = useCallback(async () => {
+    const carno = master?.carno?.trim();
+    if (!carno) return alertWarning("차량번호를 입력하세요.");
+    if (!CARNO_FULL_RE.test(carno)) return alertWarning("차량번호 풀번호를 입력하세요.\n예) 서울11다1234, 11가1234, 123나1234");
+    const owner = master?.custom_name?.trim();
+    if (!owner) return alertWarning("고객명을 입력하세요.");
+
+    setCarRegInfoLoading(true);
+    let res;
+    try {
+      res = await fetchCarRegInfo({ carno, owner });
+    } catch (e) {
+      return alertError(`원부조회 실패: ${e?.message || ""}`);
+    } finally {
+      setCarRegInfoLoading(false);
+    }
+
+    if (String(res?.result) !== "OK") {
+      return alertError(res?.msg || "원부조회에 실패했습니다.");
+    }
+
+    const updates = {};
+    if (res.car_name)      updates.carname = res.car_name;
+    if (res.car_vinary_no) updates.vinno   = res.car_vinary_no;
+    if (res.first_reg_date) {
+      const d = String(res.first_reg_date);
+      if (d.length === 8) updates.car_registday = `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`;
+    }
+    if (res.check_exp_date) {
+      const endDate = String(res.check_exp_date).split("~").pop()?.trim();
+      if (endDate) updates.testday = endDate;
+    }
+
+    setMaster((prev) => ({ ...prev, ...updates }));
+    alertInfo(`원부조회 완료.${res.car_name ? ` (${res.car_name})` : ""}`);
+  }, [master, fetchCarRegInfo, alertWarning, alertError, alertInfo, setMaster]);
+
   const handleTsRepairSend = useCallback(async () => {
     // ① 입력값 체크
     if (!master.carno)  return alertWarning("차량번호를 입력하세요.");
@@ -2517,7 +2612,7 @@ export default function EstimateEditPage() {
             } else if (rest.payname === '컬러매칭') {
               overrides = { ...overrides, paykind: '4', payno: '', subpayno: '99990' };
             } else if (String(rest.paykind) === '3' || String(rest.paykind) === '5') {
-              overrides = { ...overrides, paykind: '5', payno: '99995' };
+              overrides = { ...overrides, paykind: '5', payno: '99995', workcode: '', workcodename: '' };
             } else {
               overrides = { ...overrides, paykind: '4', payno: '99994' };
             }
@@ -2543,14 +2638,15 @@ export default function EstimateEditPage() {
 
         // paysum 재계산 — 현재 견적 청구처[0] 단가 기준 (가열건조비 제외)
         let paysum = rest.paysum;
+        const effectiveWorkcode = 'workcode' in overrides ? overrides.workcode : rest.workcode;
         const subpayno = overrides.subpayno ?? rest.subpayno;
-        if (claim0 && rest.workcode && rest.qty && subpayno !== "99991") {
+        if (claim0 && effectiveWorkcode && rest.qty && subpayno !== "99991") {
           const qty = parseFloat(rest.qty);
           if (!isNaN(qty)) {
             let rate = null;
-            if ("SB".includes(rest.workcode))        rate = parseFloat(claim0.bpay);
-            else if (rest.workcode === "P")          rate = parseFloat(claim0.ppay);
-            else if ("RXOA".includes(rest.workcode)) rate = parseFloat(claim0.xpay);
+            if ("SB".includes(effectiveWorkcode))        rate = parseFloat(claim0.bpay);
+            else if (effectiveWorkcode === "P")          rate = parseFloat(claim0.ppay);
+            else if ("RXOA".includes(effectiveWorkcode)) rate = parseFloat(claim0.xpay);
             if (rate != null && !isNaN(rate)) paysum = String(Math.round(rate * qty));
           }
         }
@@ -2562,7 +2658,7 @@ export default function EstimateEditPage() {
           estb_orgseqno: newTempId(),      // 신규 임시 키 (_new_ prefix → INSERT)
           estb_seqno: prev.length + i + 1,
           update_id: getUserid(),          // 현재 로그인 사용자
-          paysum,
+          paysum: 'paysum' in overrides ? overrides.paysum : paysum,
         };
       });
       return [...prev, ...added];
@@ -2646,7 +2742,7 @@ export default function EstimateEditPage() {
         <div className="min-h-0 flex-1 flex gap-3 min-w-0">
           {/* 좌: 접수 + 테이블 */}
           <div className="min-h-0 flex-1 flex flex-col gap-2 min-w-0">
-            <EstimateReception master={master} setMaster={setMaster} laborWinOpen={laborWinOpen || paintWinOpen} readOnly={isLocked} itemCount={rows.length} />
+            <EstimateReception master={master} setMaster={setMaster} laborWinOpen={laborWinOpen || paintWinOpen} readOnly={isLocked} itemCount={rows.length} onCarInfo={handleCarInfo} onCarRegInfo={handleCarRegInfo} carRegInfoLoading={carRegInfoLoading} />
 
             <div className="relative min-h-0 flex-1 flex flex-col min-w-0">
               <TableLoadingOverlay loading={detailLoading} />
@@ -2669,6 +2765,7 @@ export default function EstimateEditPage() {
                 sidePanelOpen={sidePanelOpen}
                 est_serial={est_serial}
                 onSharedEstimateSelect={handleSharedEstimateSelect}
+                onBeforeSharedEst={async () => { await save(est_serial, masterWithSums()); }}
                 onTsRepairSend={handleTsRepairSend}
                 masterSendState={master.ts_send_dt || ""}
                 readOnly={isLocked}

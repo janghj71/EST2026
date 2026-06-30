@@ -281,6 +281,7 @@ export default function EstimateItemsTable({
   sidePanelOpen = false,
   est_serial,
   onSharedEstimateSelect,
+  onBeforeSharedEst,
   onTsRepairSend,
   masterSendState = "",
   readOnly = false,
@@ -1528,7 +1529,7 @@ const focusPrevAcrossRows = useCallback((row, currentKey) => {
 
           <IconBtn icon={ArrowDownWideNarrow} label="도장 하단정렬" disabled={readOnly} onClick={onMovePaintToBottom} />
           <IconBtn icon={Send} label="정비이력전송" onClick={onTsRepairSend} variant="sky" />
-          <IconBtn icon={Sparkles} label="AI 견적" disabled={readOnly} onClick={() => setSharedEstOpen(true)} variant="purple" />
+          <IconBtn icon={Sparkles} label="AI 견적" disabled={readOnly} onClick={async () => { await onBeforeSharedEst?.(); setSharedEstOpen(true); }} variant="purple" />
         </div>
       </div>
 

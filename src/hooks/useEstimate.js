@@ -200,6 +200,20 @@ export function useEstimate() {
     [closeRefetch]
   );
 
+  // ── 견적종결 취소 (workend='0') ──
+  const { refetch: cancelCloseRefetch } = useApi({
+    path: "/est_masterestimate_u.aspx",
+    method: "POST",
+    bodyType: "form",
+    immediate: false,
+  });
+
+  const cancelCloseEstimate = useCallback(
+    (est_serial, outday) =>
+      cancelCloseRefetch({ est_serial, outday: outday ?? "", workend: "0" }),
+    [cancelCloseRefetch]
+  );
+
   return {
     // 견적목록
     estimates: estimates ?? [],
@@ -236,9 +250,10 @@ export function useEstimate() {
     // 수정잠금 해제
     unlockEstimate,
 
-    // 견적청구 / 견적종결
+    // 견적청구 / 견적종결 / 종결취소
     requestEstimate,
     closeEstimate,
+    cancelCloseEstimate,
   };
 }
 

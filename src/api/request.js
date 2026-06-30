@@ -1,5 +1,5 @@
 // src/api/request.js
-import { API_ESTSERVICE, API_NEOSERVICE, API_AXSERVICE, API_IVSERVICE, API_TSSERVICE, API_ASSERVICE, getServiceKey } from './config'
+import { API_ESTSERVICE, API_NEOSERVICE, API_AXSERVICE, API_IVSERVICE, API_TSSERVICE, API_ASSERVICE, API_ADBCPSERVICE, getServiceKey } from './config'
 
 /**
  * bodyType: 'form' | 'json' | 'raw'
@@ -22,7 +22,8 @@ export async function request(
       path.startsWith('/axservice') ||
       path.startsWith('/ivservice') ||
       path.startsWith('/tsservice') ||
-      path.startsWith('/asservice')
+      path.startsWith('/asservice') ||
+      path.startsWith('/adbcpservice')
     ) {
       url = path; // Vite proxy가 직접 처리
     } else {
@@ -40,6 +41,8 @@ export async function request(
       url = `${API_TSSERVICE}${path.replace('/tsservice', '')}`;
     } else if (path.startsWith('/asservice')) {
       url = `${API_ASSERVICE}${path.replace('/asservice', '')}`;
+    } else if (path.startsWith('/adbcpservice')) {
+      url = `${API_ADBCPSERVICE}${path.replace('/adbcpservice', '')}`;
     } else {
       url = `${API_ESTSERVICE}${path}`;
     }

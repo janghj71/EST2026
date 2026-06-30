@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { createPortal } from "react-dom";
 import { useLocation } from "react-router-dom";
 import FixedHeadTable from "../components/FixedHeadTable";
-import { X, Save, Pen, Pencil, Send, Trash2 } from "lucide-react";
+import { X, Save, Pen, Pencil, Send, Trash2, Search } from "lucide-react";
 import IconBtn from "../components/IconBtn";
 import { useAlert } from "../alerts";
 import { moveFocusOnEnter } from "../utils/focusUtils";
@@ -1679,91 +1679,52 @@ export default function RepairHistorySend() {
               </div>
 
               <button
-                className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
+                className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
                 onClick={() => onQuery(activeTab)}
               >
+                <Search className="h-4 w-4" />
                 조회
               </button>
-            </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+              <div className="w-px h-5 bg-zinc-200 shrink-0" />
+
               <input
                 value={searchText}
                 onChange={(e) => setSearchText(e.target.value)}
                 placeholder="차량번호/차량명/고객명/연락처 검색"
-                className="w-[520px] max-w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-800 outline-none"
+                className="w-64 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-800 outline-none"
               />
 
-              <button
-                className="rounded-md border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-50"
-                onClick={() => info("검색")}
-              >
-                검색
-              </button>
+              <div className="w-px h-5 bg-zinc-200 shrink-0" />
 
-              <label className="ml-1 inline-flex items-center gap-2 text-sm text-zinc-700 select-none">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4"
-                  checked={onlyUnsent}
-                  onChange={(e) => setOnlyUnsent(e.target.checked)}
-                />
-                미전송건
-              </label>
-
-              <label className="inline-flex items-center gap-2 text-sm text-zinc-700 select-none">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4"
-                  checked={onlySuccess}
-                  onChange={(e) => setOnlySuccess(e.target.checked)}
-                />
-                성공건
-              </label>
-
-              <label className="inline-flex items-center gap-2 text-sm text-zinc-700 select-none">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4"
-                  checked={onlyError}
-                  onChange={(e) => setOnlyError(e.target.checked)}
-                />
-                오류건
-              </label>
-
-              {/* 구분선 */}
-              <span className="text-zinc-300 select-none">|</span>
-
-              <label className="inline-flex items-center gap-2 text-sm text-zinc-700 select-none">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4"
-                  checked={onlyNew}
-                  onChange={(e) => setOnlyNew(e.target.checked)}
-                />
-                신규
-              </label>
-
-              <label className="inline-flex items-center gap-2 text-sm text-zinc-700 select-none">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4"
-                  checked={onlyUpdated}
-                  onChange={(e) => setOnlyUpdated(e.target.checked)}
-                />
-                수정
-              </label>
-
-              <label className="inline-flex items-center gap-2 text-sm text-zinc-700 select-none">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4"
-                  checked={onlyDeleted}
-                  onChange={(e) => setOnlyDeleted(e.target.checked)}
-                />
-                삭제
-              </label>
-
+              {/* 체크박스 필터 */}
+              <div className="flex items-center gap-3 flex-wrap">
+                <label className="inline-flex items-center gap-1.5 text-sm text-zinc-700 select-none">
+                  <input type="checkbox" className="h-3.5 w-3.5 accent-zinc-900" checked={onlyUnsent} onChange={(e) => setOnlyUnsent(e.target.checked)} />
+                  미전송
+                </label>
+                <label className="inline-flex items-center gap-1.5 text-sm text-zinc-700 select-none">
+                  <input type="checkbox" className="h-3.5 w-3.5 accent-zinc-900" checked={onlySuccess} onChange={(e) => setOnlySuccess(e.target.checked)} />
+                  성공
+                </label>
+                <label className="inline-flex items-center gap-1.5 text-sm text-zinc-700 select-none">
+                  <input type="checkbox" className="h-3.5 w-3.5 accent-zinc-900" checked={onlyError} onChange={(e) => setOnlyError(e.target.checked)} />
+                  오류
+                </label>
+                <div className="w-px h-4 bg-zinc-200 shrink-0" />
+                <label className="inline-flex items-center gap-1.5 text-sm text-zinc-700 select-none">
+                  <input type="checkbox" className="h-3.5 w-3.5 accent-zinc-900" checked={onlyNew} onChange={(e) => setOnlyNew(e.target.checked)} />
+                  신규
+                </label>
+                <label className="inline-flex items-center gap-1.5 text-sm text-zinc-700 select-none">
+                  <input type="checkbox" className="h-3.5 w-3.5 accent-zinc-900" checked={onlyUpdated} onChange={(e) => setOnlyUpdated(e.target.checked)} />
+                  수정
+                </label>
+                <label className="inline-flex items-center gap-1.5 text-sm text-zinc-700 select-none">
+                  <input type="checkbox" className="h-3.5 w-3.5 accent-zinc-900" checked={onlyDeleted} onChange={(e) => setOnlyDeleted(e.target.checked)} />
+                  삭제
+                </label>
+              </div>
             </div>
 
           </div>
@@ -1772,18 +1733,20 @@ export default function RepairHistorySend() {
 
         {/* ===== 메인 목록 ===== */}
         <div className="rounded-md border border-zinc-200 bg-white shadow-sm flex flex-col min-h-0 flex-1 overflow-hidden">
-          <div className="border-b border-zinc-100 px-4 h-11 shrink-0 flex items-center gap-3">
-            <div className="text-sm font-semibold text-zinc-900">견적 목록</div>
-            <div className="text-xs text-zinc-500">{filteredRows.length}건</div>
-            <div className="ml-auto flex items-center gap-2">
+          <div className="border-b border-zinc-100 px-4 h-11 shrink-0 flex items-center justify-between gap-3">
+            {/* 왼쪽: 목록 정보 */}
+            <div className="flex items-center gap-2">
+              <div className="text-sm font-semibold text-zinc-900">견적 목록</div>
+              <div className="text-xs text-zinc-500">{filteredRows.length}건</div>
+            </div>
+
+            {/* 오른쪽: 액션 + 정렬 */}
+            <div className="flex items-center gap-2 shrink-0">
               {focusedRow && (
                 <>
                   {activeTab === "aos" && <SmallBtn variant="primary" onClick={onModify}>수정</SmallBtn>}
                   {activeTab === "aos" && <SmallBtn variant="danger" onClick={onDelete}>삭제</SmallBtn>}
-                  <SmallBtn
-                    onClick={() => onSend(new Set([focusedRow.est_serial]))}
-                    disabled={sending}
-                  >
+                  <SmallBtn onClick={() => onSend(new Set([focusedRow.est_serial]))} disabled={sending}>
                     {sending ? "전송 중…" : "정비이력전송"}
                   </SmallBtn>
                   <div className="w-px h-5 bg-zinc-200 shrink-0" />

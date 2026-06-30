@@ -24,6 +24,8 @@ import SmsSenderPage from "./pages/SmsSenderPage";
 import SmsHistoryPage from "./pages/SmsHistoryPage";
 import ChemicalItemsPage from "./pages/ChemicalItemsPage";
 import RepairHistorySend from "./pages/RepairHistorySend";
+import StatementSend from "./pages/StatementSend";
+import EstimateSend from "./pages/EstimateSend";
 import EstClaimMailSend from "./pages/EstClaimMailSend";
 import EstCustomerMailSend from "./pages/EstCustomerMailSend";
 import MailHistoryPage from "./pages/MailHistoryPage";
@@ -84,6 +86,8 @@ export default function App() {
           <Route path="/estimate-edit/:est_serial" element={<EstimateEditPage />} />
           
           {/* 나중에 여기로 페이지들 계속 추가 */}
+          <Route path="/send/statement" element={<StatementSend />} />
+          <Route path="/send/estimate" element={<EstimateSend />} />
           <Route path="/send/repair" element={<RepairHistorySend />} />
           <Route path="/send/history" element={<SmsHistoryPage />} />
           <Route path="chemical" element={<ChemicalItemsPage />} />

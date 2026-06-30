@@ -54,6 +54,11 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/asservice/, ""),
         },
+        "/adbcpservice": {
+          target: env.VITE_ADBCPSERVICE || "http://adbcp.intravan.co.kr",
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/adbcpservice/, ""),
+        },
       },
     },
   };

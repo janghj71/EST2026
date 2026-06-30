@@ -75,22 +75,19 @@ export function useTsLogin() {
 }
 
 /**
- * 클라이언트 IP 조회: /asservice/api/int_get_api.aspx
- * 응답: 문자열(IP) 또는 { ip: "..." }
+ * 클라이언트 IP 조회: as.intravan.co.kr/api/int_get_api.aspx
+ * Vite 프록시(/asservice) 대신 직접 fetch — 브라우저에서 CORS 없이 동작
  */
 export function useClientIp() {
-  const { refetch } = useApi({
-    path: "/asservice/api/int_get_api.aspx",
-    method: "GET",
-    immediate: false,
-  });
-
-  /** @returns {Promise<string>} IP 주소 문자열 */
   const fetchClientIp = useCallback(async () => {
-    const res = await refetch();
-    if (typeof res === "string") return res.trim();
-    return String(res?.ip || res?.result || "");
-  }, [refetch]);
+    try {
+      const res = await fetch("http://as.intravan.co.kr/api/int_get_api.aspx");
+      const text = (await res.text()).trim();
+      return /^\d{1,3}(\.\d{1,3}){3}$/.test(text) ? text : "";
+    } catch {
+      return "";
+    }
+  }, []);
 
   return { fetchClientIp };
 }
@@ -151,6 +148,29 @@ export function useTsRepairDelete() {
   );
 
   return { loading, deleteRepairHistory };
+}
+
+/**
+ * 국토부 차량정보 조회: /tsservice/api/otvhcle_carinfo.aspx
+ * params: vhrno, servicecode, ip_adres, macadrs
+ */
+export function useTsCarInfo() {
+  const { refetch } = useApi({
+    path: "/tsservice/api/otvhcle_carinfo.aspx",
+    method: "POST",
+    bodyType: "form",
+    immediate: false,
+  });
+
+  const fetchCarInfo = useCallback(
+    async ({ vhrno, servicecode, ip_adres = "", macadrs = "" }) => {
+      const res = await refetch({ vhrno, servicecode, ip_adres, macadrs });
+      return res;
+    },
+    [refetch]
+  );
+
+  return { fetchCarInfo };
 }
 
 const TS_KEY_CODE = "X5SH-0SP5-7GM4-SMJU";

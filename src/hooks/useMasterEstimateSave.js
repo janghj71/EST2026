@@ -60,6 +60,7 @@ function masterToParams(serial, master) {
     carsale_amt:    toInt(master.carsale_amt),
     vinno:          master.vinno          ?? "",
     car_registday:  master.car_registday  ?? "",
+    testday:        master.testday ?? "",
     caryear:        master.caryear        ?? "",
     ts_serial:      master.ts_serial      ?? "",
     ts_send_dt:     master.ts_send_dt     ?? "",

@@ -16,7 +16,7 @@ import { useCarnoSearch } from "../../hooks/useCarnoSearch";
  * - Field는 "라벨 + children" 레이아웃 컴포넌트라서
  *   실제 input/select는 children으로 넣어야 함.
  */
-export default function EstimateReception({ master, setMaster, laborWinOpen = false, readOnly = false, itemCount = 0 }) {
+export default function EstimateReception({ master, setMaster, laborWinOpen = false, readOnly = false, itemCount = 0, onCarInfo, onCarRegInfo, carRegInfoLoading = false }) {
   const [carHelpOpen, setCarHelpOpen] = useState(false);
   const { form: laborForm } = useLaborSettings();
 
@@ -150,34 +150,53 @@ export default function EstimateReception({ master, setMaster, laborWinOpen = fa
   return (
 
     <div
-      className="rounded-md border border-zinc-200 bg-white shadow-xs"
+      className="relative rounded-md border border-zinc-200 bg-white shadow-xs"
       onKeyDown={(e) => {
         if (e.key === "Enter") moveFocusOnEnter(e);
       }}
     >
+      {carRegInfoLoading && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center rounded-md bg-white/60">
+          <div className="flex items-center gap-2 rounded-md bg-white px-4 py-2 shadow text-sm text-zinc-600 font-medium">
+            <svg className="animate-spin h-4 w-4 text-sky-500" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
+            </svg>
+            원부조회 중...
+          </div>
+        </div>
+      )}
       <div className="p-3">
         <div className="grid grid-cols-3 gap-x-6 gap-y-2">
           {/* ===================== 좌: 차량 ===================== */}
           <div className="flex flex-col gap-2">
             <Field label="차량번호" required>
-              <input
-                className={inputCls}
-                value={master?.carno ?? ""}
-                onChange={(e) => {
-                  set("carno")(e.target.value);
-                  carnoDirtyRef.current = true; // 사용자가 직접 변경
-                }}
-                disabled={readOnly}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.stopPropagation(); // moveFocusOnEnter 방지
-                    if (carnoDirtyRef.current) {   // 변동 있을 때만 검색
+              <div className="flex gap-2">
+                <input
+                  className={inputCls}
+                  value={master?.carno ?? ""}
+                  onChange={(e) => {
+                    set("carno")(e.target.value);
+                    carnoDirtyRef.current = true;
+                  }}
+                  disabled={readOnly}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && carnoDirtyRef.current) {
+                      e.stopPropagation();
                       carnoDirtyRef.current = false;
                       openCarnoSearch(e);
                     }
-                  }
-                }}
-              />
+                  }}
+                />
+                <IconBtn
+                  label="국토부"
+                  size="sm"
+                  variant="sky"
+                  onClick={onCarInfo}
+                  disabled={readOnly || !master?.carno}
+                  className="h-9 px-4 whitespace-nowrap"
+                />
+              </div>
             </Field>
 
             <Field label="차량명" required>
@@ -243,12 +262,22 @@ export default function EstimateReception({ master, setMaster, laborWinOpen = fa
           {/* ===================== 중: 고객 ===================== */}
           <div className="flex flex-col gap-2">
             <Field label="고객명">
-              <input
-                className={inputCls}
-                value={master?.custom_name ?? ""}
-                onChange={(e) => set("custom_name")(e.target.value)}
-                disabled={readOnly}
-              />
+              <div className="flex gap-2">
+                <input
+                  className={inputCls}
+                  value={master?.custom_name ?? ""}
+                  onChange={(e) => set("custom_name")(e.target.value)}
+                  disabled={readOnly}
+                />
+                <IconBtn
+                  label={carRegInfoLoading ? "조회중..." : "원부조회"}
+                  size="sm"
+                  variant="sky"
+                  onClick={onCarRegInfo}
+                  disabled={readOnly || !master?.carno || carRegInfoLoading}
+                  className="h-9 px-4 whitespace-nowrap"
+                />
+              </div>
             </Field>
 
             <Field label="연락처">
@@ -305,6 +334,16 @@ export default function EstimateReception({ master, setMaster, laborWinOpen = fa
                   <option key={c.value} value={c.value}>{c.label}</option>
                 ))}
               </select>
+            </Field>
+
+            <Field label="검사만료일">
+              <input
+                className={dateCls(master?.testday)}
+                type="date"
+                value={master?.testday ?? ""}
+                onChange={(e) => set("testday")(e.target.value)}
+                disabled={readOnly}
+              />
             </Field>
           </div>
 

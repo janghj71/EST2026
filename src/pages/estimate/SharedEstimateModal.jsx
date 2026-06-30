@@ -72,7 +72,7 @@ const COLS_B = [
     align: "right",
     render: (val) => formatNumber(val ?? 0),
   },
-  { key: "partCode", title: "부품코드", width: "120px" },
+  { key: "part_makercode", title: "부품코드", width: "120px" },
 ];
 
 export default function SharedEstimateModal({
@@ -253,7 +253,7 @@ export default function SharedEstimateModal({
 
   return (
     <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/30">
-      <div className="w-[1100px] max-h-[96vh] rounded-md border border-zinc-200 bg-white shadow-xl overflow-hidden flex flex-col">
+      <div className="w-[1100px] h-[96vh] rounded-md border border-zinc-200 bg-white shadow-xl overflow-hidden flex flex-col">
 
         {/* ── 헤더 ── */}
         <header className="flex items-center border-b border-zinc-200 bg-zinc-50 px-4 py-3 shrink-0">
@@ -336,7 +336,7 @@ export default function SharedEstimateModal({
           </div>
 
           {/* ── 오른쪽 콘텐츠 ── */}
-          <div className="flex flex-col flex-1 min-w-0">
+          <div className="flex flex-col flex-1 min-w-0 min-h-0">
 
             {/* ── 검색 ── */}
             <div className="px-4 py-3 border-b border-zinc-100 flex items-center gap-2 shrink-0">
@@ -367,7 +367,7 @@ export default function SharedEstimateModal({
             </div>
 
             {/* ── 목록 A ── */}
-            <div className="px-4 pt-3">
+            <div className="px-4 pt-3 shrink-0">
               <div className="relative rounded-md border border-zinc-200 overflow-hidden" style={{ height: 360 }}>
                 <TableLoadingOverlay loading={loadingSearch} />
                 <FixedHeadTable
@@ -383,8 +383,8 @@ export default function SharedEstimateModal({
             </div>
 
             {/* ── 목록 B ── */}
-            <div className="px-4 pt-3 pb-3">
-              <div className="relative rounded-md border border-zinc-200 overflow-hidden" style={{ height: 380 }}>
+            <div className="px-4 pt-3 pb-3 flex-1 min-h-0 flex flex-col">
+              <div className="relative rounded-md border border-zinc-200 overflow-hidden flex-1 min-h-0">
                 <TableLoadingOverlay loading={loadingB} />
                 <FixedHeadTable
                   columns={COLS_B}
