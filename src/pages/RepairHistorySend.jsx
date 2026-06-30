@@ -405,7 +405,7 @@ function RepairHistoryEditModal({ open, estSerial, isNew, onClose, onSaved, wrk0
                 <label className="inline-flex items-center gap-2 text-sm text-zinc-700 select-none cursor-pointer">
                   <input
                     type="checkbox"
-                    className="h-4 w-4"
+                    className="h-4 w-4 accent-zinc-900"
                     checked={master.add_repair === "1"}
                     onChange={(e) => setMaster((p) => ({ ...p, add_repair: e.target.checked ? "1" : "0" }))}
                   />
@@ -468,7 +468,7 @@ function RepairHistoryEditModal({ open, estSerial, isNew, onClose, onSaved, wrk0
 
           {/* footer */}
           <div className="flex items-center justify-end gap-2 border-t border-zinc-200 px-4 py-3 bg-white shrink-0">
-            <IconBtn icon={X} label="닫기" className="h-10 w-25 justify-center" onClick={onClose} />
+            <IconBtn icon={X} label="닫기" variant="primary" className="h-10 w-25 justify-center" onClick={onClose} />
           </div>
         </div>
       </div>
@@ -788,6 +788,8 @@ export default function RepairHistorySend() {
   // ====== 선택/상세 ======
   const detailBodyElRef = useRef(null);
   const [focusedId, setFocusedId] = useState(null);
+  const [detailHeight, setDetailHeight] = useState(280);
+  const dragRef = useRef(null);
   const [checkedIds, setCheckedIds] = useState(() => new Set());
   const [detailRows, setDetailRows] = useState([]);
   const [tsPaynoPopover, setTsPaynoPopover] = useState(null);  // { anchorRect, rowOrgSeq }
@@ -947,7 +949,7 @@ export default function RepairHistorySend() {
           <div className="flex items-center justify-center">
             <input
               type="checkbox"
-              className="h-4 w-4"
+              className="h-4 w-4 accent-zinc-900"
               checked={allChecked}
               onChange={toggleAllFiltered}
               onClick={(e) => e.stopPropagation()}
@@ -963,7 +965,7 @@ export default function RepairHistorySend() {
             <div className="flex items-center justify-center">
               <input
                 type="checkbox"
-                className="h-4 w-4"
+                className="h-4 w-4 accent-zinc-900"
                 checked={checked}
                 onChange={() => toggleChecked(row.est_serial)}
                 onClick={(e) => e.stopPropagation()}
@@ -1303,6 +1305,22 @@ export default function RepairHistorySend() {
   }, [checkedIds, companyForm, filteredRows, allDetail, outFrom, outTo, tabConfig]);
 
   const onRefresh = () => onQuery(activeTab);
+
+  const onDividerMouseDown = useCallback((e) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = detailHeight;
+    const onMove = (me) => {
+      const delta = startY - me.clientY;
+      setDetailHeight(Math.max(120, Math.min(700, startH + delta)));
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [detailHeight]);
 
   /**
    * 정비이력 삭제 (ts_serial ≠ '' && ts_rstcode = 'MSG50000' 인 건만)
@@ -1822,9 +1840,17 @@ export default function RepairHistorySend() {
 
         </div>
 
+        {/* ===== 분할바 ===== */}
+        <div
+          className="my-1 h-2 flex items-center justify-center cursor-row-resize shrink-0 group"
+          onMouseDown={onDividerMouseDown}
+          ref={dragRef}
+        >
+          <div className="w-16 h-1 rounded-full bg-zinc-300 group-hover:bg-zinc-400 transition-colors" />
+        </div>
+
         {/* ===== 정비상세 목록 ===== */}
-        {/* <div className="rounded-md border border-zinc-200 bg-white shadow-sm flex flex-col min-h-0 overflow-hidden" style={{ height: 320 }}> */}
-        <div className="mt-3 rounded-md border border-zinc-200 bg-white shadow-sm flex flex-col overflow-hidden h-[320px] min-h-0">
+        <div className="rounded-md border border-zinc-200 bg-white shadow-sm flex flex-col overflow-hidden min-h-0 shrink-0" style={{ height: detailHeight }}>
 
           <div className="border-b border-zinc-100 px-4 py-3">
             <div className="flex items-center justify-between">
