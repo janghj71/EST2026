@@ -30,6 +30,7 @@ import { useEstTsRstDelete, useMasterEstimatebUpdate } from "../../hooks/useAosE
 import { useLoading } from "../../loading/useLoading";
 import TableLoadingOverlay from "../../components/TableLoadingOverlay";
 import { getUserid, getComcode } from "../../api/config";
+import { useCurHist } from "../../hooks/useCurHist";
 import { useTbCode } from "../../hooks/useTbCode";
 import { useLaborSettings } from "../../hooks/useLaborSettings";
 import { useCodepayHour } from "../../hooks/useLaborItems";
@@ -136,6 +137,32 @@ export default function EstimateEditPage() {
   const { fetchCodepayHour } = useCodepayHour();
 
   const { saveDetail, saveAllDetails, saveSingleDetail } = useEstimateDetailSave(setRows);
+  const { unlock } = useCurHist();
+
+  // 락 해제 — 중복 호출 방지 + Strict Mode 이중실행 방지
+  const unlockCalledRef = useRef(false);
+  const mountCountRef   = useRef(0);
+  const unlockFnRef     = useRef(null);
+  unlockFnRef.current = () => {
+    if (unlockCalledRef.current || !est_serial) return;
+    unlockCalledRef.current = true;
+    unlock(est_serial);
+  };
+
+  // est_serial 바뀌면 플래그 초기화
+  useEffect(() => { unlockCalledRef.current = false; }, [est_serial]);
+
+  // 브라우저 뒤로가기 / React unmount → Strict Mode 이중실행은 setTimeout(0)으로 차단
+  useEffect(() => {
+    if (!est_serial) return;
+    const id = ++mountCountRef.current;
+    return () => {
+      setTimeout(() => {
+        if (mountCountRef.current === id) unlockFnRef.current?.();
+      }, 0);
+    };
+  }, [est_serial]);
+
 
   // est_serial 변경 시 접수 데이터 조회
   // refetch는 raw JSON 반환 → dataset[0] 직접 추출
@@ -2522,7 +2549,7 @@ export default function EstimateEditPage() {
 
   // [목록] 버튼: 전체 저장 후 이동 (잠긴 경우 저장 없이 이동)
   const handleClose = useCallback(async () => {
-    if (isLocked) { navigate(-1); return; }
+    if (isLocked) { unlockFnRef.current?.(); navigate(-1); return; }
     let failed = false;
     await saveQueueRef.current;  // 공임/도장 팝업 선택 후 saveDetail 큐 완료 대기
     flushSync(() => {});         // saveDetail 내부 setRows React 렌더 큐 강제 flush
@@ -2543,7 +2570,7 @@ export default function EstimateEditPage() {
       const detailRes2 = await saveAllDetails(rowsRef.current);
       if (String(detailRes2?.result) === 'false') { failed = true; alertError(detailRes2?.msg ?? "견적항목 저장 실패"); return; }
     });
-    if (!failed) navigate(-1);
+    if (!failed) { unlockFnRef.current?.(); navigate(-1); }
   }, [isLocked, est_serial, master, masterWithSums, sidePanelOpen, sideActive,
       save, saveClaim, saveAllDetails, withLoading, navigate, alertError]);
 

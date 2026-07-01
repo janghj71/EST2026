@@ -21,6 +21,7 @@ import { useEstToReq } from "../hooks/useEstToReq";
 import { useNewEstimate } from "../hooks/useNewEstimate";
 import { useEstimateDelete } from "../hooks/useEstimateDelete";
 import { useEstimateClaims } from "../hooks/useEstimateClaims";
+import { useCurHist } from "../hooks/useCurHist";
 
 /**
  * 보험 견적일지 (UI 샘플)
@@ -66,6 +67,7 @@ export default function InsuranceEstimate({ seccode = "12" }) {
   const { deleteEstimate } = useEstimateDelete();
 
   const { fetchSettle } = useEstimateClaims();
+  const { checkAndLock } = useCurHist();
 
   const { codes: sortCodes } = useTbCode('IDX01');
 
@@ -221,7 +223,6 @@ export default function InsuranceEstimate({ seccode = "12" }) {
 
   const openEstimateEdit = useCallback((row, mode = "edit") => {
     const est_serial = row?.est_serial || "0000000000";
-    // 수정 화면 이동 전 현재 상태를 sessionStorage에 저장 → 돌아올 때 복원
     try {
       sessionStorage.setItem(SS_KEY, JSON.stringify({
         dateFrom, dateTo, searchText,
@@ -240,6 +241,7 @@ export default function InsuranceEstimate({ seccode = "12" }) {
         },
       },
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [SS_KEY, dateFrom, dateTo, searchText, chkEstimate, chkWork, chkClosed, sortKey, navigate]);
 
 
@@ -453,8 +455,13 @@ export default function InsuranceEstimate({ seccode = "12" }) {
     XLSX.writeFile(wb, `${label}_${dateStr}.xlsx`);
   }, [insuranceEstimates, isInsurance, info]);
 
-  const onModify = () => {
+  const onModify = async () => {
     if (!requireSelected()) return;
+    const inUseBy = await checkAndLock(selected.est_serial);
+    if (inUseBy) {
+      await warning(`${inUseBy.userid} 사용자가 편집 중입니다.\n(${inUseBy.mobileno})\n수정할 수 없습니다.`);
+      return;
+    }
     openEstimateEdit(selected, "edit");
   };
   const onDelete = useCallback(async () => {
@@ -1308,7 +1315,7 @@ export default function InsuranceEstimate({ seccode = "12" }) {
                   selectedKey={selected?.est_serial}
                   bodyScrollRef={estimateListBodyRef}
                   onRowClick={(r) => { setSelected(r); setSelectedClaim(null); setPrintOpen(false); setMailOpen(false); }}
-                  onRowDoubleClick={(r) => { setSelected(r); openEstimateEdit(r, "edit"); }}
+                  onRowDoubleClick={async (r) => { setSelected(r); const inUseBy = await checkAndLock(r.est_serial); if (inUseBy) { await warning(`${inUseBy.userid} 사용자가 편집 중입니다.\n(${inUseBy.mobileno})\n수정할 수 없습니다.`); return; } openEstimateEdit(r, "edit"); }}
                   getRowProps={(r) => ({
                     onContextMenu: (e) => {
                       e.preventDefault();
