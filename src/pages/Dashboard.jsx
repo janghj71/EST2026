@@ -14,6 +14,9 @@ import { ymd } from "../utils/dateUtils";
 
 /* ── 히어로 슬라이드 (실사 이미지) ────────────────────────── */
 const HERO_SLIDES = [
+  "/img_main01.jpg",
+  "/img_main02.jpg",
+  "/img_main03.jpg",
   "https://images.unsplash.com/photo-1755555707544-5f2cea7413c1?q=80&w=1400&auto=format&fit=crop",
   "https://images.unsplash.com/photo-1554224155-6726b3ff858f?w=1400&q=80&auto=format&fit=crop",
   "https://images.unsplash.com/photo-1486006920555-c77dcf18193c?w=1400&q=80&auto=format&fit=crop",
@@ -38,7 +41,7 @@ const STATE_CLS = {
 };
 
 
-const adUrl = "http://estservice.goldauto.co.kr/images/adv/banner_login.gif";
+const BANNER_SLIDES = ["/bn_01.png", "/bn_02.png"];
 
 /* ── 날씨 코드 → 생활 문구 ───────────────────────────────────── */
 const WEATHER_MSG = {
@@ -69,6 +72,7 @@ function getWeatherMsg(code) {
 export default function Dashboard() {
   const navigate = useNavigate();
   const [slideIdx, setSlideIdx] = useState(0);
+  const [bannerIdx, setBannerIdx] = useState(0);
   const { fetchRecentWork } = useRecentWork();
   const [recentWork, setRecentWork] = useState([]);
 
@@ -201,6 +205,13 @@ export default function Dashboard() {
     const t = setInterval(() => {
       setSlideIdx((i) => (i + 1) % HERO_SLIDES.length);
     }, 6000);
+    return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      setBannerIdx((i) => (i + 1) % BANNER_SLIDES.length);
+    }, 4000);
     return () => clearInterval(t);
   }, []);
 
@@ -407,8 +418,17 @@ export default function Dashboard() {
                 <span className="text-xs font-semibold text-gray-900">서비스 안내</span>
                 <span className="text-[10px] text-gray-300">광고</span>
               </div>
-              <div className="flex-1 flex items-center justify-center overflow-hidden bg-slate-100">
-                <img src={adUrl} alt="banner" className="w-full h-full object-contain" loading="lazy" />
+              <div className="relative flex-1 overflow-hidden bg-slate-100">
+                {BANNER_SLIDES.map((src, i) => (
+                  <img
+                    key={src}
+                    src={src}
+                    alt="banner"
+                    className="absolute inset-0 w-full h-full object-contain transition-opacity duration-700 ease-in-out"
+                    style={{ opacity: bannerIdx === i ? 1 : 0 }}
+                    loading="lazy"
+                  />
+                ))}
               </div>
             </div>
           </div>
@@ -422,7 +442,7 @@ export default function Dashboard() {
             <div>
               <div className="text-sm font-semibold text-gray-900">고객센터</div>
               <div className="text-[11px] text-gray-500 mt-0.5">평일 09:00~18:00 · 점심 12:00~13:00 · 토/일/공휴일 휴무</div>
-              <div className="text-2xl font-extrabold text-green-700 leading-tight mt-0.5">1522-3840</div>
+              <div className="text-2xl font-extrabold text-gray-900 leading-tight mt-0.5">1522-3840</div>
             </div>
           </div>
           <div className="flex gap-2.5">
