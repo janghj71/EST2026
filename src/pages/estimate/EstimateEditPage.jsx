@@ -696,9 +696,11 @@ export default function EstimateEditPage() {
       }
     }
 
-    const win = openCenteredWindow(url, "laborItems", 1000, 1300, {
+    const win = openCenteredWindow(url, "laborItems", 930, 1300, {
       scrollbars: "yes",
       resizable: "yes",
+      align: "right",
+      alignTarget: "[data-est-header]", // 견적내역 상단(저장 버튼 아래 밑줄선)의 우측 끝에 맞춤
     });
 
     laborWinRef.current = win;
@@ -2726,7 +2728,7 @@ export default function EstimateEditPage() {
 
   return (
     <div className="h-screen bg-zinc-50 flex flex-col overflow-hidden">
-      <div className="sticky top-0 z-20 border-b bg-white/90 backdrop-blur">
+      <div data-est-header className="sticky top-0 z-20 border-b bg-white/90 backdrop-blur">
         <div className="app-container py-3">
           <div className="flex items-center gap-3">
             <div>
@@ -2765,7 +2767,7 @@ export default function EstimateEditPage() {
       </div>
 
       {/* 컨텐츠 */}   
-      <div className="app-container py-3 mb-16 min-h-0 flex-1 flex flex-col gap-3">
+      <div className="app-container py-3 mb-0 min-h-0 flex-1 flex flex-col gap-3">
         <div className="min-h-0 flex-1 flex gap-3 min-w-0">
           {/* 좌: 접수 + 테이블 */}
           <div className="min-h-0 flex-1 flex flex-col gap-2 min-w-0">

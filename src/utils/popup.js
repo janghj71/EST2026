@@ -7,6 +7,9 @@
  * @param {number} height     팝업 높이 (픽셀)
  * @param {object} [options]  추가 윈도우 옵션 (key: value 형태)
  * options.windowFeatures: window.open features로 들어갈 옵션들(scrollbars,resizable 등)
+ * options.align: "center"(기본) | "right" — "right"면 팝업 우측 끝을 alignTarget(없으면 열어준 창)의 우측 끝에 맞춤
+ * options.alignTarget: align:"right" 기준 요소 (CSS selector 문자열 또는 Element)
+ * options.alignOffset: align:"right"일 때 추가 이동량(px). 양수면 우측으로 이동
  * options.postMessage: {
  *   type: string,              // 예: "PHOTO_POPUP_SET_CTX"
  *   payload: any,              // 전송할 payload
@@ -30,13 +33,30 @@ export function openCenteredWindow(
       ? url
       : `${window.location.origin}${url}`;
 
-    const left = Math.round(window.screenX + (window.outerWidth  - width) / 2);
-    const top  = Math.round(window.screenY + (window.outerHeight - height) / 2);
-
     const {
       windowFeatures = {},   // features만 분리
       postMessage,           // 새 옵션
+      align = "center",      // "center" | "right"
+      alignTarget,           // align:"right"일 때 기준 요소(CSS selector | Element). 없으면 열어준 창 우측 끝
+      alignOffset = 0,       // align:"right"일 때 추가로 우측으로 미는 px (음수면 좌측)
     } = options;
+
+    // 팝업 우측 끝을 기준 요소(없으면 창)의 우측 끝에 맞춘 left 계산 (스크린 좌표)
+    // b: 창 좌/우 보이지 않는 테두리 두께(Windows 약 8px). 팝업도 동일하다고 가정
+    const calcRightAlignedLeft = () => {
+      const b = Math.max(0, (window.outerWidth - window.innerWidth) / 2);
+      let el = alignTarget;
+      if (typeof el === "string") el = document.querySelector(el);
+      const targetRight = el
+        ? window.screenX + b + el.getBoundingClientRect().right
+        : window.screenX + window.outerWidth - b;
+      return Math.max(window.screen.availLeft ?? 0, Math.round(targetRight + b - width + alignOffset));
+    };
+
+    const left = align === "right"
+      ? calcRightAlignedLeft()
+      : Math.round(window.screenX + (window.outerWidth  - width) / 2);
+    const top  = Math.round(window.screenY + (window.outerHeight - height) / 2);
 
     // 기본 옵션
     const opts = {

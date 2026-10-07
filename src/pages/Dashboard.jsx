@@ -380,8 +380,8 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* 우: 공지사항 + 광고 (1fr 1fr) */}
-          <div className="grid gap-2 min-h-0" style={{ gridTemplateRows: "1fr 1fr" }}>
+          {/* 우: 공지사항 + 광고 (남는 공간 / 고정비율) */}
+          <div className="grid gap-2 min-h-0" style={{ gridTemplateRows: "1fr auto" }}>
             {/* 공지사항 */}
             <div className="bg-white rounded-lg border border-gray-200 overflow-hidden flex flex-col min-h-0">
               <div className="shrink-0 px-5 py-3 border-b border-gray-100 flex items-center justify-between">
@@ -418,7 +418,7 @@ export default function Dashboard() {
                 <span className="text-xs font-semibold text-gray-900">서비스 안내</span>
                 <span className="text-[10px] text-gray-300">광고</span>
               </div>
-              <div className="relative flex-1 overflow-hidden bg-slate-100">
+              <div className="relative aspect-[4/1] overflow-hidden bg-slate-100">
                 {BANNER_SLIDES.map((src, i) => (
                   <img
                     key={src}

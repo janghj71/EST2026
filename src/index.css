@@ -18,6 +18,22 @@ body {
   scrollbar-width: none; /* Firefox */
 }
 
+/* 평소엔 스크롤바 숨김(투명), 마우스를 올리면 얇은 막대 표시
+   - 표준 속성(scrollbar-color)을 사용: Chrome/Edge 121+, Firefox
+   - ::-webkit-scrollbar 의 :hover 전환은 벗어나도 다시 그려지지 않는 문제가 있어 사용하지 않음 */
+.hover-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.hover-scrollbar:hover {
+  scrollbar-color: #d4d4d8 transparent; /* zinc-300 */
+}
+/* 구버전 Chromium(표준 속성 미지원) 대비: 항상 얇은 회색 막대 */
+@supports not (scrollbar-width: thin) {
+  .hover-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+  .hover-scrollbar::-webkit-scrollbar-thumb { background: #d4d4d8; border-radius: 9999px; }
+}
+
 @layer components {
   .app-container {
     @apply mx-auto w-full max-w-[1400px] px-4;

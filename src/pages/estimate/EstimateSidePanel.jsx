@@ -69,6 +69,7 @@ export default function EstimateSidePanel({ master, setMaster, active, onTabChan
 
   return (
     <div
+      data-est-side-panel
       className="flex items-stretch"
       onKeyDown={(e) => {
         if (e.key === "Enter") moveFocusOnEnter(e);

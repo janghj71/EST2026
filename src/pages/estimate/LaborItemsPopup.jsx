@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import FixedHeadTable from "../../components/FixedHeadTable";
 import { useUrlContextSnapshot } from "../../hooks/useUrlContextSnapshot";
-import { X, Wrench, ClipboardCheck } from "lucide-react";
+import { X, Wrench, ClipboardCheck, ChevronLeft, ChevronRight } from "lucide-react";
 import IconBtn from "../../components/IconBtn";
 import { useCodepay, useCodepayHour, useCodepnt, useCodepart, useCheckPayno } from "../../hooks/useLaborItems";
 import { useEstimateClaims } from "../../hooks/useEstimateClaims";
@@ -92,6 +92,18 @@ const AREA_DEFS = [
   { label: "프레임(리어)", seccode: "7L" },
 ];
 const AREA_ORDER_STORAGE_KEY = "LaborItems_AreaOrder_v1";
+const AREA_COLLAPSED_STORAGE_KEY = "LaborItems_AreaCollapsed_v1";
+// 각 목록 타이틀 우측 [선택] 버튼 (테두리/채움 없음, 오버 시 회색 배경)
+const pickBtnCls = (enabled) =>
+  [
+    "rounded-md px-3 py-1.5 text-xs font-semibold",
+    enabled
+      ? "text-zinc-800 hover:bg-zinc-100"
+      : "text-zinc-300 cursor-not-allowed",
+  ].join(" ");
+const AREA_PANEL_WIDTH = 340;
+const AREA_RAIL_WIDTH = 160;
+const POPUP_MIN_WIDTH = 640; // 접을 때 창 폭 하한
 
 const GROUP_DEFS = {
   "1": "프런트",
@@ -332,7 +344,55 @@ export default function LaborItemsPopup() {
   });
   
   const [dragSec, setDragSec] = useState("");
-  
+
+  // 좌측 영역 패널 접기/펴기
+  const [areaCollapsed, setAreaCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(AREA_COLLAPSED_STORAGE_KEY) === "1";
+    } catch { return false; }
+  });
+  const initialCollapsedRef = useRef(areaCollapsed);
+  const shrunkRef = useRef(0); // 접으면서 실제로 줄인 창 폭(px)
+
+  // 창 우측 끝은 고정한 채 폭만 변경 (delta<0: 줄임, delta>0: 늘림)
+  const resizeKeepRight = useCallback((delta) => {
+    try {
+      const right = window.screenX + window.outerWidth;
+      const w = window.outerWidth + delta;
+      window.resizeTo(w, window.outerHeight);
+      const minLeft = window.screen.availLeft ?? 0;
+      window.moveTo(Math.max(minLeft, right - w), window.screenY);
+    } catch { /* 리사이즈 불가 환경(탭 등)은 무시 */ }
+  }, []);
+
+  const isWindowMaximized = () => window.outerWidth >= window.screen.availWidth - 16;
+
+  const shrinkWindow = useCallback(() => {
+    if (shrunkRef.current) return;
+    const delta = Math.min(AREA_PANEL_WIDTH - AREA_RAIL_WIDTH, window.outerWidth - POPUP_MIN_WIDTH);
+    if (delta <= 0 || isWindowMaximized()) return;
+    resizeKeepRight(-delta);
+    shrunkRef.current = delta;
+  }, [resizeKeepRight]);
+
+  const restoreWindow = useCallback(() => {
+    const delta = shrunkRef.current;
+    if (!delta) return;
+    shrunkRef.current = 0;
+    if (isWindowMaximized()) return;
+    resizeKeepRight(delta);
+  }, [resizeKeepRight]);
+
+  const collapseArea = () => { setAreaCollapsed(true);  shrinkWindow(); };
+  const expandArea   = () => { setAreaCollapsed(false); restoreWindow(); };
+
+  // 접힌 상태로 저장돼 있으면 열린 직후 창 폭도 줄임 (opener의 리사이즈(100ms) 이후)
+  useEffect(() => {
+    if (!initialCollapsedRef.current) return undefined;
+    const t = setTimeout(shrinkWindow, 350);
+    return () => clearTimeout(t);
+  }, [shrinkWindow]);
+
   // const areaTiles = useMemo(() => {
   //   return AREA_DEFS.map((a) => ({
   //     ...a,
@@ -1119,7 +1179,13 @@ export default function LaborItemsPopup() {
       localStorage.setItem(AREA_ORDER_STORAGE_KEY, JSON.stringify(areaOrder));
     } catch { /* empty */ }
   }, [areaOrder]);
-  
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(AREA_COLLAPSED_STORAGE_KEY, areaCollapsed ? "1" : "0");
+    } catch { /* empty */ }
+  }, [areaCollapsed]);
+
   return (
   
     <div className="h-screen bg-white overflow-hidden flex flex-col">
@@ -1159,18 +1225,41 @@ export default function LaborItemsPopup() {
 
       <div className="min-h-0 flex-1 flex gap-3 p-3 bg-zinc-50">
         {/* 좌: 영역 */}
-        <div className="w-[340px] min-h-0 rounded-md border border-zinc-200 bg-white overflow-hidden flex flex-col">
+        <div
+          className={[
+            "min-h-0 shrink-0 rounded-md border border-zinc-200 bg-white overflow-hidden flex flex-col",
+            "transition-[width] duration-200",
+            areaCollapsed ? "w-[160px]" : "w-[340px]", // = AREA_RAIL_WIDTH / AREA_PANEL_WIDTH
+          ].join(" ")}
+        >
 
-          <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-200">
+          <div className={["flex items-center gap-2 border-b border-zinc-200", areaCollapsed ? "px-2 py-2" : "px-3 py-2"].join(" ")}>
             <div className="text-sm font-semibold text-zinc-800">영역</div>
+            <button
+              type="button"
+              onClick={areaCollapsed ? expandArea : collapseArea}
+              title={areaCollapsed ? "영역 펼치기" : "영역 접기"}
+              className="ml-auto inline-flex h-6 w-6 items-center justify-center rounded text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800"
+            >
+              {areaCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+            </button>
           </div>
 
           {/* 그룹 필터 탭 */}
-          <div className="flex items-center gap-1 px-3 py-2 border-b border-zinc-200 flex-wrap">
+          <div
+            className={["grid gap-1 border-b border-zinc-200", areaCollapsed ? "px-2 py-1.5" : "px-2 py-2"].join(" ")}
+            style={{
+              // 펼침: 버튼 전체가 한 줄에 균등 폭으로 / 접힘: 고정 폭, 넘치면 줄바꿈
+              gridTemplateColumns: areaCollapsed
+                ? "repeat(auto-fill, 64px)"
+                : `repeat(${groupButtons.length + 1}, minmax(0, 1fr))`,
+            }}
+          >
             <button
               type="button"
               className={[
-                "rounded-md px-2.5 py-1 text-xs font-semibold",
+                "w-full px-0.5 rounded-md font-semibold text-center whitespace-nowrap truncate",
+                areaCollapsed ? "py-0.5 text-[11px]" : "py-1 text-xs",
                 secGroup === ""
                   ? "bg-zinc-900 text-white"
                   : "bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-50",
@@ -1184,7 +1273,8 @@ export default function LaborItemsPopup() {
                 key={g.key}
                 type="button"
                 className={[
-                  "rounded-md px-2.5 py-1 text-xs font-semibold",
+                  "w-full px-0.5 rounded-md font-semibold text-center whitespace-nowrap truncate",
+                  areaCollapsed ? "py-0.5 text-[11px]" : "py-1 text-xs",
                   secGroup === g.key
                     ? "bg-zinc-900 text-white"
                     : "bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-50",
@@ -1196,6 +1286,31 @@ export default function LaborItemsPopup() {
             ))}
           </div>
 
+          {areaCollapsed ? (
+          /* 접힌 상태: 텍스트 목록만 (클릭으로 영역 선택) */
+          <div className="hover-scrollbar min-h-0 flex-1 overflow-auto py-1">
+            {visibleAreaTiles.map((a) => {
+              const active = a.seccode === selectedSec;
+              return (
+                <button
+                  key={a.seccode}
+                  type="button"
+                  title={`${a.seccode} ${a.label}`}
+                  onClick={() => onPickArea(a.seccode)}
+                  className={[
+                    "w-full flex items-baseline gap-1.5 px-2 py-1 text-left text-xs",
+                    active
+                      ? "bg-red-50 text-red-600 font-semibold"
+                      : "text-zinc-800 hover:bg-zinc-100",
+                  ].join(" ")}
+                >
+                  <span className="shrink-0 w-5 text-[10px] tabular-nums text-zinc-400">{a.seccode}</span>
+                  <span className="truncate">{a.label}</span>
+                </button>
+              );
+            })}
+          </div>
+          ) : (
           <div className="min-h-0 flex-1 overflow-auto p-2">
             <div className="grid grid-cols-3 gap-3">
               {visibleAreaTiles.map((a) => {
@@ -1268,12 +1383,13 @@ export default function LaborItemsPopup() {
               })}
             </div>
           </div>
+          )}
         </div>
 
         {/* 우: 3단(상/중/하) */}
         <div className="min-w-0 min-h-0 flex-1 flex flex-col gap-2">
           {/* 우(상단): 작업항목 + 작업/시간 (쌍) */}
-          <div className="min-h-0 flex-[1.2] grid gap-3" style={{gridTemplateColumns:"3fr 2fr"}}>
+          <div className="min-h-0 flex-[1.2] grid gap-3" style={{gridTemplateColumns:"minmax(0,1fr) 180px"}}>
             <div className="min-h-0 rounded-md border border-zinc-200 bg-white overflow-hidden flex flex-col">
               
               <div className="px-3 py-2 border-b border-zinc-200 flex items-center">
@@ -1288,21 +1404,8 @@ export default function LaborItemsPopup() {
                   <button
                     type="button"
                     disabled={!selectedWorkItem}
-                    className={[
-                      "rounded-md px-3 py-1.5 text-xs font-semibold",
-                      selectedWorkItem
-                        ? "bg-zinc-900 text-white hover:bg-zinc-800"
-                        : "bg-zinc-200 text-zinc-400 cursor-not-allowed",
-                    ].join(" ")}
-                    onClick={() =>
-                      selectedWorkItem &&
-                      postPick({
-                        type: "workItem",
-                        payno: selectedWorkItem.payno,
-                        payname: selectedWorkItem.payname,
-                        seccode: selectedWorkItem.seccode,
-                      })
-                    }
+                    className={pickBtnCls(!!selectedWorkItem)}
+                    onClick={() => selectedWorkItem && insertWorkItemRow(selectedWorkItem)}
                   >
                     선택
                   </button>
@@ -1345,12 +1448,7 @@ export default function LaborItemsPopup() {
                   <button
                     type="button"
                     disabled={!selectedWorkTimeRow}
-                    className={[
-                      "rounded-md px-3 py-1.5 text-xs font-semibold",
-                      selectedWorkTimeRow
-                        ? "bg-zinc-900 text-white hover:bg-zinc-800"
-                        : "bg-zinc-200 text-zinc-400 cursor-not-allowed",
-                    ].join(" ")}
+                    className={pickBtnCls(!!selectedWorkTimeRow)}
                     onClick={() => {
                       if (!selectedWorkTimeRow) return;
                       postPickWorkTime(selectedWorkTimeRow);
@@ -1535,10 +1633,7 @@ export default function LaborItemsPopup() {
                 <button
                   type="button"
                   disabled={!selectedPaintRow}
-                  className={[
-                    "rounded-md px-3 py-1.5 text-xs font-semibold",
-                    selectedPaintRow ? "bg-zinc-900 text-white hover:bg-zinc-800" : "bg-zinc-200 text-zinc-400 cursor-not-allowed",
-                  ].join(" ")}
+                  className={pickBtnCls(!!selectedPaintRow)}
                   onClick={() => {
                     if (!selectedPaintRow) return;
                     postPick(buildPaintPayload(selectedPaintRow));
@@ -1578,12 +1673,7 @@ export default function LaborItemsPopup() {
                 <button
                   type="button"
                   disabled={!selectedPartRow}
-                  className={[
-                    "rounded-md px-3 py-1.5 text-xs font-semibold",
-                    selectedPartRow
-                      ? "bg-zinc-900 text-white hover:bg-zinc-800"
-                      : "bg-zinc-200 text-zinc-400 cursor-not-allowed",
-                  ].join(" ")}
+                  className={pickBtnCls(!!selectedPartRow)}
                   onClick={() => {
                     if (!selectedPartRow) return;
                     const partState = String(codecar).slice(0, 2) > "06" ? "F" : "A";

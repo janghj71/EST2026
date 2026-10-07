@@ -10,9 +10,6 @@ export default function AppLayout() {
   const location  = useLocation();
 
   const [openMenu, setOpenMenu] = useState(null); // top 드롭다운
-  const LOGOS = ["/logo_mom_test01.svg", "/logo_mom_test02.svg", null]; // null = AppHeader
-  const [logoIdx, setLogoIdx] = useState(0);
-  const cycleLogo = (e) => { e.stopPropagation(); setLogoIdx((i) => (i + 1) % LOGOS.length); };
   const menuWrapRef = useRef(null);
   const { codes: roleOptions } = useTbCode("STATE1");
   const usertype     = localStorage.getItem("usertype") || "";
@@ -91,15 +88,8 @@ export default function AppLayout() {
           {/* 사이드바 */}
           <aside className="flex flex-col w-52 shrink-0 bg-white border-r border-gray-200 overflow-y-auto">
             <button type="button" onClick={goHome}
-              className="flex items-center justify-center py-4 hover:bg-gray-50 transition border-b border-gray-100 relative group">
-              {LOGOS[logoIdx]
-                ? <img src={LOGOS[logoIdx]} alt="MOM" className="h-14 w-auto" />
-                : <AppHeader compact />
-              }
-              <span onClick={cycleLogo}
-                className="absolute bottom-1 right-1 text-[9px] text-gray-300 group-hover:text-gray-500 cursor-pointer select-none">
-                {logoIdx + 1}/3
-              </span>
+              className="flex items-center justify-center py-4 hover:bg-gray-50 transition border-b border-gray-100">
+              <img src="/logo_mom_test01.svg" alt="MOM" className="h-14 w-auto" />
             </button>
 
             <nav className="flex flex-col py-3 flex-1">
