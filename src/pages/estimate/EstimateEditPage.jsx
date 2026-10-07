@@ -696,7 +696,7 @@ export default function EstimateEditPage() {
       }
     }
 
-    const win = openCenteredWindow(url, "laborItems", 930, 1300, {
+    const win = openCenteredWindow(url, "laborItems", 900, 1300, {
       scrollbars: "yes",
       resizable: "yes",
       align: "right",

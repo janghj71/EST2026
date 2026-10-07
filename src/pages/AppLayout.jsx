@@ -79,13 +79,19 @@ export default function AppLayout() {
     navigate("/");
   };
 
-  if (isWide) {
-    // ===== 1600px 이상: 사이드바 레이아웃 =====
-    return (
-      <div className="h-screen bg-slate-50 flex flex-row overflow-hidden">
-        <div className="flex flex-1 min-h-0 mx-auto w-full max-w-[1608px]">
+  // 두 레이아웃(사이드바/상단헤더)의 <Outlet/> 부모 구조를 동일하게 유지한다.
+  // return 을 둘로 나누면 1600px 경계를 넘을 때 페이지가 재마운트되어 입력값이 사라진다.
+  return (
+    <div className="h-screen bg-slate-50 flex flex-col overflow-hidden">
+      <div
+        className={[
+          "flex flex-1 min-h-0 w-full",
+          isWide ? "flex-row mx-auto max-w-[1608px]" : "flex-col",
+        ].join(" ")}
+      >
 
-          {/* 사이드바 */}
+          {/* ===== 1600px 이상: 사이드바 레이아웃 ===== */}
+          {isWide && (
           <aside className="flex flex-col w-52 shrink-0 bg-white border-r border-gray-200 overflow-y-auto">
             <button type="button" onClick={goHome}
               className="flex items-center justify-center py-4 hover:bg-gray-50 transition border-b border-gray-100">
@@ -132,45 +138,37 @@ export default function AppLayout() {
               </button>
             </div>
           </aside>
+          )}
 
-          {/* 컨텐츠 */}
+          {/* ===== 1600px 미만: 상단 헤더 레이아웃 ===== */}
+          {!isWide && (
+          <header className="shrink-0 sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-gray-200">
+            <div className="app-container">
+              <div className="h-16 flex items-center justify-between">
+                <button type="button" onClick={goHome}
+                  className="flex items-center gap-3 text-left hover:opacity-90 transition">
+                  <AppHeader compact />
+                </button>
+
+                <div className="flex items-center gap-1" ref={menuWrapRef}>
+                  {menus.map((m) => (
+                    <button key={m.key} type="button"
+                      onClick={() => { setOpenMenu(null); navigate(m.path); }}
+                      className="h-9 px-3 rounded-md text-sm font-medium transition text-gray-700 hover:bg-gray-100">
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </header>
+          )}
+
+          {/* 컨텐츠 (두 레이아웃 공통 — 위치/구조 고정) */}
           <div className="flex-1 min-h-0">
             <Outlet />
           </div>
-        </div>
       </div>
-    );
-  }
-
-  // ===== 1600px 미만: 상단 헤더 레이아웃 =====
-  return (
-    <div className="h-screen bg-slate-50 flex flex-col overflow-hidden">
-
-      <header className="shrink-0 sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-gray-200">
-        <div className="app-container">
-          <div className="h-16 flex items-center justify-between">
-            <button type="button" onClick={goHome}
-              className="flex items-center gap-3 text-left hover:opacity-90 transition">
-              <AppHeader compact />
-            </button>
-
-            <div className="flex items-center gap-1" ref={menuWrapRef}>
-              {menus.map((m) => (
-                <button key={m.key} type="button"
-                  onClick={() => { setOpenMenu(null); navigate(m.path); }}
-                  className="h-9 px-3 rounded-md text-sm font-medium transition text-gray-700 hover:bg-gray-100">
-                  {m.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <div className="flex-1 min-h-0">
-        <Outlet />
-      </div>
-
     </div>
   );
 }
