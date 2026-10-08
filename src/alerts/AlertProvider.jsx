@@ -1,6 +1,7 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AlertModal from "../components/AlertModal";
 import { AlertContext } from "./AlertContext";
+import { setAlertApi } from "./alertBridge";
 
 const normalize = (opt) => ({
   type: opt?.type ?? "info",
@@ -74,6 +75,12 @@ export function AlertProvider({ children }) {
 
     return { open: openAlert, close, info, success, warning, error, confirm, choice, remove };
   }, [close, openAlert]);
+
+  // React 밖에서 공용 알럿 사용 (alertBridge)
+  useEffect(() => {
+    setAlertApi(api);
+    return () => setAlertApi(null);
+  }, [api]);
 
   return (
     <AlertContext.Provider value={api}>

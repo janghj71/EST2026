@@ -1,5 +1,8 @@
 // src/api/request.js
 import { API_ESTSERVICE, API_NEOSERVICE, API_AXSERVICE, API_IVSERVICE, API_TSSERVICE, API_ASSERVICE, API_ADBCPSERVICE, getServiceKey } from './config'
+import { getAlertApi } from '../alerts/alertBridge'
+
+let sessionExpiredHandled = false
 
 /**
  * bodyType: 'form' | 'json' | 'raw'
@@ -104,10 +107,22 @@ export async function request(
   if (json?.result === 'false') {
     const msg = json?.msg || 'API 오류'
     if (msg.includes('서비스키값')) {
-      localStorage.removeItem('serviceKey')
-      localStorage.removeItem('usertype')
-      window.location.replace('/')
-      return
+      // 서비스키 만료/무효 → 알림 후 로그인 이동
+      // 동시 요청 여러 건이 걸려도 알림은 1회만
+      if (!sessionExpiredHandled) {
+        sessionExpiredHandled = true
+        localStorage.removeItem('serviceKey')
+        localStorage.removeItem('usertype')
+        const expiredMsg = '로그인이 만료되었습니다. 다시 로그인해 주세요.'
+        const alertApi = getAlertApi()
+        const shown = alertApi
+          ? alertApi.warning(expiredMsg)
+          : Promise.resolve(window.alert(expiredMsg))
+        shown.then(() => window.location.replace('/'))
+      }
+      // 끝나지 않는 Promise 반환 → 호출부의 후속 저장/오류 알럿 진행 차단
+      // (throw 시 호출부 alertError 가 공용 알럿을 덮어써 로그인 이동이 막힘)
+      return new Promise(() => {})
     }
     throw new Error(msg)
   }

@@ -77,7 +77,7 @@ export default function AlertModal({
   const tone = toneByType[type] || toneByType.info;
 
   return (
-    <div className="fixed inset-0 z-[1000]">
+    <div className="fixed inset-0 z-[1200]">
       {/* backdrop */}
       <div
         className="absolute inset-0 bg-black/40"

@@ -1,7 +1,7 @@
 // src/pages/estimate/EstimateEditPage.jsx
 import React, { useMemo, useState, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { flushSync } from "react-dom";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAlert } from "../../alerts";
 
 import EstimateHeaderBar from "./EstimateHeaderBar";
@@ -110,6 +110,7 @@ function AmendReasonModal({ open, onConfirm, onCancel }) {
 
 export default function EstimateEditPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { est_serial } = useParams();
 
   const { fetchMasterById, fetchDetails, fetchOverlap } = useEstimate();
@@ -2549,9 +2550,18 @@ export default function EstimateEditPage() {
     setSettleRefreshKey((k) => k + 1);
   }, [est_serial, save, masterWithSums, saveAllDetails, fetchDetails, fetchClaims, setRows, setMaster, setSettleRefreshKey, alertError]);
 
+  // 견적목록 경로 — 브라우저 히스토리(navigate(-1))에 의존하지 않도록 명시 이동
+  // (새 탭/직접 URL 진입 시 이전 기록이 로그인 화면일 수 있음)
+  // replace: 편집화면을 히스토리에서 제거 → 목록에서 뒤로가기로 락 없이 재진입 방지
+  const goList = useCallback(() => {
+    const fromMenu = location.state?.fromMenu
+      || (master?.seccode === "11" ? "/estimate/normal" : "/estimate/insurance");
+    navigate(fromMenu, { replace: true });
+  }, [location.state, master?.seccode, navigate]);
+
   // [목록] 버튼: 전체 저장 후 이동 (잠긴 경우 저장 없이 이동)
   const handleClose = useCallback(async () => {
-    if (isLocked) { unlockFnRef.current?.(); navigate(-1); return; }
+    if (isLocked) { unlockFnRef.current?.(); goList(); return; }
     let failed = false;
     await saveQueueRef.current;  // 공임/도장 팝업 선택 후 saveDetail 큐 완료 대기
     flushSync(() => {});         // saveDetail 내부 setRows React 렌더 큐 강제 flush
@@ -2572,9 +2582,9 @@ export default function EstimateEditPage() {
       const detailRes2 = await saveAllDetails(rowsRef.current);
       if (String(detailRes2?.result) === 'false') { failed = true; alertError(detailRes2?.msg ?? "견적항목 저장 실패"); return; }
     });
-    if (!failed) { unlockFnRef.current?.(); navigate(-1); }
+    if (!failed) { unlockFnRef.current?.(); goList(); }
   }, [isLocked, est_serial, master, masterWithSums, sidePanelOpen, sideActive,
-      save, saveClaim, saveAllDetails, withLoading, navigate, alertError]);
+      save, saveClaim, saveAllDetails, withLoading, goList, alertError]);
 
   const handleDuplicateCheck = useCallback(async () => {
     await withLoading(async () => {
